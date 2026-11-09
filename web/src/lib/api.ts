@@ -1072,19 +1072,29 @@ export type ReportClaim = { id: string; claim_key: string; version: number; text
   support_type: 'source_stated' | 'analyst_inference'; paragraph: number; table_ref: string | null; equation_ref: string | null; evidence: ReportLink[]
   original_evidence_count: number; removed_links: (Pick<ReportLink, 'link_id' | 'passage_id' | 'cell_id' | 'source_version_id' | 'anchor_text' | 'anchor_match'> & { title?: string; source_key?: string | null })[]
   evidence_basis: 'direct' | 'none'; support_type_note: 'model_written_type' | null; edited_basis: string[]
+  // Carried from the version before this one, and whose words the sentence is: a claim the person edited keeps theirs.
+  carried_from: string | null; carried_text_origin: 'model' | 'human_edit' | 'human_restore' | null
   // The claim rests wholly or partly on what was read from an abstract, from its own links, body refs and gap refs.
   depth_mark?: 'abstract' | 'mixed' | null }
 export type EditCheck = { id: string; created_at: string; checker_version: string; current: boolean; errors: number; warnings: number; skipped: number; edited_claims: number
   items: { rule: string; section_id: string | null; detail: string; severity: 'error' | 'warning' }[]
   skipped_rules: { rule: string; section_id: string | null; claim_key: string | null; reason: string }[]; rules_run: string[]; not_checked: string[] }
 export type ReportSection = { section_id: string; status: string; word_count: number | null; draft: { text?: string; queries?: { provider: string; query: string; date: string }[]; insufficient_evidence?: { reason: string }[] } | null
-  validation: { issues?: { code?: string }[] } | null; claims: ReportClaim[]; evidence_changes: { open: { key: string; kind: string; via: string; source_version_id?: string; column_id?: string }[]; acknowledged_count: number; unresolved_refs: number } }
+  validation: { issues?: { code?: string }[]; carried?: { from_report_id: string; input_identical: boolean; citations_relocated: boolean; person_edited_claims: string[]; not_checked: string[] } } | null
+  // The section was copied from the earlier version because the model would have been asked the same question.
+  carried: boolean; claims: ReportClaim[]; evidence_changes: { open: { key: string; kind: string; via: string; source_version_id?: string; column_id?: string }[]; acknowledged_count: number; unresolved_refs: number } }
 export type ReportReview = { status: 'reviewed'; step_input_id: string | null; step_input_ids?: string[]; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
   findings: { claim_key: string | null; sentence_id: string | null; section_id: string | null; code: string; text: string }[]; notes: string
   reverted: { sentence_id: string; section_id: string }[]; not_reverted: { sentence_id: string; section_id: string; reason: string }[] }
   | { status: 'not_reviewed'; reason: string; detail: unknown; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
     findings: []; notes: string; reverted: []; not_reverted: [] }
-export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null; has_human_edits: boolean; edit_check: EditCheck | null; review: ReportReview | null
+export type RefreshOffer = { can_refresh: boolean; reason: string | null; answer_run_id: string | null
+  diff: { added_rows: string[]; removed_rows: string[]; rows_read_differently: string[]; added_cells: string[]; removed_cells: string[]; changed_cells: string[]
+    added_columns: string[]; removed_columns: string[]; revised_columns: string[]; corpus_changed: boolean; reading_changed: boolean; any: boolean } | null
+  sections: { person_edited?: string[] } | null }
+export type ReportDetail = ReportSummary & { language: string; updated_at: string;
+  // The version this one was refreshed from, and the answer whose frozen evidence it was written from.
+  refreshed_from_report_id?: string | null; refresh_answer_run_id?: string | null; sections: ReportSection[]; edited_after_version: number | null; has_human_edits: boolean; edit_check: EditCheck | null; review: ReportReview | null
   passage_freshness: PassageFreshness
   missing_rows: { counts: { included: number; completed: number; failed: number; cells_missing: number; cells_total: number }
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
@@ -1653,6 +1663,9 @@ export const api = {
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
   answerMethod: (id: string, answerId: string) => request<AnswerMethod>(`/api/researches/${id}/answers/${answerId}/method`),
   startReport: (id: string, tableId: string, key: string) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId }, { 'Idempotency-Key': key })),
+  reportRefreshOffer: (id: string, reportId: string) => request<RefreshOffer>(`/api/researches/${id}/reports/${reportId}/refresh-offer`),
+  refreshReport: (id: string, reportId: string, answerRunId: string, key: string) =>
+    request<Run>(`/api/researches/${id}/reports/${reportId}/refresh`, json('POST', { answer_run_id: answerRunId }, { 'Idempotency-Key': key })),
   report: (id: string, reportId: string) => request<ReportDetail>(`/api/researches/${id}/reports/${reportId}`),
   reportGaps: (id: string, reportId: string) => request<ReportGap[]>(`/api/researches/${id}/reports/${reportId}/gaps`),
   candidates: (id: string) => request<CandidateListItem[]>(`/api/researches/${id}/candidates`),

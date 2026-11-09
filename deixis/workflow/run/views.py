@@ -234,7 +234,8 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                           if item["section_id"] in DISPLAY_ORDER else len(DISPLAY_ORDER)):
         claims = []
         stored_claims = list(store.conn.execute(
-            "SELECT id, claim_key, text, support_type, paragraph, table_ref, equation_ref, current_revision_id, version FROM report_claims"
+            "SELECT id, claim_key, text, support_type, paragraph, table_ref, equation_ref, current_revision_id, version,"
+            " carried_from, carried_text_origin FROM report_claims"
             " WHERE report_section_id = ? ORDER BY ordinal", (section["id"],),
         ))
         first_paragraph = {paragraph: index for index, paragraph in enumerate(dict.fromkeys(
@@ -261,6 +262,15 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
             revisions = reports.claim_revisions(claim["id"])
             current = next((revision for revision in revisions if revision["id"] == claim["current_revision_id"]), None)
             current_text = current["text"] if current else claim["text"]
+            # A sentence carried from the earlier version whose words are the person's own: the model's own wording
+            # is the one the earlier claim still holds, and this sentence is shown as the person's, not as written
+            # here. Its reason and its history stay readable on the version it was written on.
+            person_carried = claim["carried_text_origin"] in ("human_edit", "human_restore")
+            model_text = claim["text"]
+            if person_carried and claim["carried_from"]:
+                earlier = store.conn.execute("SELECT text FROM report_claims WHERE id = ?",
+                                             (claim["carried_from"],)).fetchone()
+                model_text = earlier["text"] if earlier is not None else claim["text"]
             current_ids = {link["link_id"] for link in evidence}
             removed = removed_by_claim.get(claim["id"], [])
             original_ids = current_ids | {link["link_id"] for link in removed}
@@ -280,7 +290,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                         edited_basis.add(key)
             claims.append({"id": claim["id"], "claim_key": claim["claim_key"],
                            "version": claim["version"], "text": current_text,
-                           "model_text": claim["text"], "edited": current is not None,
+                           "model_text": model_text, "edited": current is not None or person_carried,
                            "warnings": current["warnings"] if current else [], "revisions": revisions,
                            "support_type": claim["support_type"], "paragraph": claim["paragraph"],
                            "table_ref": claim["table_ref"], "equation_ref": claim["equation_ref"],
@@ -288,10 +298,15 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                            "removed_links": removed, "evidence_basis": "direct" if evidence else "none",
                            "support_type_note": "model_written_type" if not evidence and original_ids else None,
                            "depth_mark": depth_marks.get(claim["id"]),
+                           # A sentence carried from the earlier version, and whose words they are: a claim the
+                           # person edited keeps the person's own, so no surface reads them as newly written.
+                           "carried_from": claim["carried_from"],
+                           "carried_text_origin": claim["carried_text_origin"],
                            "edited_basis": sorted(edited_basis)})
         sections.append({key: section[key] for key in (
             "section_id", "status", "word_count", "draft", "validation",
-        )} | {"claims": claims, "evidence_changes": changes["sections"][section["section_id"]]})
+        )} | {"claims": claims, "evidence_changes": changes["sections"][section["section_id"]],
+              "carried": bool(section["carried_from_section_id"])})
     # For the report the model writes `{{srv_S…}}`, its section's short handle, where a claim names a source; the
     # handle is read back to the source through the section's stored StepInput and the view names it from the record.
     real: dict[str, dict[str, str]] = {}
@@ -402,6 +417,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
             if claim["claim_key"] in unlocated:
                 for link in claim["evidence"]:
                     link["anchor_match"] = None
+    report.pop("refresh_fingerprint", None)  # a record of which evidence was published, not something to read
     return report | {"sections": sections, "claims_without_basis": without_basis,
                      "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
                      "passage_freshness": passage_freshness(reports, report_id),

@@ -4608,6 +4608,28 @@ export const tr: Record<string, string> = {
   'The table this report was written from is no longer available.': 'Bu raporun yazıldığı tablo artık yok.',
   'A new version of the evidence report is being written. This version stays as it is.': 'Kanıt raporunun yeni bir sürümü yazılıyor. Bu sürüm olduğu gibi kalır.',
   'Write a new version': 'Yeni sürüm yaz',
+  'Update from the newer evidence': 'Yeni kanıta göre güncelle',
+  'A new version is being written from the newer evidence. This version stays as it is.':
+    'Yeni kanıta göre yeni bir sürüm yazılıyor. Bu sürüm olduğu gibi kalıyor.',
+  'Carried from the earlier version: the model would have been asked the same question, so these sentences and their citations are the ones you read before.':
+    'Önceki sürümden taşındı: modele aynı soru gidecekti, yani bu cümleler ve atıfları daha önce okuduklarınız.',
+  '{n} of them are your own wording.': 'Bunların {n} tanesi sizin kendi ifadeniz.',
+  'A version can be updated once its own run has finished and it was published.':
+    'Bir sürüm, kendi koşusu bitip yayımlandıktan sonra güncellenebilir.',
+  'This version recorded no frozen evidence, so there is nothing to compare.':
+    'Bu sürüm donmuş kanıt kaydetmemiş, karşılaştıracak bir şey yok.',
+  'This version was not written from an answer’s frozen evidence, so an update has nothing to stand on.':
+    'Bu sürüm bir cevabın donmuş kanıtından yazılmamış, güncellemenin dayanacağı bir şey yok.',
+  'This version kept no written plan, so an update cannot reuse it.':
+    'Bu sürüm yazılı bir plan tutmamış, güncelleme onu yeniden kullanamaz.',
+  'The plan of this version names a column or a passage the newer evidence no longer holds. Write a new version instead.':
+    'Bu sürümün planı, yeni kanıtta artık bulunmayan bir sütunu veya pasajı adlandırıyor. Bunun yerine yeni sürüm yazın.',
+  'A section every update writes again holds your own wording. Write a new version instead, which carries nothing.':
+    'Her güncellemenin yeniden yazdığı bir bölüm sizin kendi ifadenizi taşıyor. Bunun yerine hiçbir şeyi taşımayan yeni sürüm yazın.',
+  'This evidence was already published as a version of its own.': 'Bu kanıt zaten kendi sürümü olarak yayımlandı.',
+  'The question changed after this version. Write a new version instead.':
+    'Bu sürümden sonra soru değişti. Bunun yerine yeni sürüm yazın.',
+  'Another run of this research is still open.': 'Bu araştırmanın başka bir koşusu hâlâ açık.',
   'Evidence view: show the cited cells': 'Kanıt görünümü: atıf yapılan hücreleri göster',
   'LaTeX · .tex and .bib in a zip': 'LaTeX · zip içinde .tex ve .bib',
   '{n} row excluded from assessment and denominators': '{n} satır değerlendirmeden ve paydalardan çıkarıldı',

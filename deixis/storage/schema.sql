@@ -1,9 +1,9 @@
--- The whole library schema at version 21. A new library is made from this file in one transaction and
--- records versions 1 to 21; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 22. A new library is made from this file in one transaction and
+-- records versions 1 to 22; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 21
+-- deixis:schema-version 22
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -402,7 +402,7 @@ CREATE TABLE reports (
   report_version INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-, review_json TEXT);
+, review_json TEXT, refreshed_from_report_id TEXT REFERENCES reports(id), refresh_answer_run_id TEXT REFERENCES runs(id), refresh_fingerprint TEXT);
 
 CREATE TABLE report_claims (
   id TEXT PRIMARY KEY,
@@ -416,7 +416,7 @@ CREATE TABLE report_claims (
   equation_ref TEXT,
   axis_id TEXT,
   count_json TEXT,
-  equation_origin_json TEXT, current_revision_id TEXT REFERENCES report_claim_revisions(id), version INTEGER NOT NULL DEFAULT 1,
+  equation_origin_json TEXT, current_revision_id TEXT REFERENCES report_claim_revisions(id), version INTEGER NOT NULL DEFAULT 1, carried_from TEXT REFERENCES report_claims(id), carried_text_origin TEXT CHECK (carried_text_origin IS NULL OR (carried_from IS NOT NULL AND carried_text_origin IN ('model', 'human_edit', 'human_restore'))),
   UNIQUE (report_section_id, claim_key)
 );
 
@@ -434,7 +434,7 @@ CREATE TABLE report_citation_links (
   source_version_id TEXT NOT NULL REFERENCES source_versions(id),
   step_input_id TEXT NOT NULL REFERENCES step_inputs(id),
   anchor_text TEXT,
-  anchor_match TEXT CHECK (anchor_match IN ('exact', 'normalized', 'fuzzy')),
+  anchor_match TEXT CHECK (anchor_match IN ('exact', 'normalized', 'fuzzy')), carried_from_step_input_id TEXT REFERENCES step_inputs(id),
   CHECK ((passage_id IS NOT NULL) <> (cell_id IS NOT NULL))
 );
 
@@ -481,7 +481,7 @@ CREATE TABLE "report_sections" (
   word_count INTEGER,
   ordinal INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL, carried_from_section_id TEXT REFERENCES report_sections(id),
   UNIQUE (report_id, section_id)
 );
 
@@ -2453,3 +2453,5 @@ CREATE TABLE "scope_english_questions" (
   created_at TEXT NOT NULL,
   PRIMARY KEY (research_id, scope_revision)
 );
+
+CREATE UNIQUE INDEX reports_refresh_once ON reports (research_id, refresh_fingerprint);

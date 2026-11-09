@@ -137,6 +137,20 @@ def frozen(store: Any, run_id: str) -> dict[str, Any] | None:
     return step["output"] if step and step["status"] == "succeeded" else None
 
 
+def for_answer(store: Any, answer_run_id: str, table_id: str) -> dict[str, Any] | None:
+    """The view one named answer run froze, when it is a view of this table and that answer is valid.
+
+    A report refresh reads its evidence this way and never by "the latest answer": the person chose which answer the
+    new version stands on, and the request, the change list and the written report must all read the same view.
+    """
+    row = store.conn.execute(
+        "SELECT 1 FROM answers WHERE run_id = ? AND status = 'structurally_valid'", (answer_run_id,)).fetchone()
+    if row is None:
+        return None
+    view = frozen(store, answer_run_id)
+    return view if view is not None and view.get("table_id") == table_id else None
+
+
 def for_research(store: Any, research_id: str, table_id: str, scope_revision: int | None = None) -> dict[str, Any] | None:
     """The view the research's latest valid answer of this question rests on, when it is a view of this table.
 

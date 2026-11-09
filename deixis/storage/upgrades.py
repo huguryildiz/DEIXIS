@@ -756,4 +756,21 @@ ALTER TABLE cell_revisions ADD COLUMN compared_method TEXT;
 ALTER TABLE cell_revisions ADD COLUMN condition TEXT;
 ALTER TABLE cell_revisions ADD COLUMN direction TEXT CHECK ((direction IS NULL OR (direction IN ('higher', 'lower', 'comparable', 'mixed') AND compared_method IS NOT NULL)) AND (COALESCE(state, '') = 'value' OR (compared_method IS NULL AND condition IS NULL AND direction IS NULL)));
 """),
+    22: Step("0022_report_refresh.sql", False, """\
+-- A new report version written from a newer answer's frozen evidence, carrying the sections whose question did not
+-- change. `reports` records which report it refreshes, the answer run whose frozen view it rests on, and a
+-- fingerprint of that evidence with the changes it answers, so the same evidence cannot be published twice even
+-- through a second answer run. A section copied from the earlier version names it, and so does a copied claim,
+-- together with whose words the text is: a claim the person edited keeps the person's sentence. A copied citation
+-- gets a new input record of its own run and keeps the earlier one here, because that input is what the sentence was
+-- written from. NULL in all of them means an ordinary report, written from nothing earlier.
+ALTER TABLE reports ADD COLUMN refreshed_from_report_id TEXT REFERENCES reports(id);
+ALTER TABLE reports ADD COLUMN refresh_answer_run_id TEXT REFERENCES runs(id);
+ALTER TABLE reports ADD COLUMN refresh_fingerprint TEXT;
+ALTER TABLE report_sections ADD COLUMN carried_from_section_id TEXT REFERENCES report_sections(id);
+ALTER TABLE report_claims ADD COLUMN carried_from TEXT REFERENCES report_claims(id);
+ALTER TABLE report_claims ADD COLUMN carried_text_origin TEXT CHECK (carried_text_origin IS NULL OR (carried_from IS NOT NULL AND carried_text_origin IN ('model', 'human_edit', 'human_restore')));
+ALTER TABLE report_citation_links ADD COLUMN carried_from_step_input_id TEXT REFERENCES step_inputs(id);
+CREATE UNIQUE INDEX reports_refresh_once ON reports (research_id, refresh_fingerprint);
+"""),
 }

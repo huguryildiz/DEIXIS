@@ -198,15 +198,13 @@ def _restore_vi_gaps(flow: ResearchFlow, reports: ReportStore, report_id: str, f
         reports.save_gaps(report_id, _gap_rows(draft, candidates, step_input_id))
 
 
-async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, Any], reports: ReportStore,
-                       report_id: str, frozen_plan: dict[str, Any], snapshot: dict[str, Any],
-                       section_id: str) -> str:
-    section_key = reports.create_section(report_id, section_id, ORDINALS[section_id])
-    section = reports.section(report_id, section_id)
-    if section["status"] == "valid":
-        if section_id == "VI":
-            _restore_vi_gaps(flow, reports, report_id, frozen_plan, snapshot, section)
-        return "valid"
+def section_target(flow: ResearchFlow, reports: ReportStore, report_id: str, frozen_plan: dict[str, Any],
+                   snapshot: dict[str, Any], section_id: str) -> tuple[dict[str, Any], dict[str, Any], Any]:
+    """The target, selected evidence and code-written numbers one section's model call is built from.
+
+    One definition, because a refresh compares the input it would send with the input the earlier version's section
+    was written from: a second copy of this could make two different questions look like one.
+    """
     prior_summaries = _prior_summaries(flow, reports, report_id, snapshot)
     evidence = selection.select_evidence(flow.store, snapshot, section_id, frozen_plan, prior_summaries)
     gap_candidates = gaps.generate_corpus_absence_candidates(snapshot, frozen_plan.get("axes", [])) \
@@ -223,8 +221,25 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         "prior_summaries": prior_summaries,
         "review_scope": None,
         "limitations_core": numbers,
+        # The two keys a model step fills in on its own: named here so this target is byte for byte the one a
+        # section is asked with, which is what a refresh compares against the earlier version's stored input.
+        "review_sections": None,
         "validation_context": None,
     }
+    return target, evidence, numbers
+
+
+async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, Any], reports: ReportStore,
+                       report_id: str, frozen_plan: dict[str, Any], snapshot: dict[str, Any],
+                       section_id: str) -> str:
+    section_key = reports.create_section(report_id, section_id, ORDINALS[section_id])
+    section = reports.section(report_id, section_id)
+    if section["status"] == "valid":
+        if section_id == "VI":
+            _restore_vi_gaps(flow, reports, report_id, frozen_plan, snapshot, section)
+        return "valid"
+    target, evidence, numbers = section_target(flow, reports, report_id, frozen_plan, snapshot, section_id)
+    gap_candidates = target["gap_candidates"]
     operation_key = f"report_section:{section_id}"
     step = flow.store.step(run["id"], operation_key, "model:report_section")
     reports.save_section_draft(
@@ -299,8 +314,11 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
 
 async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, Any]) -> None:
     """Run the frozen report plan, code-written methodology, section rounds and assembly checks."""
+    from deixis.workflow.features.report import report_refresh as refresh_mod
+
     run_id, research_id = run["id"], run["research_id"]
     table_id, report_id = run["target"]["table_id"], run["target"]["report_id"]
+    refresh = (run["target"] or {}).get("refresh_of")
     reports = ReportStore(flow.store)
     flow._checkpoint(run_id, run["scope_revision"])
     # A resumed report goes on from the snapshot it saved: rows the table gained since are not its evidence.
@@ -309,7 +327,13 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
         snapshot = reports.snapshot(report_id)
     except NotFound:
         snapshot = None
-    if snapshot is None:
+    if snapshot is None and refresh is not None:
+        # A refresh stands on the one answer the person chose, so its evidence is that run's frozen view alone.
+        try:
+            snapshot = reports.save_snapshot(report_id, table_id, answer_run_id=refresh["answer_run_id"])
+        except RevisionConflict:
+            flow._fail(run_id, "refresh_needs_a_new_answer", {"answer_run_id": refresh["answer_run_id"]})
+    elif snapshot is None:
         # The same readiness the request read: the frozen view's own when the answer left one, else the live table.
         readiness = evidence_view.readiness(flow.store, research_id, table_id, run["scope_revision"])
         if not readiness["ready"]:
@@ -344,19 +368,30 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
             report_target=target, limiter=flow.deps.limiter,
         )
 
-    output = await flow.deps.limiter.run("report_plan", plan_call)
-    flow._checkpoint(run_id, run["scope_revision"])
-    if output.get("invalid"):
-        flow._fail(run_id, "invalid_model_output", {"step": "report_plan", "issues": output["issues"]})
-    # The word budget counts the snapshot's rows, never the live table: a resumed report freezes the same plan.
-    frozen_plan = freeze_plan(output["result"], snapshot, snapshot.get("row_counts", {}).get("completed", len(snapshot["rows"])))
+    if refresh is not None:
+        # A refresh asks no plan: the question and the write-up scope are the ones the reader has already read, and
+        # asking again would change every section's input and carry nothing. The code-owned fields come from the new
+        # evidence, so a changed corpus still changes every section's question.
+        base_plan = reports.report(refresh["base_report_id"])["plan"]
+        missing = refresh_mod.plan_references_missing(base_plan or {}, snapshot)
+        if not base_plan or missing:
+            flow._fail(run_id, "plan_references_missing", {"missing": missing})
+        frozen_plan = refresh_mod.carried_plan(base_plan, snapshot)
+    else:
+        output = await flow.deps.limiter.run("report_plan", plan_call)
+        flow._checkpoint(run_id, run["scope_revision"])
+        if output.get("invalid"):
+            flow._fail(run_id, "invalid_model_output", {"step": "report_plan", "issues": output["issues"]})
+        # The word budget counts the snapshot's rows, never the live table: a resumed report freezes the same plan.
+        frozen_plan = freeze_plan(output["result"], snapshot, snapshot.get("row_counts", {}).get("completed", len(snapshot["rows"])))
     reports.set_plan(report_id, frozen_plan)
     # Before the synthesis: which sub-question each column of the table answers for how many rows, and which
     # sub-questions the sections are about to be written without any evidence for. A record, not an input.
     save_code(flow, run, COVERAGE_KEY, COVERAGE_KIND, lambda: coverage.coverage(snapshot, frozen_plan))
 
-    if not flow.store.research(research_id)["title"]:
-        # Section 15.1's title from the plan scope_statement is not implemented in this batch.
+    if not flow.store.research(research_id)["title"] and refresh is None:
+        # Section 15.1's title from the plan scope_statement is not implemented in this batch. A refresh names
+        # nothing: the research already carries whatever the earlier version's run named it.
         try:
             async def title_call() -> None:
                 await flow._research_title(run, scope, optional=True)
@@ -365,6 +400,19 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
         except OptionalStepFailed:
             pass
     review_methodology.write_review_methodology(flow.store, reports, report_id, research_id, snapshot)
+    if refresh is not None:
+        # Before the first model call of the refresh: which sections the model would be asked the same question for.
+        # The decision is taken over one state of the new report and nothing is written until it is taken, so a run
+        # that stops on a person's own words decides again when the person resumes it.
+        planned = refresh_mod.plan_carry(flow, run, scope, reports, report_id, refresh["base_report_id"],
+                                         frozen_plan, snapshot)
+        if planned["person_edited_to_rewrite"]:
+            flow._pause(run_id, "person_edited_section_must_be_rewritten",
+                        {"sections": planned["person_edited_to_rewrite"],
+                         "claims": {section: planned["person_edited"][section]
+                                    for section in planned["person_edited_to_rewrite"]}})
+        save_code(flow, run, refresh_mod.DECISION_KEY, refresh_mod.DECISION_KIND,
+                  lambda: refresh_mod.carry_all(flow, run, reports, report_id, refresh["base_report_id"], planned))
 
     for round_ids in ROUNDS:
         flow._checkpoint(run_id, run["scope_revision"])
@@ -395,11 +443,22 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     if main_missing:
         issues = issues + [{"rule": assembly.NO_MAIN_ANSWER, "section_id": assembly.MAIN_SECTION,
                             "detail": "ERROR: the conclusion does not keep every claim on a located basis."}]
-    if scoped["blocking"] or main_missing:
+    # A refresh carries sentences written for an earlier input, so its gate is the whole report's citations: every
+    # one of them must locate in the evidence this version was written from, or no version is published.
+    unlocated_refresh = (refresh_mod.citations_not_located(flow.store, reports, report_id)
+                         if refresh is not None else [])
+    if scoped["blocking"] or main_missing or unlocated_refresh:
         reports.finalize(report_id, "draft")
-        flow.store.update_run(run_id, event="report_assembly_failed", pause_reason=None, error_json=issues)
+        flow.store.update_run(run_id, event="refresh_citation_not_located" if unlocated_refresh
+                              else "report_assembly_failed", pause_reason=None,
+                              error_json=(issues + unlocated_refresh) if unlocated_refresh else issues)
+    elif refresh is not None and reports.publish_refresh(report_id, refresh["fingerprint"]) is None:
+        # The same evidence became a published version while this one was being written.
+        reports.finalize(report_id, "draft")
+        flow.store.update_run(run_id, event="already_refreshed", pause_reason=None, error_json=None)
     else:
-        reports.finalize(report_id, "valid")
+        if refresh is None:
+            reports.finalize(report_id, "valid")
         # A delivered report whose sections hold a claim without a located basis says so in its own run record; the
         # claim keeps its unlocated citation, which no screen marks as located evidence.
         flow.store.update_run(run_id, event="report_finalized" if not unsupported else CLAIMS_WITHOUT_BASIS,

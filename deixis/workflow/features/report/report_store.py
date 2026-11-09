@@ -66,6 +66,121 @@ class ReportStore:
             )
             return self.store.update_run(run["id"], target_json=dumps({"table_id": table_id, "report_id": report_id}))
 
+    def request_refresh(self, research_id: str, report_id: str, answer_run_id: str,
+                        idempotency_key: str | None) -> dict[str, Any]:
+        """Queue a new report version over a newer answer's frozen evidence. Started by a person, never on its own.
+
+        Every refusal is named and every one of them is decided here, before a model is sent anything: the person
+        learns why a refresh is not possible instead of paying for a run that stops.
+        """
+        from deixis.workflow.features.report import report_refresh
+        from deixis.workflow.features.report.report_sections import ROUNDS
+
+        # The key carries what was asked: the same key with another base report or another answer is another
+        # request, which must face its own refusals instead of returning the run the earlier one made.
+        key = f"{research_id}:refresh:{report_id}:{answer_run_id}:{idempotency_key}" if idempotency_key else None
+        with transaction(self.conn):
+            existing = self.conn.execute(
+                "SELECT id, kind FROM runs WHERE idempotency_key = ?", (key,),
+            ).fetchone() if key else None
+            if existing:
+                if existing["kind"] != "report":
+                    raise RevisionConflict("This idempotency key was used for another request")
+                return self.store.run(existing["id"])
+
+            report = self.report(report_id)
+            if report["research_id"] != research_id:
+                raise NotFound(report_id)
+            run = self.store.run(report["run_id"])
+            if report["status"] != "valid" or run["status"] not in ("completed", "failed", "cancelled"):
+                raise RevisionConflict("report_not_valid")
+            paused = self.conn.execute(
+                "SELECT id FROM runs WHERE research_id = ? AND status = 'paused'", (research_id,)).fetchone()
+            if paused:
+                raise RevisionConflict("research_busy")
+            saved = self.conn.execute("SELECT table_id, snapshot_json FROM report_snapshot WHERE report_id = ?",
+                                      (report_id,)).fetchone()
+            if saved is None:
+                raise RevisionConflict("no_base_snapshot")
+            base = json.loads(saved["snapshot_json"])
+            if not base.get("bound_to_answer"):
+                raise RevisionConflict("base_report_not_answer_bound")
+            scope = self.store.scope(research_id)
+            answer = self.conn.execute(
+                "SELECT run_id, scope_revision FROM answers WHERE run_id = ? AND status = 'structurally_valid'",
+                (answer_run_id,)).fetchone()
+            # Written after the answer this report rests on: a refresh reads evidence its report has not read.
+            if answer is None or answer_run_id not in report_refresh.newer_answers(
+                    self.store, research_id, report["scope_revision"], base.get("answer_run_id")):
+                raise RevisionConflict("refresh_needs_a_new_answer")
+            view = report_evidence_view.for_answer(self.store, answer_run_id, saved["table_id"])
+            if view is None:
+                raise RevisionConflict("refresh_needs_a_new_answer")
+            # The base report, the chosen answer, its view and the question revision this run will open at must be
+            # one and the same revision; `create_run` takes the research's current one, so it is checked here too.
+            revisions = {report["scope_revision"], answer["scope_revision"], view.get("scope_revision"),
+                         scope["revision"]}
+            if len(revisions) != 1:
+                raise RevisionConflict("scope_revision_mismatch")
+            if not report["plan"]:
+                raise RevisionConflict("no_base_plan")
+            changes = report_refresh.diff(base, view)
+            if not changes["any"]:
+                raise RevisionConflict("nothing_changed")
+            if report_refresh.plan_references_missing(report["plan"] or {}, view):
+                raise RevisionConflict("plan_references_missing")
+            edited = report_refresh.person_edited(self.store, report_id)
+            if sorted(section for section in edited if section not in report_refresh.CARRYABLE):
+                raise RevisionConflict("person_edited_derived_section")
+            stamp = report_refresh.fingerprint(report_id, view, changes)
+            if self.conn.execute("SELECT 1 FROM reports WHERE research_id = ? AND refresh_fingerprint = ?",
+                                 (research_id, stamp)).fetchone():
+                raise RevisionConflict("already_refreshed")
+
+            section_count = sum(map(len, ROUNDS))
+            max_model_calls = max(REPORT_CALL_FLOOR,
+                                  (1 + section_count + 1 + section_count + 1) * (1 + MAX_SCHEMA_REPAIRS)
+                                  + section_count * (REPORT_SECTION_REPAIRS - MAX_SCHEMA_REPAIRS))
+            budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__ | {
+                "max_model_calls": max_model_calls,
+                "max_report_section_repairs": REPORT_SECTION_REPAIRS,
+                "max_provider_requests": 0,
+            }
+            refresh = {"base_report_id": report_id, "answer_run_id": answer_run_id, "fingerprint": stamp}
+            new_run = self.store.create_run(research_id, "report", budget, key,
+                                            {"table_id": saved["table_id"], "refresh_of": refresh},
+                                            expected_scope_revision=report["scope_revision"])
+            new_report_id = self.create_report(research_id, new_run["id"], new_run["scope_revision"],
+                                               report["language"])
+            # The fingerprint is written when this version is published (`publish_refresh`), not reserved here: an
+            # attempt that never finished must not stop the person from asking for the same evidence again.
+            self.conn.execute(
+                "UPDATE reports SET refreshed_from_report_id = ?, refresh_answer_run_id = ?, updated_at = ?"
+                " WHERE id = ?", (report_id, answer_run_id, now(), new_report_id),
+            )
+            self._event(new_report_id, "report_refresh_requested", base_report_id=report_id,
+                        answer_run_id=answer_run_id, changes=changes["keys"])
+            return self.store.update_run(new_run["id"], target_json=dumps(
+                {"table_id": saved["table_id"], "report_id": new_report_id, "refresh_of": refresh}))
+
+    def publish_refresh(self, report_id: str, fingerprint: str) -> int | None:
+        """Publish a refreshed version and record which evidence it published, in one step.
+
+        None when that evidence is already a published version of this research: the caller then publishes nothing.
+        The unique index is the guarantee; this check is what turns a race into a draft instead of an error.
+        """
+        with transaction(self.conn):
+            report = self.report(report_id)
+            taken = self.conn.execute(
+                "SELECT id FROM reports WHERE research_id = ? AND refresh_fingerprint = ? AND id != ?",
+                (report["research_id"], fingerprint, report_id)).fetchone()
+            if taken is not None:
+                return None
+            version = self.finalize(report_id, "valid")
+            self.conn.execute("UPDATE reports SET refresh_fingerprint = ?, updated_at = ? WHERE id = ?",
+                              (fingerprint, now(), report_id))
+            return version
+
     def create_report(self, research_id: str, run_id: str, scope_revision: int, language: str | None) -> str:
         with transaction(self.conn):
             run = self.store.run(run_id)
@@ -107,8 +222,13 @@ class ReportStore:
             self.conn.execute("UPDATE reports SET plan_json = ?, updated_at = ? WHERE id = ?", (dumps(plan), now(), report_id))
             self._event(report_id, "report_plan_saved")
 
-    def save_snapshot(self, report_id: str, table_id: str) -> dict[str, Any]:
-        """Read and insert once in one transaction; later table edits cannot change this report's evidence."""
+    def save_snapshot(self, report_id: str, table_id: str, answer_run_id: str | None = None) -> dict[str, Any]:
+        """Read and insert once in one transaction; later table edits cannot change this report's evidence.
+
+        With `answer_run_id` the evidence is that one answer run's frozen view and nothing else: a refresh stands on
+        the answer the person chose, so a missing or foreign view refuses instead of falling back to another answer
+        or to the live table.
+        """
         with transaction(self.conn):
             report = self.report(report_id)
             existing = self.conn.execute("SELECT table_id, snapshot_json FROM report_snapshot WHERE report_id = ?", (report_id,)).fetchone()
@@ -116,6 +236,17 @@ class ReportStore:
                 if existing["table_id"] != table_id:
                     raise ValueError("This report already has a snapshot of another table")
                 return json.loads(existing["snapshot_json"])
+            if answer_run_id is not None:
+                snapshot = report_evidence_view.for_answer(self.store, answer_run_id, table_id)
+                if snapshot is None:
+                    raise RevisionConflict("That answer froze no evidence view of this table")
+                self.conn.execute(
+                    "INSERT INTO report_snapshot (report_id, table_id, table_revision, snapshot_json, created_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (report_id, table_id, snapshot["table_revision"], dumps(snapshot), now()),
+                )
+                self._event(report_id, "report_snapshot_saved", table_id=table_id, answer_run_id=answer_run_id)
+                return snapshot
             # The evidence the research's valid answer of this question rests on, frozen when that answer's input
             # was built. A report of that answer is written from it, so the two stand on the same stored rows, cells
             # and text; readiness is the view's own, since the answer settled it.

@@ -266,6 +266,19 @@ export const reportSupportLabels: Record<string, string> = { source_stated: 'Sta
 export const reportRevisionLabels: Record<string, string> = { human_edit: 'Your edit', human_restore: 'Restored' }
 export const reportChangeLabels: Record<string, string> = { cell_changed: 'a cited cell changed', source_removed: 'a cited source left the table or the research' }
 export const reportChangeViaLabels: Record<string, string> = { body_ref: '(through the section it summarises)', gap_ref: '(through a candidate aspect)' }
+// Why a report cannot be updated from newer evidence. Two of them are ordinary states and show no control at all:
+// no newer answer yet, and newer evidence that changed nothing.
+export const refreshReasons: Record<string, string> = {
+  report_not_valid: 'A version can be updated once its own run has finished and it was published.',
+  no_base_snapshot: 'This version recorded no frozen evidence, so there is nothing to compare.',
+  base_report_not_answer_bound: 'This version was not written from an answer’s frozen evidence, so an update has nothing to stand on.',
+  no_base_plan: 'This version kept no written plan, so an update cannot reuse it.',
+  plan_references_missing: 'The plan of this version names a column or a passage the newer evidence no longer holds. Write a new version instead.',
+  person_edited_derived_section: 'A section every update writes again holds your own wording. Write a new version instead, which carries nothing.',
+  already_refreshed: 'This evidence was already published as a version of its own.',
+  scope_revision_mismatch: 'The question changed after this version. Write a new version instead.',
+  research_busy: 'Another run of this research is still open.',
+}
 
 const pauseReasons: Record<string, string> = {
   answer_cutoff_missing: 'The frozen read cutoff is missing. Start a new search before answering.',

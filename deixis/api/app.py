@@ -84,6 +84,7 @@ from deixis.workflow.read.equations import EquationService, chunk_numbers, equat
 from deixis.workflow.run.local_embedding_service import LocalModelService, ServiceError
 from deixis.workflow.run.flow import FlowDeps, ResearchFlow
 from deixis.workflow.features.report import report_pipeline
+from deixis.workflow.features.report import report_refresh
 from deixis.workflow.features.report.report_store import ReportStore
 from deixis.workflow.features.report import report_export
 from deixis.workflow.features.report import report_latex_export as latex_export
@@ -531,6 +532,10 @@ class CreateTable(BaseModel):
 
 class StartReport(BaseModel):
     table_id: str  # an older client's `continue_with_failed` is ignored: failed cells no longer stop a report
+
+
+class StartReportRefresh(BaseModel):
+    answer_run_id: str = Field(max_length=64)  # the answer whose frozen evidence the new version stands on
 
 
 class ReportClaimEdit(BaseModel):
@@ -3656,6 +3661,20 @@ def create_app(
         run = report_pipeline.start(store_of(request), research_id, idempotency_key)
         request.app.state.worker.wake()
         return run
+
+    @app.post("/api/researches/{research_id}/reports/{report_id}/refresh", status_code=202)
+    async def refresh_report(research_id: str, report_id: str, body: StartReportRefresh, request: Request,
+                             idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        """A new report version over a newer answer's frozen evidence. Started here by a person, never on its own."""
+        run = reports_of(request).request_refresh(research_id, report_id, body.answer_run_id, idempotency_key)
+        request.app.state.worker.wake()
+        return run
+
+    @app.get("/api/researches/{research_id}/reports/{report_id}/refresh-offer")
+    async def report_refresh_offer(research_id: str, report_id: str, request: Request) -> dict[str, Any]:
+        """Whether newer evidence exists for this report, read from the two frozen views, not from the stale notice."""
+        store = store_of(request)
+        return report_refresh.offer(store, ReportStore(store), research_id, report_id)
 
     @app.get("/api/researches/{research_id}/reports/{report_id}/gaps")
     async def get_report_gaps(research_id: str, report_id: str, request: Request) -> list[dict[str, Any]]:

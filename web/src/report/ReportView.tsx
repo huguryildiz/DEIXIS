@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Copy, Download, FileText, Link, RotateCw, FileCheck2, Table2, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Download, FileText, Link, RefreshCw, RotateCw, FileCheck2, Table2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { api, ApiError, reportDocxUrl, type Passage, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView, type ReviewFindingRow, type TableSummary } from '../lib/api'
+import { api, ApiError, reportDocxUrl, type Passage, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type RefreshOffer, type ResearchView, type ReviewFindingRow, type TableSummary } from '../lib/api'
 import { MathText } from '../components/MathText'
-import { failedRowReasonText, failedSectionReasonText, locatorText, pauseReasonText, reportAssemblyDraftText, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../lib/labels'
+import { failedRowReasonText, failedSectionReasonText, locatorText, pauseReasonText, reportAssemblyDraftText, refreshReasons, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../lib/labels'
 import { StackPanel } from '../research/SplitPanel'
 import { printPanel } from '../research/printPanel'
 import { usePanels } from '../research/usePanelStack'
@@ -157,6 +157,14 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   useEffect(() => {
     void refresh()
   }, [refresh, view.last_event_id])
+  // Whether newer evidence exists, read from the two frozen views: a notice the person marked as seen does not
+  // close this, and a count of affected claims is not invented where the record cannot give one.
+  const [offer, setOffer] = useState<RefreshOffer | null>(null)
+  useEffect(() => {
+    let alive = true
+    api.reportRefreshOffer(researchId, reportId).then(next => { if (alive) setOffer(next) }, () => { if (alive) setOffer(null) })
+    return () => { alive = false }
+  }, [researchId, reportId, view.last_event_id])
   const applyMutation = (next: ReportDetail) => {
     if (!live.current) return
     // Stamp completion, not mutation start: reads begun during the write can still contain the old state.
@@ -330,6 +338,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   const tableSummary = tables?.find(item => item.id === report?.table_id)
   const gate = tableSummary ? reportGate(view, tableSummary, tableSummary.columns) : { reason: t('The table this report was written from is no longer available.') }
   const [writing, setWriting] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const writeAgain = async () => {
     if (!report?.table_id || writing) return
     setWriting(true)
@@ -342,6 +351,24 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
     } finally { if (live.current) setWriting(false) }
   }
   const writeButton = report?.table_id ? <button type="button" className="ghost report-write" disabled={writing || busy || Boolean(gate.reason)} title={gate.reason || undefined} onClick={() => void writeAgain()}><RotateCw size={14} aria-hidden />{t('Write a new version')}</button> : null
+  // "Update from the newer evidence": a new version over a newer answer's frozen evidence, which carries the sections
+  // whose question did not change. Offered only while a newer answer exists to stand on; the reason is always shown.
+  const refreshAgain = async () => {
+    if (!offer?.answer_run_id || refreshing) return
+    setRefreshing(true)
+    try {
+      await api.refreshReport(researchId, reportId, offer.answer_run_id, crypto.randomUUID())
+      toast('success', t('A new version is being written from the newer evidence. This version stays as it is.'))
+      await onChanged()
+    } catch (e) {
+      toast(e instanceof ApiError && e.status === 409 ? 'warning' : 'error', e instanceof Error ? e.message : String(e))
+    } finally { if (live.current) setRefreshing(false) }
+  }
+  const refreshButton = offer && offer.can_refresh
+    ? <button type="button" className="ghost report-refresh" disabled={refreshing || busy} onClick={() => void refreshAgain()}><RefreshCw size={14} aria-hidden />{t('Update from the newer evidence')}</button>
+    : offer && offer.reason && offer.reason !== 'nothing_changed' && offer.reason !== 'refresh_needs_a_new_answer'
+      ? <button type="button" className="ghost report-refresh" disabled title={t(refreshReasons[offer.reason] ?? offer.reason)}><RefreshCw size={14} aria-hidden />{t('Update from the newer evidence')}</button>
+      : null
   const running = !report || !finished.has(report.run?.status ?? '')
   const panelTitle = !report || report.status === 'in_progress' ? t('Evidence report · being written') : report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : t('Evidence report · draft')
   const reviewLabel = t('Review with another model')
@@ -400,7 +427,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
           report.evidence_changes.removed_sources && t(report.evidence_changes.removed_sources === 1 ? '{n} source left' : '{n} sources left', { n: report.evidence_changes.removed_sources }),
           report.evidence_changes.added_sources && t(report.evidence_changes.added_sources === 1 ? '{n} source added' : '{n} sources added', { n: report.evidence_changes.added_sources }),
           report.evidence_changes.revised_columns && t(report.evidence_changes.revised_columns === 1 ? '{n} column revised' : '{n} columns revised', { n: report.evidence_changes.revised_columns }),
-        ].filter(Boolean).join(', ')}. {t('The report text was not changed. Passage text was not checked.')}</span>{writeButton && !running && <span className="acts">{writeButton}</span>}</Notice>}
+        ].filter(Boolean).join(', ')}. {t('The report text was not changed. Passage text was not checked.')}</span>{writeButton && !running && <span className="acts">{writeButton}{refreshButton}</span>}</Notice>}
         <PassageFreshnessNotice freshness={report.passage_freshness} />
         <div className="report-content evidence-report-content">{DISPLAY.map(id => {
           const section = report.sections.find(item => item.section_id === id)
@@ -411,7 +438,8 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
           const changes = section.evidence_changes.open
           const reasons = [...new Set(changes.map(change => `${t(reportChangeLabels[change.kind] ?? change.kind)} ${change.via !== 'citation' ? t(reportChangeViaLabels[change.via] ?? change.via) : ''}`.trim()))]
           return <section className="evidence-report-section" key={id}><h2>{labels(id)}</h2>
-            {changes.length > 0 && <div className="evidence-report-changes"><Notice tone="attention">{t('This section rests on evidence that changed after this report:')} {reasons.join('; ')}.</Notice>{evidenceView && <ul>{changes.map(change => <li key={change.key}>{t(reportChangeLabels[change.kind] ?? change.kind)} · {report.references.find(ref => ref.source_version_id === change.source_version_id)?.source_key ?? ''} · {table?.columns.find(column => column.column_id === change.column_id)?.name ?? ''}</li>)}</ul>}<span className="acts"><button type="button" className="ghost" disabled={busy} onClick={() => void acknowledge(section)}>{t('Mark as seen')}</button>{writeButton}</span></div>}
+            {section.carried && <p className="evidence-report-fine">{t('Carried from the earlier version: the model would have been asked the same question, so these sentences and their citations are the ones you read before.')}{section.validation?.carried?.person_edited_claims?.length ? ` ${t('{n} of them are your own wording.', { n: section.validation.carried.person_edited_claims.length })}` : ''}</p>}
+            {changes.length > 0 && <div className="evidence-report-changes"><Notice tone="attention">{t('This section rests on evidence that changed after this report:')} {reasons.join('; ')}.</Notice>{evidenceView && <ul>{changes.map(change => <li key={change.key}>{t(reportChangeLabels[change.kind] ?? change.kind)} · {report.references.find(ref => ref.source_version_id === change.source_version_id)?.source_key ?? ''} · {table?.columns.find(column => column.column_id === change.column_id)?.name ?? ''}</li>)}</ul>}<span className="acts"><button type="button" className="ghost" disabled={busy} onClick={() => void acknowledge(section)}>{t('Mark as seen')}</button>{writeButton}{refreshButton}</span></div>}
             {evidenceView && section.evidence_changes.acknowledged_count > 0 && <small>{t('{n} earlier changes marked as seen.', { n: section.evidence_changes.acknowledged_count })}</small>}
             {(section.status === 'draft' || section.status === 'failed') && <div className="evidence-report-failed"><Notice tone="attention">{section.validation?.issues?.[0]?.code ? t('This section was not validated and must be written again: {reason}.', { reason: failedSectionReasonText(section.validation.issues[0].code) }) : t('This section was not validated and must be written again.')}</Notice>{writeButton && !running && <span className="acts">{writeButton}</span>}</div>}
             {id === 'VI' && <p className="evidence-report-fine">{t('Candidate aspects the model inferred from the evidence table; none was checked by a kill-search.')}</p>}

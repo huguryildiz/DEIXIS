@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 import uuid
+import weakref
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -20,6 +21,7 @@ from deixis.domain.limits import error_name
 from deixis.providers import core, crossref
 from deixis.providers.common import ProviderRecord, begin_request, normalize_doi, settle_request
 from deixis.storage import db
+from deixis.workflow.run import fast_path
 from deixis.workflow.run.store import Store
 from deixis.workflow.read import file_restore
 
@@ -42,6 +44,13 @@ CROSSREF_SKIPPED_HOSTS = {"xplorestaging.ieee.org"}
 QUOTA_EXHAUSTED = "quota_exhausted"
 # The lookups `acquire_for_source` always asks, in this order; a record with some but not all of them was interrupted.
 REQUIRED_ROUTES = frozenset({"unpaywall", "openalex", "crossref", "core"})
+# Which provider's copy is tried first (`candidate_order`), ahead of the order the answers happened to arrive in.
+# Europe PMC's rendition and a web-search copy are tried by their own steps, after these, and keep their places.
+PROVIDER_ORDER = ("unpaywall", "openalex", "crossref", "core", "elsevier", "europepmc", "web_search")
+# Within one provider: a copy of this record's own version first, then one whose version the provider did not name.
+VERSION_STATUS_ORDER = ("match", "different", "uncertain")
+# And then how the identity was settled: a verified DOI before a title alone.
+IDENTITY_ORDER = ("doi_verified", "title_verified", "unverified", "mismatch")
 
 
 @dataclass(frozen=True)
@@ -89,6 +98,27 @@ class OpenAlexBudget:
             return self.reset_at is not None and datetime.fromisoformat(self.reset_at) > datetime.now(timezone.utc)
         except (ValueError, TypeError):
             return False
+
+    def refresh(self, stored: str | None) -> None:
+        """Take the later of what this run remembers and what the store holds: the budget is the key's, not a run's."""
+        if stored and (self.reset_at is None or stored > self.reset_at):
+            self.reset_at = stored
+
+
+# One lock for OpenAlex's metered key, held while a request on it is in flight *and* while its refusal is recorded.
+# A per-host gate cannot do this job: the metadata host and the content host are two hosts spending one key, and the
+# host lock is released as soon as a response returns, so the next request would read a budget that still says the
+# key is good. Kept per event loop for the reason `fetch.host_gate` is.
+_budget_gates: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+
+
+def budget_gate() -> asyncio.Lock:
+    """The lock a request that spends OpenAlex's daily budget holds, until its answer is stored."""
+    loop = asyncio.get_running_loop()
+    gate = _budget_gates.get(loop)
+    if gate is None:
+        gate = _budget_gates[loop] = asyncio.Lock()
+    return gate
 
 
 def _decimal(value: str | None) -> Decimal | None:
@@ -412,6 +442,34 @@ def required_routes(doi: str | None) -> frozenset[str]:
     return REQUIRED_ROUTES | {"elsevier"} if (doi or "").startswith(ELSEVIER_DOI_PREFIX) else REQUIRED_ROUTES
 
 
+def candidate_order(candidates: list[dict[str, Any]], rule: str | None = fast_path.ACQUIRE_RULE) -> list[dict[str, Any]]:
+    """The order a download loop tries this record's candidates in, by the candidate's own fields alone.
+
+    The stored rows are read in arrival order, which is a record of when each provider answered, not a judgement:
+    the same candidate set could give a different file on a different day, and a provider that happened to answer
+    first could win over a better copy. The order here is the named rule `fast_path.ACQUIRE_RULE` freezes into a
+    run's budget: the provider's place in `PROVIDER_ORDER`, then a version the provider named as this record's own,
+    then how the identity was settled, then the URL — unique per provider by the table's own key, so no two
+    candidates of one record can tie.
+
+    `rule` is what the caller's run froze. A run queued before the rule existed carries none, and `None` keeps the
+    arrival order it would have downloaded under: a half-finished lookup it resumes picks the file it would have
+    picked. A caller with no run of its own (the person's own "Find PDF") takes the rule.
+    """
+    if rule is None:
+        return list(candidates)
+
+    def key(candidate: dict[str, Any]) -> tuple[int, int, int, str]:
+        provider = candidate["provider"]
+        version, identity = candidate["version_status"], candidate["identity_status"]
+        return (PROVIDER_ORDER.index(provider) if provider in PROVIDER_ORDER else len(PROVIDER_ORDER),
+                VERSION_STATUS_ORDER.index(version) if version in VERSION_STATUS_ORDER else len(VERSION_STATUS_ORDER),
+                IDENTITY_ORDER.index(identity) if identity in IDENTITY_ORDER else len(IDENTITY_ORDER),
+                candidate["candidate_url"])
+
+    return sorted(candidates, key=key)
+
+
 def fetcher_for(candidate: dict[str, Any], fetcher: Callable[[str], Awaitable[fetch.FetchResult]],
                 elsevier_key: str | None, contact_email: str | None) -> Callable[[str], Awaitable[fetch.FetchResult]]:
     """The fetch for this candidate: an Elsevier API copy through `fetch_pdf` with the key sent to its own https origin
@@ -516,7 +574,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                              openalex_budget: OpenAlexBudget | None = None,
                              workflow_run_id: str | None = None,
                              before_publish: Callable[[], Awaitable[None]] | None = None,
-                             elsevier_key: str | None = None) -> dict[str, Any]:
+                             elsevier_key: str | None = None,
+                             candidate_rule: str | None = fast_path.ACQUIRE_RULE) -> dict[str, Any]:
     """Look this record's DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of its own version.
 
     A 10.1016 DOI is also looked up in Elsevier's article API (`elsevier_lookup`, with `elsevier_key`, the Scopus key);
@@ -542,22 +601,64 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     lookups: list[tuple[str, str, Lookup]] = []
 
     def record(provider: str, lookup: Lookup) -> None:
-        # Each answer is stored the moment it is in hand, before the next request is awaited: an interruption between
-        # two lookups must not lose what OpenAlex's budget said.
+        # Each answer is stored the moment it is in hand, while the other routes are still in flight: an interruption
+        # between two answers must not lose what OpenAlex's budget said.
         lookup = attempted(lookup)
         lookups.append((provider, doi, lookup))
         with db.transaction(store.conn):  # the answer and its candidates are stored together or not at all
             run_id = store.record_pdf_discovery(research_id, source_version_id, provider, doi, lookup, workflow_run_id)
             store.record_pdf_candidates(source_version_id, run_id, lookup.candidates)
 
-    record("unpaywall", await unpaywall_lookup(client, doi, source.get("version_label"), contact_email))
-    record("openalex", await openalex_lookup(client, doi, source.get("version_label"), contact_email=contact_email,
-                                             budget=openalex_budget))
-    cr = await crossref_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
-    record("crossref", cr)
-    record("core", await core_lookup(client, doi, core_key))
-    if "elsevier" in required_routes(doi):
+    # The routes are asked together — they are five hosts, and one answering slowly no longer holds the others up —
+    # and each answer is still stored the moment it is in hand. Which order the rows land in is a record of who
+    # answered first and decides nothing: `candidate_order` settles which copy is downloaded.
+    crossref_answer: list[Lookup] = []
+
+    async def unpaywall_route() -> None:
+        record("unpaywall", await unpaywall_lookup(client, doi, source.get("version_label"), contact_email))
+
+    async def openalex_route() -> None:
+        # The budget's lock is held across the request *and* its recording: a refusal must be stored before another
+        # request on the same key may read the budget, or every route would meet the same refusal in turn.
+        async with budget_gate():
+            if openalex_budget is not None:
+                openalex_budget.refresh(store.openalex_budget_reset())
+            record("openalex", await openalex_lookup(client, doi, source.get("version_label"),
+                                                     contact_email=contact_email, budget=openalex_budget))
+
+    async def crossref_route() -> None:
+        cr = await crossref_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
+        crossref_answer.append(cr)
+        record("crossref", cr)
+
+    async def core_route() -> None:
+        record("core", await core_lookup(client, doi, core_key))
+
+    async def elsevier_route() -> None:
         record("elsevier", await elsevier_lookup(client, doi, source.get("version_label"), elsevier_key))
+
+    routes = [unpaywall_route(), openalex_route(), crossref_route(), core_route()]
+    if "elsevier" in required_routes(doi):
+        routes.append(elsevier_route())
+    tasks = [asyncio.create_task(route) for route in routes]
+
+    async def stop(leftover: Any) -> None:
+        for task in leftover:
+            task.cancel()
+        await asyncio.gather(*leftover, return_exceptions=True)
+
+    # One route raising — an answer no parser expected, a stop — must not leave the others writing rows behind the
+    # caller's back: the rest are cancelled and awaited before the failure leaves. A cancellation of the whole
+    # acquisition takes them down the same way.
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+    except BaseException:
+        await stop(tasks)
+        raise
+    await stop(pending)
+    for task in done:
+        task.result()  # the first failure, if there was one
+    cr = crossref_answer[0]
     if cr.record is not None:
         if before_publish is not None:
             await before_publish()
@@ -566,7 +667,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     asset_id = None
     if not store.has_asset(source_version_id):
         attempted_urls: set[str] = set()
-        for candidate in store.pdf_candidates(source_version_id):
+        for candidate in candidate_order(store.pdf_candidates(source_version_id), candidate_rule):
             if candidate["identity_status"] != "doi_verified" or candidate["version_status"] != "match":
                 continue
             if candidate["provider"] == "europepmc":
@@ -591,7 +692,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
         store.record_pdf_candidates(source_version_id, run_id, europepmc.candidates)
         lookups.append(("europepmc", doi, europepmc))
         tried: set[str] = set()
-        for candidate in store.pdf_candidates(source_version_id):
+        for candidate in candidate_order(store.pdf_candidates(source_version_id), candidate_rule):
             if (candidate["provider"] != "europepmc" or candidate["identity_status"] != "doi_verified"
                     or candidate["version_status"] != "match" or candidate["candidate_url"] in tried):
                 continue
@@ -606,7 +707,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     if other_versions and not store.has_asset(source_version_id):
         asset_id, lookup_version_id = await _attach_other_version(
             store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher, recovery_dir=recovery_dir,
-            before_publish=before_publish, elsevier_key=elsevier_key, contact_email=contact_email)
+            before_publish=before_publish, elsevier_key=elsevier_key, contact_email=contact_email,
+            candidate_rule=candidate_rule)
 
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
@@ -636,7 +738,8 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
                                 xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml, *,
                                 recovery_dir: Path | None = None,
                                 before_publish: Callable[[], Awaitable[None]] | None = None,
-                                elsevier_key: str | None = None, contact_email: str | None = None
+                                elsevier_key: str | None = None, contact_email: str | None = None,
+                                candidate_rule: str | None = fast_path.ACQUIRE_RULE
                                 ) -> tuple[str | None, str | None]:
     """Attach a verified copy of another declared version to its own row under the same work; (asset, row) or (None, None).
 
@@ -648,7 +751,11 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
     wanted = [c for c in store.pdf_candidates(source_version_id)
               if c["identity_status"] == "doi_verified" and c["version_status"] == "different"
               and c["version_label"] in VERSION_ORDER]
-    for candidate in sorted(wanted, key=lambda c: (VERSION_ORDER.index(c["version_label"]), c["id"])):
+    # The declared version decides first; within one version the same fixed candidate order as the main loop, so
+    # neither path reads the arrival order or the row id. A run from before the rule keeps the row id it ordered by.
+    ordered = (sorted(wanted, key=lambda c: (VERSION_ORDER.index(c["version_label"]), c["id"])) if candidate_rule is None
+               else sorted(candidate_order(wanted, candidate_rule), key=lambda c: VERSION_ORDER.index(c["version_label"])))
+    for candidate in ordered:
         existing = store.find_source_by_identifier("pdf_lookup_version", f"{source_version_id}:{candidate['version_label']}")
         if existing and store.has_asset(existing):
             # Already fetched, perhaps by another research that holds the same record: the row joins this research

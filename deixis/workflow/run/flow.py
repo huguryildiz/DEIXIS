@@ -3081,6 +3081,9 @@ class ResearchFlow:
                 elsevier_key=CONNECTORS["scopus"].api_key(),
                 xml_fetcher=self.deps.fetch_xml, recovery_dir=settings.recovery_dir,
                 openalex_budget=self._openalex_budget_of(run["id"]), workflow_run_id=run["id"],
+                # A run queued before the download order had a rule carries none, and keeps the order it would
+                # have downloaded under; `candidate_order` reads the absence as the older branch.
+                candidate_rule=(run["budget"].get("fast_path") or {}).get("acquire_rule"),
                 **({"before_publish": lambda: self._fast_fetch_publish(run, source["work_id"])}
                    if fast_path.enforces(run["budget"], "read") else {}),
             )

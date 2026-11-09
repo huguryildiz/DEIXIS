@@ -29,6 +29,10 @@ CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2", "fast_chain_v3")
 # `DEEP_SCREENING_WORKS` works of the frozen list, places N+1..N+100, one model read per batch. Frozen in the policy under
 # its rule's name; a policy without the key screens 1..N only, as before.
 DEEP_SCREENING_RULE = "m3_v1"
+# Which of a record's found copies is downloaded first (`acquisition.candidate_order`): a fixed provider priority,
+# then the version and the identity, then the URL — never the order the providers happened to answer in. Frozen in
+# the policy, so the choice an older run made can be read back as the rule it was made under.
+ACQUIRE_RULE = "fast_acquire_v1"
 DEEP_SCREENING_WORKS = 100
 DEEP_SCREENING_EFFORTS = ("standard", "detailed")
 
@@ -127,7 +131,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "N": mode.read_top, "K": mode.fulltext_works, "keyword_record_cap": mode.keyword_record_cap, "semantic_top": 50,
         "chain_seeds": mode.chain_seeds, "backward_requests": mode.backward_requests, "backward_page_size": 50,
         "forward_requests": mode.forward_requests, "forward_page_size": 25,
-        "chain_in_flight": 5, "chain_rule": "fast_chain_v1",
+        "chain_in_flight": 5, "chain_rule": "fast_chain_v1", "acquire_rule": ACQUIRE_RULE,
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
         # Search always gets at least its own base; an earlier overrun is charged to the later stages instead.

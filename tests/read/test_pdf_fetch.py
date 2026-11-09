@@ -270,6 +270,74 @@ def test_core_requires_key_without_calling_network():
     assert (result.status, result.error_code) == ("auth_required", "missing_core_key")
 
 
+def _candidate(provider, url, version="match", identity="doi_verified"):
+    return {"provider": provider, "candidate_url": url, "version_status": version, "identity_status": identity}
+
+
+def test_the_download_order_comes_from_the_candidate_fields_not_from_who_answered_first():
+    rows = [
+        _candidate("crossref", "https://c.example/a.pdf"),
+        _candidate("unpaywall", "https://u.example/b.pdf", version="different"),
+        _candidate("unpaywall", "https://u.example/a.pdf"),
+        _candidate("core", "https://core.example/a.pdf"),
+        _candidate("openalex", "https://o.example/b.pdf", identity="title_verified"),
+        _candidate("openalex", "https://o.example/a.pdf"),
+    ]
+    wanted = ["https://u.example/a.pdf", "https://u.example/b.pdf", "https://o.example/a.pdf",
+              "https://o.example/b.pdf", "https://c.example/a.pdf", "https://core.example/a.pdf"]
+    for arrival in (rows, list(reversed(rows)), [rows[i] for i in (3, 0, 5, 2, 4, 1)]):
+        assert [c["candidate_url"] for c in acquisition.candidate_order(arrival)] == wanted
+    # A provider the order does not name goes last and still sorts by its own fields, never by arrival.
+    unknown = [_candidate("web_search", "https://w.example/b.pdf"), _candidate("web_search", "https://w.example/a.pdf")]
+    assert [c["candidate_url"] for c in acquisition.candidate_order(unknown)] == [
+        "https://w.example/a.pdf", "https://w.example/b.pdf"]
+    # A run queued before the rule existed carries none and keeps the order it would have downloaded under.
+    assert [c["candidate_url"] for c in acquisition.candidate_order(rows, None)] == [c["candidate_url"] for c in rows]
+
+
+def test_the_first_provider_of_the_fixed_order_is_downloaded_although_another_answered_first(tmp_path):
+    connection = db.connect(tmp_path / "library.sqlite")
+    db.migrate(connection)
+    store = Store(connection)
+    rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord("W1", "Exact synthetic title", [], 2020, "J", "article", "10.1/test",
+                            "https://publisher.example/item", None, None, "publishedVersion", None, None, {}, {})
+    svid, _ = store.upsert_provider_source("openalex", record, None)
+    store.add_to_corpus(rid, svid, "search")
+    # Crossref's copy is written first (its row arrives first), Unpaywall's second; both are verified matches.
+    store.record_pdf_candidates(svid, store.record_pdf_discovery(
+        rid, svid, "crossref", "10.1/test", acquisition.Lookup("completed", [acquisition.Candidate(
+            "crossref", "https://c.example/a.pdf", None, "publishedVersion", None, "doi_verified", "match")])),
+        [acquisition.Candidate("crossref", "https://c.example/a.pdf", None, "publishedVersion", None,
+                               "doi_verified", "match")])
+
+    def handler(request):
+        if "api.unpaywall.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "10.1/test", "oa_locations": [
+                {"url_for_pdf": "https://u.example/a.pdf", "version": "publishedVersion", "host_type": "publisher"}],
+                "best_oa_location": None})
+        if "api.openalex.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "https://doi.org/10.1/test", "display_name": record.title,
+                                             "locations": []})
+        return httpx.Response(200, json={"message": {"DOI": "10.1/test", "link": []}})
+
+    attempts = []
+
+    async def fetcher(url):
+        attempts.append(url)
+        return FetchResult("ok", data=make_pdf(["SYNTHETIC full text"]), final_url=url, http_status=200)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers",
+                                                        "synthetic@example.org", None, fetcher, web_search=False)
+
+    run(check())
+    assert attempts == ["https://u.example/a.pdf"], "the copy that arrived first was downloaded, not the first by rule"
+    assert store.has_asset(svid)
+    connection.close()
+
+
 def test_acquisition_records_403_then_downloads_second_verified_location(tmp_path):
     connection = db.connect(tmp_path / "library.sqlite")
     db.migrate(connection)
@@ -380,6 +448,51 @@ def test_once_openalex_budget_is_exhausted_later_lookups_are_recorded_not_sent_a
     assert all({"unpaywall", "crossref", "core"} <= {d["provider"] for d in store.pdf_discoveries(rid, s)} for s in svids)
     assert [(e["run_id"], e["lookups_refused"], e["lookups_skipped"], e["reset_at"]) for e in _budget_events(store, rid)] == [
         (workflow_run, 1, 2, rows[0]["retry_after"])]
+    connection.close()
+
+
+def test_a_second_run_acquiring_at_the_same_time_reads_the_stored_refusal_before_it_sends(tmp_path, monkeypatch):
+    """Two runs, two budget memories, one key. The budget is the key's, so the refusal has to be stored before
+    another request on it may start; each run's own memory is empty at the moment the other is refused."""
+    connection, store, rid, first_run, svids = _store_with_records(tmp_path, 2)
+    # Two researches, because one research holds one active run; the key's budget is shared across both.
+    other = store.create_research("Another synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    store.add_to_corpus(other, svids[1], "search")
+    jobs = [(rid, svids[0], first_run),
+            (other, svids[1], store.create_run(other, "discovery", {"max_model_calls": 0}, None)["id"])]
+    sent = []
+
+    def handler(request):
+        if "api.openalex.org" in request.url.host:
+            sent.append(request.url.path)
+            return _openalex_429(QUOTA_HEADERS)
+        return httpx.Response(404)
+
+    # The window the lock has to cover: the host lock is released when the answer returns, and the refusal is
+    # stored a step later. A mocked transport answers with no suspension at all, so the step is put there.
+    real_lookup = acquisition.openalex_lookup
+
+    async def answered_then_a_step(*args, **kwargs):
+        lookup = await real_lookup(*args, **kwargs)
+        await asyncio.sleep(0)
+        return lookup
+
+    monkeypatch.setattr(acquisition, "openalex_lookup", answered_then_a_step)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await asyncio.gather(*(
+                acquisition.acquire_for_source(store, research, svid, client, tmp_path / "papers",
+                                               "synthetic@example.org", None, core_key="key", web_search=False,
+                                               openalex_budget=acquisition.OpenAlexBudget(), workflow_run_id=job)
+                for research, svid, job in jobs))
+
+    run(check())
+    assert len(sent) == 1, "the other run sent its request in the window before the refusal was stored"
+    rows = [[d for d in store.pdf_discoveries(research, svid, retry_after=True) if d["provider"] == "openalex"][0]
+            for research, svid, _ in jobs]
+    assert sorted(r["http_status"] or 0 for r in rows) == [0, 429]
+    assert all(r["error_code"] == "quota_exhausted" for r in rows)
     connection.close()
 
 

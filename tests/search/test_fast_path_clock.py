@@ -140,6 +140,9 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
         assert policy["enforced_stages"] == ["search", "ranking", "read", "answer"]
         assert policy["enforcement"] == policy["enforced_stages"] and policy["runner_version"] == 2
         assert policy["approval_mode"] == "unattended" and policy["auto_answer"] is True
+        # Which of a record's found copies is downloaded first is a named rule, frozen here, so the choice an older
+        # run made can be read back as the rule it was made under.
+        assert policy["acquire_rule"] == fast_path.ACQUIRE_RULE
         ledger = app.state.store.conn.execute("SELECT * FROM fast_path_ledgers WHERE ledger_run_id = ?", (run_id,)).fetchone()
         assert (ledger["research_id"], ledger["scope_revision"], ledger["started_at"], ledger["policy_hash"]) == (
             rid, 1, run["created_at"], policy["policy_hash"])

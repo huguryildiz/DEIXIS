@@ -592,6 +592,29 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         "result_passages": {**results, "moved": moved}})
 
 
+def freeze_evidence_view(flow: Any, run: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any] | None:
+    """Freeze the Evidence table as this answer's input left it, so the report is written from the same evidence.
+
+    Done for every answer version, the first and each late revision, because each one binds its own text and a report
+    of it must read that. The works this answer uses become rows of the table first: the sweep that otherwise does
+    that runs only once no run of the research is working, so without it the view would freeze a table with no rows.
+
+    None when the research has no study table of the app's own — a research that asks only for a list of sources, or
+    one whose automatic study table is off. The report then builds its own view from the table as it stands.
+    """
+    from deixis.workflow.features.report import report_evidence_view
+    from deixis.workflow.features.tables import table_open, table_rows
+
+    rid = run["research_id"]
+    table_id = table_open.chain_table(flow.store, rid)
+    if not table_id:
+        return None
+    table_rows.add_rows(flow.store, rid)
+    return small_batch.save_code(
+        flow, run, report_evidence_view.VIEW_KEY, report_evidence_view.VIEW_KIND,
+        lambda: report_evidence_view.build(flow.store, rid, table_id, plan, run["id"]))
+
+
 PART_STATUS = {"present": "found", "disputed": "disputed", "absent": "not_found", "unclear": "unclear"}
 
 
@@ -786,6 +809,9 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         plan = late_revision.revision_plan(flow, run, scope)
     else:
         plan = input_plan(flow, run, scope)
+    # The evidence this answer rests on, frozen now that its input is settled: a report of it reads this view, so the
+    # two stand on the same stored rows, cells and text.
+    freeze_evidence_view(flow, run, plan)
     # Where the flow stood as this answer started (slice 20), apart from what the plan gives the model. No await since
     # the included set and selection revision were read, so the snapshot is the state they describe.
     rid = run["research_id"]

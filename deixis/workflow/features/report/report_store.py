@@ -10,6 +10,7 @@ from deixis.domain.contracts import _math_span_is_well_formed, _math_spans
 from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, REPORT_SECTION_REPAIRS, TEST_EFFORT_BUDGETS, RevisionConflict,
                                  check_expected_version)
 from deixis.storage.db import dumps, new_id, now, transaction
+from deixis.workflow.features.report import report_evidence_view
 from deixis.workflow.features.report.report_snapshot import build_snapshot, included_table_rows
 from deixis.workflow.run.store import NotFound, Store
 from deixis.workflow.features.tables.tables import InvalidTableInput, TableStore
@@ -32,7 +33,6 @@ class ReportStore:
     def request_report(self, research_id: str, table_id: str, idempotency_key: str | None) -> dict[str, Any]:
         """Queue a report run over one evidence table, refusing only a table without a column or an included row."""
         from deixis.workflow.features.report.report_sections import ROUNDS
-        from deixis.workflow.features.tables.tables import report_ready
 
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         with transaction(self.conn):
@@ -45,7 +45,7 @@ class ReportStore:
                 return self.store.run(existing["id"])
 
             scope = self.store.scope(research_id)
-            if not report_ready(self.store, research_id, table_id)["ready"]:
+            if not report_evidence_view.readiness(self.store, research_id, table_id, scope["revision"])["ready"]:
                 raise RevisionConflict(REPORT_REFUSAL)
 
             section_count = sum(map(len, ROUNDS))
@@ -116,11 +116,17 @@ class ReportStore:
                 if existing["table_id"] != table_id:
                     raise ValueError("This report already has a snapshot of another table")
                 return json.loads(existing["snapshot_json"])
-            from deixis.workflow.features.tables.tables import report_ready
+            # The evidence the research's valid answer of this question rests on, frozen when that answer's input
+            # was built. A report of that answer is written from it, so the two stand on the same stored rows, cells
+            # and text; readiness is the view's own, since the answer settled it.
+            snapshot = report_evidence_view.for_research(self.store, report["research_id"], table_id,
+                                                        report["scope_revision"])
+            if snapshot is None:
+                from deixis.workflow.features.tables.tables import report_ready
 
-            if not report_ready(self.store, report["research_id"], table_id)["ready"]:
-                raise RevisionConflict(REPORT_REFUSAL)
-            snapshot = build_snapshot(self.store, report["research_id"], table_id)
+                if not report_ready(self.store, report["research_id"], table_id)["ready"]:
+                    raise RevisionConflict(REPORT_REFUSAL)
+                snapshot = build_snapshot(self.store, report["research_id"], table_id)
             self.conn.execute(
                 "INSERT INTO report_snapshot (report_id, table_id, table_revision, snapshot_json, created_at)"
                 " VALUES (?, ?, ?, ?, ?)",

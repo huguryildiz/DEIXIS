@@ -11,13 +11,12 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import transaction
 from deixis.workflow.read.equations import equation_fallback_field
 from deixis.workflow.run.flow import OptionalStepFailed, RunStopped
-from deixis.workflow.features.report import report_assembly as assembly, report_coverage as coverage, report_gaps as gaps, report_review_methodology as review_methodology, report_selection as selection
+from deixis.workflow.features.report import report_assembly as assembly, report_coverage as coverage, report_evidence_view as evidence_view, report_gaps as gaps, report_review_methodology as review_methodology, report_selection as selection
 from deixis.workflow.features.report.report_plan import freeze_plan
 from deixis.workflow.features.report.report_review import run_report_review
 from deixis.workflow.features.report.report_store import ReportStore
 from deixis.workflow.features.report.report_snapshot import countable_row_ids, evidence_row_ids
 from deixis.workflow.run.store import NotFound
-from deixis.workflow.features.tables.tables import report_ready
 from deixis.workflow.search.small_batch import save_code
 
 if TYPE_CHECKING:
@@ -309,13 +308,15 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     except NotFound:
         snapshot = None
     if snapshot is None:
-        readiness = report_ready(flow.store, research_id, table_id)
+        # The same readiness the request read: the frozen view's own when the answer left one, else the live table.
+        readiness = evidence_view.readiness(flow.store, research_id, table_id, run["scope_revision"])
         if not readiness["ready"]:
             flow._fail(run_id, "table_not_ready", readiness)
         try:
             snapshot = reports.save_snapshot(report_id, table_id)
         except RevisionConflict:
-            flow._fail(run_id, "table_not_ready", report_ready(flow.store, research_id, table_id))
+            flow._fail(run_id, "table_not_ready",
+                       evidence_view.readiness(flow.store, research_id, table_id, run["scope_revision"]))
     target = {"report_id": report_id, "section_id": None, "columns": snapshot["columns"], "plan": None, "cells": [],
               "gap_candidates": [], "prior_summaries": [], "review_scope": None,
               "limitations_core": None}

@@ -32,7 +32,14 @@ CLOSEST_CODES = frozenset({"criterion_absent", "part_without_evidence", "fulltex
                            "protocol_title", "abstract_promise_absent"})
 # How many closest works an answer reads, by its passage budget (quick 16, standard 48, detailed 80), and how many of
 # each one's pages. Included works keep MAX_PASSAGES_PER_SOURCE; an abstract-only work gives its abstract.
-CLOSEST_WORKS = {16: 3, 48: 5, 80: 8}
+# The standard budget's count is 12 since allocation version 7: on the 8 November engineering cuts the two works the
+# question itself compared were the 6th and 7th closest work, so a count of 5 left both out of the answer input.
+# Reading a part of the scope is what a closest work is for, and the count is the smallest step towards giving a
+# passage to the part it supports. An answer bound earlier keeps the count it was queued with.
+CLOSEST_WORKS = {16: 3, 48: 12, 80: 8}
+CLOSEST_WORKS_V6 = {16: 3, 48: 5, 80: 8}
+# The first allocation version whose standard budget reads 12 closest works.
+CLOSEST_WORKS_VERSION = 7
 CLOSEST_PAGES = 4
 # The selection marker of the one closest work taken although its reading found no criterion part.
 CLOSEST_FALLBACK = "closest_zero_part_fallback"
@@ -510,7 +517,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                 row["reason"] = "no_text_at_cutoff"
     # A closest work whose reading found no criterion part stays out; the rest are taken by the parts their reading
     # found, the frozen list's order breaking ties, and those past the budget's count stay out.
-    cap = CLOSEST_WORKS.get(run["budget"]["max_answer_passages"], CLOSEST_WORKS[48])
+    cap, cap_known = closest_cap(run["budget"]["max_answer_passages"], allocation_of(run["budget"]))
     closest = [row for row in rows if not row["reason"] and role_of(row) == "closest"]
     quoted_by_work = {}
     for row in closest:
@@ -522,7 +529,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
     # it away (Jia & Chen, 6 Nov). It stays a closest work with its reading's findings, its full-text decision is not
     # touched, and the row says why it was taken. An answer bound earlier (allocation version 4) leaves it out.
     fallback = None
-    allocation = run["budget"]["inspection"].get("answer_allocation_version", 0)
+    allocation = allocation_of(run["budget"])
     if allocation >= 5:
         fallback = next((row for row in closest if row["reason"] == "closest_no_part"
                          and row.get("abstract_decision_id")), None)
@@ -580,6 +587,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         "user_signature": small_batch.user_signature(store, rid), "items": rows,
         "excluded": excluded, "excluded_reasons": dict(Counter(r["reason"] for r in excluded)),
         "passage_ids": [p["id"] for p in passages], "limit": limit, "breadth": breadth,
+        "closest_cap": {"works": cap, "budget": limit, "budget_known": cap_known},
         "semantic_retrieval": "skipped: fast_path_lexical", "formula_passages": formulas,
         "result_passages": {**results, "moved": moved}})
 
@@ -622,6 +630,22 @@ def closest_parts(store: Any, row: dict[str, Any]) -> tuple[list[dict[str, str]]
     quoted = list(dict.fromkeys(r["passage_id"] for runs in rows_by_run.values() for r in runs.values()
                                 if r["label"] == "present" and r["quote_verified"] and r["passage_id"]))
     return parts, quoted
+
+
+def allocation_of(budget: dict[str, Any]) -> int:
+    """The answer allocation version a run froze; 0 for a run bound before the versions."""
+    return (budget.get("inspection") or {}).get("answer_allocation_version", 0)
+
+
+def closest_cap(passages: int, allocation: int = CLOSEST_WORKS_VERSION) -> tuple[int, bool]:
+    """How many closest works an answer of this passage budget reads, and whether the budget is one the table names.
+
+    The count belongs to the allocation version the run froze, so a run queued before version 7 keeps the count it
+    was queued with. A budget without its own count would otherwise read the standard budget's silently, so the
+    caller records `budget_known` and the rules guard keeps every depth's budget in the table.
+    """
+    table = CLOSEST_WORKS if allocation >= CLOSEST_WORKS_VERSION else CLOSEST_WORKS_V6
+    return table.get(passages, table[48]), passages in table
 
 
 def closest_rank(row: dict[str, Any]) -> tuple[int, int]:

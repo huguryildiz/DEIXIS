@@ -11,13 +11,14 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import transaction
 from deixis.workflow.read.equations import equation_fallback_field
 from deixis.workflow.run.flow import OptionalStepFailed, RunStopped
-from deixis.workflow.features.report import report_assembly as assembly, report_gaps as gaps, report_review_methodology as review_methodology, report_selection as selection
+from deixis.workflow.features.report import report_assembly as assembly, report_coverage as coverage, report_gaps as gaps, report_review_methodology as review_methodology, report_selection as selection
 from deixis.workflow.features.report.report_plan import freeze_plan
 from deixis.workflow.features.report.report_review import run_report_review
 from deixis.workflow.features.report.report_store import ReportStore
 from deixis.workflow.features.report.report_snapshot import countable_row_ids, evidence_row_ids
 from deixis.workflow.run.store import NotFound
 from deixis.workflow.features.tables.tables import report_ready
+from deixis.workflow.search.small_batch import save_code
 
 if TYPE_CHECKING:
     from deixis.workflow.run.flow import ResearchFlow
@@ -35,6 +36,9 @@ ROUNDS: tuple[tuple[str, ...], ...] = (
 ORDINALS = {"abstract": 0, "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6,
             "VII": 7, "VIII": 8, "IX": 9, "index_terms": 10}
 MAX_BASIS_PASSAGE_CHARS = 150000
+COVERAGE_KEY, COVERAGE_KIND = "report_coverage", "code:report_coverage"
+# The run event of a report delivered although one of its claims has no located basis.
+CLAIMS_WITHOUT_BASIS = "report_finalized_with_claims_without_basis"
 _DEPTH_ORDER = {"metadata": 0, "abstract": 1, "selected_sections": 2, "full_text": 3}
 
 
@@ -344,6 +348,9 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     # The word budget counts the snapshot's rows, never the live table: a resumed report freezes the same plan.
     frozen_plan = freeze_plan(output["result"], snapshot, snapshot.get("row_counts", {}).get("completed", len(snapshot["rows"])))
     reports.set_plan(report_id, frozen_plan)
+    # Before the synthesis: which sub-question each column of the table answers for how many rows, and which
+    # sub-questions the sections are about to be written without any evidence for. A record, not an input.
+    save_code(flow, run, COVERAGE_KEY, COVERAGE_KIND, lambda: coverage.coverage(snapshot, frozen_plan))
 
     if not flow.store.research(research_id)["title"]:
         # Section 15.1's title from the plan scope_statement is not implemented in this batch.
@@ -374,15 +381,26 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
             flow._pause(run_id, "section_failed", _pause_detail(reports, report_id, section_ids, 1))
 
     issues = assembly.run_assembly_checks(flow.store, reports, report_id)
-    errors = [issue for issue in issues if not (
-        issue["rule"].endswith("_warning") and issue["detail"].startswith("WARNING:")
-    )]
-    if errors:
+    # What each finding may cost the report (P12): a warning changes nothing; a claim whose citation found no basis is
+    # read once more and, if it still has none, delivered with its uncertainty reported; anything else refuses the
+    # report, as does a conclusion that has no claim left on a located basis.
+    scoped = assembly.repair_scope(issues)
+    unsupported = assembly.recheck_located_basis(
+        flow.store, reports, report_id, [issue["claim_key"] for issue in scoped["claims"]])
+    without = {issue["claim_key"] for issue in unsupported}
+    main_missing = assembly.main_answer_missing(flow.store, report_id, without=without)
+    if main_missing:
+        issues = issues + [{"rule": assembly.NO_MAIN_ANSWER, "section_id": assembly.MAIN_SECTION,
+                            "detail": "ERROR: the conclusion does not keep every claim on a located basis."}]
+    if scoped["blocking"] or main_missing:
         reports.finalize(report_id, "draft")
         flow.store.update_run(run_id, event="report_assembly_failed", pause_reason=None, error_json=issues)
     else:
         reports.finalize(report_id, "valid")
-        flow.store.update_run(run_id, event="report_finalized", pause_reason=None)
+        # A delivered report whose sections hold a claim without a located basis says so in its own run record; the
+        # claim keeps its unlocated citation, which no screen marks as located evidence.
+        flow.store.update_run(run_id, event="report_finalized" if not unsupported else CLAIMS_WITHOUT_BASIS,
+                              pause_reason=None, error_json=unsupported or None)
     flow._checkpoint(run_id, run["scope_revision"])
     await run_report_review(flow, run, scope, reports, report_id)
     flow._checkpoint(run_id, run["scope_revision"])

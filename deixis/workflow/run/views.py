@@ -370,6 +370,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
         }
     run = store.conn.execute("SELECT id, status, pause_reason FROM runs WHERE id = ?", (report["run_id"],)).fetchone()
     run = dict(run) if run else None
+    without_basis: list[dict[str, Any]] = []
     # The table the report was written from, from its run's stored target (the report row does not keep it).
     table_id = None
     if run:
@@ -380,7 +381,22 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                                           and "section_id" in item and isinstance(item.get("detail"), str)
                                           for item in error):
             run["error"] = error
-    return report | {"sections": sections, "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
+            # A delivered report whose run recorded a claim without a located basis (P12): the screen reports that
+            # claim's uncertainty instead of showing it as cited evidence. A refused report says it another way.
+            if report["status"] == "valid":
+                without_basis = [{"section_id": item["section_id"], "claim_key": item["claim_key"]}
+                                 for item in error if item.get("claim_key")
+                                 and item["rule"] in report_assembly.CLAIM_SCOPED]
+    # A claim the second reading found no basis for keeps its citation, but the citation is no located evidence any
+    # more: the screen opens the passage without a mark, as it does for any anchor it could not locate.
+    unlocated = {item["claim_key"] for item in without_basis}
+    for section in sections:
+        for claim in section["claims"]:
+            if claim["claim_key"] in unlocated:
+                for link in claim["evidence"]:
+                    link["anchor_match"] = None
+    return report | {"sections": sections, "claims_without_basis": without_basis,
+                     "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
                      "passage_freshness": passage_freshness(reports, report_id),
                      "edited_after_version": report["report_version"] if edited else None,
                      "has_human_edits": edited is not None,

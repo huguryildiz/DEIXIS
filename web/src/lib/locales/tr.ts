@@ -1309,6 +1309,11 @@ export const tr: Record<string, string> = {
   'Details': 'Ayrıntılar',
   'Read from': 'Okunan',
   'Run': 'İşlem',
+  '{n} sentence is delivered without a located quote: the cited evidence was read again and the quote was not found in it. The sentence keeps its citation, which no screen marks as located evidence.':
+    '{n} cümle, yerini bulduğumuz bir alıntı olmadan teslim edildi: gösterilen kanıt yeniden okundu ve alıntı içinde bulunamadı. Cümle atfını koruyor; hiçbir ekran onu yeri bulunmuş kanıt olarak işaretlemiyor.',
+  '{n} sentences are delivered without a located quote: the cited evidence was read again and the quotes were not found in it. The sentences keep their citations, which no screen marks as located evidence.':
+    '{n} cümle, yerini bulduğumuz bir alıntı olmadan teslim edildi: gösterilen kanıt yeniden okundu ve alıntılar içinde bulunamadı. Cümleler atıflarını koruyor; hiçbir ekran onları yeri bulunmuş kanıt olarak işaretlemiyor.',
+  'a sentence of the conclusion has no located basis': 'sonuç bölümündeki bir cümlenin yeri bulunmuş dayanağı yok',
   'Read from the abstract only.': 'Yalnızca özetten okundu.',
   'Undecided in Sources · in the report, read from the abstract only': 'Kaynaklar’da kararsız · rapora girer, yalnızca özetten okundu',
   '(from abstract)': '(özetten)',

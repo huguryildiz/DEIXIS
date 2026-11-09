@@ -71,8 +71,9 @@ RERANK_RULE = {"version": 5, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_w
                "floors": {"chain_only": 5, "narrow_only": 5}}
 RERANK_RULE_V1 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
 # 5: one closest place for a work whose reading found no criterion part. 6: every abstract-only work's abstract
-# before the closest works' second to fourth pages, and that zero-part work at most 2 passages.
-ANSWER_ALLOCATION_VERSION = 6
+# before the closest works' second to fourth pages, and that zero-part work at most 2 passages. 7: the standard
+# passage budget reads 12 closest works instead of 5.
+ANSWER_ALLOCATION_VERSION = 7
 
 
 def steps(store: Any, run_id: str) -> list[dict[str, Any]]:

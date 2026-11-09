@@ -266,6 +266,56 @@ def test_read_work_that_missed_the_criterion_is_a_closest_work(tmp_path):
     assert svid not in {r["source_version_id"] for r in later["items"]}
 
 
+@pytest.mark.parametrize("allocation", ["v7", "v6"])
+def test_a_standard_answer_reads_twelve_closest_works_and_keeps_every_included_work(tmp_path, monkeypatch,
+                                                                                   allocation):
+    """The standard passage budget reads 12 closest works, so a work that reads a part of the scope is not left out
+    for standing sixth or seventh in the list; the 13th is. An answer bound before allocation version 7 keeps the
+    count of 5 it was queued with. The included work keeps its place and its passage whatever the closest works
+    take (P12)."""
+    if allocation == "v6":
+        monkeypatch.setattr(small_batch, "ANSWER_ALLOCATION_VERSION", 6)
+    lib = setup(tmp_path, n=1, pdf=13)
+    discovery = lib.discovery["budget"] | {"max_model_calls": 60}
+    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?",
+                           (json.dumps(discovery), lib.discovery["id"]))
+    lib.discovery = lib.store.run(lib.discovery["id"])
+    included, closest = lib.sources[0], lib.sources[1:]
+    for svid in closest:
+        inspected_pdf(lib, "part_without_evidence", svid=svid)
+        # Every one of them found the same part, so the frozen list's order alone decides who is read.
+        read_parts(lib, svid, {"model": "present"})
+    cutoff(lib)
+    run = answer_run(lib)
+    budget = run["budget"] | {"max_answer_passages": 48, "max_model_calls": 20}
+    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), run["id"]))
+    run = lib.store.run(run["id"])
+    plan = fast_answer.input_plan(lib.flow, run, lib.store.scope(lib.rid))
+    read = [row["source_version_id"] for row in plan["items"]]
+    cap = 12 if allocation == "v7" else 5
+    assert plan["closest_cap"] == {"works": cap, "budget": 48, "budget_known": True}
+    # The sixth and seventh closest work are read under the new count, and left out under the one before it.
+    assert (closest[5] in read and closest[6] in read) is (allocation == "v7")
+    assert {e["source_version_id"]: e["reason"] for e in plan["excluded"]} == {
+        svid: "closest_over_cap" for svid in closest[cap:]}
+    assert sum(fast_answer.role_of(row) == "closest" for row in plan["items"]) == cap
+    # The included work is still there, with a passage of its own.
+    assert included in read
+    owners = {lib.store.passage(pid)["source_version_id"] for pid in plan["passage_ids"]}
+    assert included in owners and (closest[5] in owners) is (allocation == "v7")
+
+
+def test_every_depth_has_its_own_closest_count(tmp_path):
+    """A passage budget CLOSEST_WORKS does not name would silently read the standard budget's count, so every depth's
+    budget is in the table, and a budget outside it is recorded as unknown."""
+    del tmp_path
+    for table in (fast_answer.CLOSEST_WORKS, fast_answer.CLOSEST_WORKS_V6):
+        for budget in TEST_EFFORT_BUDGETS.values():
+            assert budget.max_answer_passages in table, (budget.max_answer_passages, table)
+    assert fast_answer.closest_cap(64) == (fast_answer.CLOSEST_WORKS[48], False)
+    assert fast_answer.closest_cap(48, 6) == (fast_answer.CLOSEST_WORKS_V6[48], True)
+
+
 @pytest.mark.parametrize("allocation", ["v6", "v5", "before_v5"])
 def test_closest_works_are_taken_by_the_parts_their_reading_found(tmp_path, monkeypatch, allocation):
     """The closest works are taken by the parts their reading found, the list order breaking ties, up to the

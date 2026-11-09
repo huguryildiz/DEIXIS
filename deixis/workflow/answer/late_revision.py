@@ -339,14 +339,17 @@ def inclusion_pages(upgrades: dict[str, dict[str, Any]], base_work_ids: set[str]
 
 
 def upgrades_of(store: Any, works: list[dict[str, Any]], base: dict[str, Any] | None,
-                passages: int) -> dict[str, dict[str, Any]]:
+                passages: int, allocation: int = 0) -> dict[str, dict[str, Any]]:
     """The late readings a revision reads in full: every inclusion, and the works read without inclusion as closest
     works while the base answer has closest places left by its budget (`passages`), taken as the answer takes
     them: none whose reading found no criterion part, more parts found first. A closest work new to the answer
     also needs a passage the base answer left free; one the base read from its abstract takes that abstract's place."""
     upgrades = {i["work_id"]: i for i in works if i["late_outcome"] == "include" and i["late_asset_id"]}
     if base is not None:
-        room = (fast_answer.CLOSEST_WORKS.get(passages, fast_answer.CLOSEST_WORKS[48])
+        # The base answer's own count, as it recorded it: a revision never widens the answer it revises. An answer
+        # stored before that record falls back to the count of the allocation version this run froze.
+        recorded = (base.get("closest_cap") or {}).get("works")
+        room = ((recorded if recorded is not None else fast_answer.closest_cap(passages, allocation)[0])
                 - sum(fast_answer.role_of(i) == "closest" for i in base["items"]))
         in_base = {i["work_id"] for i in base["items"]}
         free = (passages - len(kept_passages(base, {i["work_id"] for i in works if is_late_excluded(store, i)}))
@@ -378,7 +381,8 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     fast_answer.check_input(flow, run["id"], base)
     works = outcomes(flow, row)
     check_candidates(flow, row, works, pause_run=run["id"])
-    upgrades = upgrades_of(store, works, base, run["budget"]["max_answer_passages"])
+    upgrades = upgrades_of(store, works, base, run["budget"]["max_answer_passages"],
+                           fast_answer.allocation_of(run["budget"]))
     # A closest work the revision has no place for leaves it too, whatever its reading's outcome, as an answer leaves
     # out the closest works past its count.
     excluded = {i["work_id"] for i in works if i["work_id"] not in upgrades and (is_late_excluded(store, i) or (

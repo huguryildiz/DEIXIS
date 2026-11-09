@@ -23,8 +23,11 @@ _CORPUS_KEYS = ("found", "unique", "screened", "included", "full_text")
 _BANNED = contracts.REPORT_BANNED
 
 
-def _issue(rule: str, section_id: str, detail: str) -> dict[str, Any]:
-    return {"rule": rule, "section_id": section_id, "detail": detail}
+def _issue(rule: str, section_id: str, detail: str, claim_key: str | None = None) -> dict[str, Any]:
+    """One finding of a check. `claim_key` is written only by the checks whose finding is confined to one claim, so
+    the repair that follows can leave that claim alone without touching the rest of the report."""
+    return {"rule": rule, "section_id": section_id, "detail": detail,
+            **({"claim_key": claim_key} if claim_key else {})}
 
 
 def _claims(store: Store, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
@@ -611,17 +614,19 @@ def _check_anchors(store: Store, reports: ReportStore, report_id: str, *, curren
         section, key = link["section_id"], link["claim_key"]
         anchor = link["anchor_text"]
         if not link["anchor_match"] or not anchor:
-            issues.append(_issue("citation_anchor_unmatched", section, f"ERROR: {key} has unmatched anchor."))
+            issues.append(_issue("citation_anchor_unmatched", section, f"ERROR: {key} has unmatched anchor.", key))
         if link["cell_id"]:
             cell = cells.get(link["cell_id"])
             if not cell:
-                issues.append(_issue("cell_not_in_snapshot", section, f"ERROR: {key} cell is outside snapshot."))
+                issues.append(_issue("cell_not_in_snapshot", section, f"ERROR: {key} cell is outside snapshot.", key))
             elif anchor and contracts.locate_in_cell_evidence(anchor, cell) is None:
-                issues.append(_issue("anchor_not_in_cell_evidence", section, f"ERROR: {key} anchor is absent from cell quotes."))
+                issues.append(_issue("anchor_not_in_cell_evidence", section,
+                                     f"ERROR: {key} anchor is absent from cell quotes.", key))
         else:
             passage = store.conn.execute("SELECT text FROM passages WHERE id = ?", (link["passage_id"],)).fetchone()
             if anchor and (not passage or not contracts.locate_anchor(anchor, passage["text"])):
-                issues.append(_issue("anchor_not_in_passage", section, f"ERROR: {key} anchor is absent from passage."))
+                issues.append(_issue("anchor_not_in_passage", section,
+                                     f"ERROR: {key} anchor is absent from passage.", key))
     return issues
 
 
@@ -793,3 +798,97 @@ def run_current_checks(store: Store, reports: ReportStore, report_id: str) -> di
     return shape_result(items, skipped, [check.__name__.removeprefix("_check_") for check in _CHECKS]
                         + ["limitations_number_restated"],
                         sum(claim["current_revision_id"] is not None for claim in claims))
+
+
+# ---- what a finding may be repaired by (P12) ----
+
+# The section whose claims state the report's answer to the question it was asked. A report whose conclusion has no
+# claim, or keeps one without a located basis, is not a successful report, whatever else stands.
+MAIN_SECTION = "IX"
+# The rules whose finding is confined to the claim it names: the claim's citation found no basis in the evidence the
+# step was given. Every other rule is about the report as a whole (its counts, its wording, its bibliography, its
+# word budget, a malformed stored record) and still refuses the report.
+CLAIM_SCOPED = frozenset({"citation_anchor_unmatched", "anchor_not_in_passage", "anchor_not_in_cell_evidence",
+                          "cell_not_in_snapshot"})
+NO_MAIN_ANSWER = "main_question_unanswered"
+
+
+def is_warning(issue: dict[str, Any]) -> bool:
+    """A non-blocking finding, by the convention `run_assembly_checks` documents."""
+    return issue["rule"].endswith("_warning") and issue["detail"].startswith("WARNING:")
+
+
+def repair_scope(issues: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Sort assembly findings by what each one may cost the report.
+
+    `warnings` change nothing. `claims` name one claim whose citation found no basis: that claim is rechecked and, if
+    it still has none, delivered with its uncertainty reported instead of refusing the whole report. `blocking` is
+    everything else, which refuses the report as it did before.
+    """
+    scope: dict[str, list[dict[str, Any]]] = {"warnings": [], "claims": [], "blocking": []}
+    for issue in issues:
+        if is_warning(issue):
+            scope["warnings"].append(issue)
+        elif issue["rule"] in CLAIM_SCOPED and issue.get("claim_key"):
+            scope["claims"].append(issue)
+        else:
+            scope["blocking"].append(issue)
+    return scope
+
+
+def recheck_located_basis(store: Store, reports: ReportStore, report_id: str,
+                          claim_keys: list[str]) -> list[dict[str, Any]]:
+    """Read the named claims' citations again and return the findings that are still there.
+
+    The first reading can be older than the records: a passage re-extracted or a cell filled again while the sections
+    were written changes where an anchor is found. The check is the same code (`_check_anchors`), run once more over
+    what is stored now, so a claim is only reported without a basis after a second reading found none.
+    """
+    wanted = set(claim_keys)
+    return [issue for issue in _check_anchors(store, reports, report_id) if issue.get("claim_key") in wanted]
+
+
+def located_claims(store: Store, report_id: str, *, without: set[str] = frozenset()) -> set[str]:
+    """The claim keys that rest, directly or through their body refs, on a citation located in the evidence.
+
+    A claim of a derived section (the abstract, I and IX) cites nothing itself: it names body claims by `body_ref`,
+    so it is supported when that chain reaches a claim with a located citation. `without` names the claims whose basis
+    the recheck did not find; they carry nothing on.
+
+    Support is spread over the graph of body refs until nothing more can be reached, rather than resolved claim by
+    claim: two claims may name each other, and one of them may also name a third that does have a basis, so an
+    answer that stopped at the first cycle it met would call both of them unsupported.
+    """
+    claims = _claims(store, report_id)
+    keys = {claim["claim_key"] for claim in claims}
+    own = {link["claim_key"] for link in _links(store, report_id)
+           if link["anchor_match"] and link["claim_key"] not in without}
+    refs: dict[str, set[str]] = defaultdict(set)
+    for claim in claims:
+        for ref in store.conn.execute(
+            "SELECT ref_value FROM report_claim_refs WHERE claim_id = ? AND ref_kind = 'body_ref'", (claim["id"],),
+        ):
+            refs[claim["claim_key"]].add(ref["ref_value"])
+    supported = {key for key in own if key in keys and key not in without}
+    spreading = True
+    while spreading:
+        spreading = False
+        for key in keys - supported - set(without):
+            if refs[key] & supported:
+                supported.add(key)
+                spreading = True
+    return supported
+
+
+def main_answer_missing(store: Store, report_id: str, *, without: set[str] = frozenset()) -> bool:
+    """Whether the report's main question is left unanswered: its conclusion has no claim at all, or one of its
+    claims has no located basis.
+
+    The conclusion is where the report answers the question it was asked, and nothing stored says which of its
+    sentences carries that answer — a claim names body claims, never a research question. So every sentence of the
+    conclusion must keep its basis: one of them delivered without one leaves the report's main result unfounded.
+    """
+    supported = located_claims(store, report_id, without=without)
+    conclusion = [claim["claim_key"] for claim in _claims(store, report_id)
+                  if claim["section_id"] == MAIN_SECTION]
+    return not conclusion or any(key not in supported for key in conclusion)

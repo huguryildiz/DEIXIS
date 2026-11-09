@@ -375,6 +375,13 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
           {report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
         {running && report.run?.status !== 'paused' && <div className="art live" role="status"><div className="thumb" aria-hidden><i /><i /><i /></div><div><h3 className="shimmer-text">{t('Writing the evidence report…')}</h3><small>{t('The cited cells are frozen with this version.')}</small></div></div>}
         {report.basis && <ReportBasisNotice basis={report.basis} />}
+        {report.claims_without_basis?.length > 0 && <Notice tone="attention">
+          <p>{t(report.claims_without_basis.length === 1
+            ? '{n} sentence is delivered without a located quote: the cited evidence was read again and the quote was not found in it. The sentence keeps its citation, which no screen marks as located evidence.'
+            : '{n} sentences are delivered without a located quote: the cited evidence was read again and the quotes were not found in it. The sentences keep their citations, which no screen marks as located evidence.',
+            { n: report.claims_without_basis.length })}</p>
+          <ul>{report.claims_without_basis.map(item => <li key={`${item.section_id}:${item.claim_key}`}>{labels(item.section_id)} · {item.claim_key}</li>)}</ul>
+        </Notice>}
         {report.missing_rows && <Notice tone="attention">
           <p>{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows were excluded from the report’s evidence assessment and aggregation denominators.', { n: report.missing_rows.counts.failed, m: report.missing_rows.counts.included, cells: report.missing_rows.counts.cells_missing })}</p>
           <ul>{report.missing_rows.failed_rows.map(row => <li key={row.source_version_id}>{row.source_key || row.title}: {failedRowReasonText(row.reason)}</li>)}</ul>

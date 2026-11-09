@@ -408,6 +408,7 @@ const assemblyRuleLabels: Record<string, string> = {
   banned_word: 'banned word', empty_section: 'empty section',
   corpus_count_mismatch: 'corpus count mismatch', citation_anchor_unmatched: 'unlocated citation quote',
   anchor_not_in_cell_evidence: 'quote missing from cell evidence', anchor_not_in_passage: 'quote missing from passage',
+  main_question_unanswered: 'a sentence of the conclusion has no located basis',
 }
 export const reportAssemblyDraftText = (error: unknown) => {
   const rules: string[] = []

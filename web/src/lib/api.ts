@@ -1086,6 +1086,8 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
   // What the table was read from, frozen with the snapshot; null for a report saved before it.
   basis: ReportBasis | null
+  // Claims delivered although no quote of their own citations was located; their uncertainty is reported, not hidden.
+  claims_without_basis: { section_id: string; claim_key: string }[]
   // `stale`: every cited cell or row that differs from the snapshot, including changes a section marked as seen.
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[]
     stale?: { key: string; kind: 'cell_changed' | 'source_removed'; source_version_id: string; cell_id?: string; column_id?: string }[] }

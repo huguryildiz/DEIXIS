@@ -1031,10 +1031,14 @@ export type CellEvidence = {
   text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr' | null
   equation_reader?: EquationReaderInfo | null  // who read the equations of an 'equation_ocr' passage
 }
+export type CellDirection = 'higher' | 'lower' | 'comparable' | 'mixed'
 export type CellRevision = {
   id: string; kind: 'model_fill' | 'model_proposal' | 'system_fill' | 'human_edit' | 'accept_proposal' | 'dismiss_proposal'
   author: 'model' | 'human' | 'system'; based_on_revision_id: string | null; column_revision: number; state: CellState | null
   value: CellValue | null; note: string | null; reading_depth: 'metadata' | 'abstract' | 'selected_sections' | 'full_text' | null
+  // What the finding was measured against, under what setting and which way it went; null when the quotes state none.
+  // `depth_narrowed` is always false on a stored revision: a cell's own reading is never a report's narrowing.
+  compared_method: string | null; condition: string | null; direction: CellDirection | null; depth_narrowed: false
   output_status: 'structurally_valid' | 'unverified_draft' | null; cell_version_at_request: number | null; scope_revision: number | null
   run_id: string | null; created_at: string; model: { connection: string | null; resolved_model: string | null } | null; evidence: CellEvidence[]
   decision?: 'accepted' | 'dismissed' | 'pending' | 'superseded'  // model proposals in a cell's history
@@ -1093,7 +1097,10 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
     stale?: { key: string; kind: 'cell_changed' | 'source_removed'; source_version_id: string; cell_id?: string; column_id?: string }[] }
   references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null; abstract_only?: boolean; full_text_read?: boolean }[]
   table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null; failed?: boolean; abstract_only?: boolean; full_text_read?: boolean }[]
-    cells: { cell_id: string; column_id: string; source_version_id: string; state: CellState; value: CellValue | null; evidence_passage_ids: string[] }[] } | null
+    // `depth_narrowed`: the cell read deeper than this report may, so its depth here is the report's bound, not the cell's.
+    cells: { cell_id: string; column_id: string; source_version_id: string; state: CellState; value: CellValue | null
+      compared_method: string | null; condition: string | null; direction: CellDirection | null
+      reading_depth: CellRevision['reading_depth']; depth_narrowed: boolean | null; evidence_passage_ids: string[] }[] } | null
   run: { id: string; status: RunStatus; pause_reason: string | null; error?: { rule: string; section_id: string | null; detail: string }[] | null } | null; table_id: string | null }
 export type TableTemplate = { id: string; name: string; columns: ColumnSpec[]; created_at: string }
 export type CellEdit = { state: CellState; value: CellValue | null; note: string | null; keep_evidence_from: string | null; expected_version: number }

@@ -24,7 +24,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["column_id", "state", "value", "note", "evidence"],
+        "required": ["column_id", "state", "value", "note", "compared_method", "condition", "direction", "evidence"],
         "properties": {
           "column_id": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" },
           "state": {
@@ -81,6 +81,21 @@
             "type": ["string", "null"],
             "maxLength": 600,
             "description": "Short reason, required for not_applicable. No page, equation, table, figure or section numbers."
+          },
+          "compared_method": {
+            "type": ["string", "null"],
+            "maxLength": 120,
+            "description": "The other method or baseline this finding is measured against, named as the cited passages name it. Null when they name none."
+          },
+          "condition": {
+            "type": ["string", "null"],
+            "maxLength": 200,
+            "description": "The setting the finding was obtained under, as the cited passages state it. Null when they state none."
+          },
+          "direction": {
+            "type": ["string", "null"],
+            "enum": ["higher", "lower", "comparable", "mixed", null],
+            "description": "Which way this source's subject stands against compared_method on this column: higher, lower, comparable, or mixed across its own conditions. Null when the cited passages state no direction."
           },
           "evidence": {
             "type": "array",

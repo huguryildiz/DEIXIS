@@ -109,6 +109,28 @@ def column_spec(name: str, instruction: str, answer_format: str, options: list[d
             "unit_hint": (unit_hint or "").strip() or None if answer_format == "number_unit" else None}
 
 
+DIRECTIONS = ("higher", "lower", "comparable", "mixed")
+
+
+def check_qualifiers(state: str, links: list[dict[str, Any]], compared_method: str | None, condition: str | None,
+                     direction: str | None) -> tuple[str | None, str | None, str | None]:
+    """What a cell answer may say about the comparison its finding stands in, checked against the answer itself.
+
+    Three rules, the same ones the library's own CHECK holds, so no writer can get round them: only a cell that states
+    an answer qualifies it, a direction needs the method it is a direction against, and a qualifier rests on the same
+    located quotes as the value. "Located" means a link whose words were found in its passage: a link the code could
+    not anchor is no basis for a comparison any more than it is for the value. A qualifier that breaks one of them is
+    dropped, never kept half: the caller's answer is already stored and a comparison nobody can check is worse than
+    none. The model's own mistakes are reported where they are made (`contracts._check_cells`), not here.
+    """
+    if state != "value" or not any(link.get("anchor_match") for link in links):
+        return None, None, None
+    method = (compared_method or "").strip()[:120] or None
+    setting = (condition or "").strip()[:200] or None
+    way = direction if direction in DIRECTIONS and method else None
+    return method, setting, way
+
+
 def check_value(column: dict[str, Any], state: str, value: Any) -> dict[str, Any] | None:
     """The value a cell state carries, checked against the column's answer format. Nothing is converted."""
     if state not in CELL_STATES:
@@ -627,6 +649,9 @@ class TableStore:
                 column_revision=proposal["column_revision"], state=proposal["state"],
                 value_json=json.loads(proposal["value_json"]) if proposal["value_json"] else None, note=proposal["note"],
                 reading_depth=proposal["reading_depth"],
+                # The accepted value keeps what the proposal said its finding was measured against: dropping it here
+                # would leave the person a number whose comparison and setting nothing records.
+                compared_method=proposal["compared_method"], condition=proposal["condition"], direction=proposal["direction"],
             )
             self._insert_links(revision_id, self._links(proposal_id))
             self._set_current(research_id, cell, revision_id, "accept_proposal")
@@ -636,7 +661,8 @@ class TableStore:
                           value: Any, note: str | None, reading_depth: str, output_status: str, links: list[dict[str, Any]],
                           run_id: str, step_id: str, step_input_id: str, model_connection: str, resolved_model: str | None,
                           scope_revision: int, cell_version_at_request: int | None, recheck: bool, refresh: bool = False,
-                          unverified_fill: bool = False) -> str | None:
+                          unverified_fill: bool = False, compared_method: str | None = None, condition: str | None = None,
+                          direction: str | None = None) -> str | None:
         """A valid fill result for an empty cell becomes its value; every other model result waits as a proposal.
 
         Nothing is written when the source is no longer a row of the table, and None says so: a person who removed
@@ -670,9 +696,10 @@ class TableStore:
             replaced = self._refreshable(cell, cell_version_at_request, column_revision, links) if (
                 refresh and not fill and output_status == "structurally_valid" and reading_depth != "abstract") else None
             kind = "model_fill" if fill or replaced else "model_proposal"
+            method, setting, way = check_qualifiers(state, links, compared_method, condition, direction)
             revision_id = self._insert_revision(
                 cell, kind=kind, author="model", based_on_revision_id=replaced, column_revision=column_revision, state=state,
-                value_json=value, note=note,
+                value_json=value, note=note, compared_method=method, condition=setting, direction=way,
                 reading_depth=reading_depth, output_status=output_status, cell_version_at_request=cell_version_at_request,
                 scope_revision=scope_revision, run_id=run_id, step_id=step_id, step_input_id=step_input_id,
                 model_connection=model_connection, resolved_model=resolved_model,
@@ -999,7 +1026,11 @@ class TableStore:
             " LEFT JOIN source_assets a ON a.id = p.asset_id WHERE l.cell_revision_id = ? ORDER BY l.rowid", (revision["id"],)
         )]
         return {
+            # A stored revision is the cell's own reading, never a narrowed one: the field says so in words, so the
+            # surfaces that write "not stated in the abstract that was read" need not guess from an absent key.
+            "depth_narrowed": False,
             **{k: revision[k] for k in ("id", "kind", "author", "based_on_revision_id", "column_revision", "state", "note",
+                                        "compared_method", "condition", "direction",
                                         "reading_depth", "output_status", "cell_version_at_request", "scope_revision", "run_id",
                                         "created_at")},
             "value": json.loads(revision["value_json"]) if revision["value_json"] else None,

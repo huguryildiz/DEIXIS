@@ -1,9 +1,9 @@
--- The whole library schema at version 20. A new library is made from this file in one transaction and
--- records versions 1 to 20; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 21. A new library is made from this file in one transaction and
+-- records versions 1 to 21; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 20
+-- deixis:schema-version 21
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -347,7 +347,7 @@ CREATE TABLE cell_revisions (
   model_connection TEXT,
   resolved_model TEXT,
   idempotency_key TEXT UNIQUE,
-  created_at TEXT NOT NULL,
+  created_at TEXT NOT NULL, compared_method TEXT, condition TEXT, direction TEXT CHECK ((direction IS NULL OR (direction IN ('higher', 'lower', 'comparable', 'mixed') AND compared_method IS NOT NULL)) AND (COALESCE(state, '') = 'value' OR (compared_method IS NULL AND condition IS NULL AND direction IS NULL))),
   CHECK ((kind IN ('model_fill', 'model_proposal')) = (author = 'model')),
   CHECK (author <> 'model' OR (step_input_id IS NOT NULL AND output_status IS NOT NULL)),
   CHECK ((kind = 'system_fill') = (author = 'system')),

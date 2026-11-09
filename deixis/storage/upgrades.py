@@ -745,4 +745,15 @@ ALTER TABLE search_runs ADD COLUMN sort TEXT;
 -- the origin is recorded. Rows written before this step came from a request and read `request`.
 ALTER TABLE chain_links ADD COLUMN origin TEXT NOT NULL DEFAULT 'request' CHECK (origin IN ('request', 'pool'));
 """),
+    21: Step("0021_cell_finding_scope.sql", False, """\
+-- What a cell's finding was measured against, under what setting, and which way it went. A number alone does not say
+-- whether it beats the other method or under which experiment it was taken, so the three travel with the value and
+-- the quotes it rests on, and the report can tell two results of one column apart instead of merging them. NULL means
+-- the cited passage does not state it, never that no comparison exists. The CHECK on the last column holds two rules
+-- for every writer: only a cell whose state is 'value' carries any of the three (a cell that found nothing, and a
+-- value whose quote could not be located, carry none), and a direction needs the method it is a direction against.
+ALTER TABLE cell_revisions ADD COLUMN compared_method TEXT;
+ALTER TABLE cell_revisions ADD COLUMN condition TEXT;
+ALTER TABLE cell_revisions ADD COLUMN direction TEXT CHECK ((direction IS NULL OR (direction IN ('higher', 'lower', 'comparable', 'mixed') AND compared_method IS NOT NULL)) AND (COALESCE(state, '') = 'value' OR (compared_method IS NULL AND condition IS NULL AND direction IS NULL)));
+"""),
 }

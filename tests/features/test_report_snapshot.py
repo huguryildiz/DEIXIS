@@ -88,7 +88,9 @@ def test_snapshot_freezes_cell_revision_value_and_stored_evidence_after_later_ed
     cell = snapshot["cells"][0]
     assert cell == {"cell_id": cell["cell_id"], "cell_revision_id": first_revision, "column_id": column_id,
                     "source_version_id": source_id, "state": "value", "value": {"text": "128 bytes"},
-                    "reading_depth": "abstract", "evidence": [{"passage_id": passage_id, "quote": "128-byte packets"}]}
+                    "reading_depth": "abstract", "depth_narrowed": False,
+                    "compared_method": None, "condition": None, "direction": None,
+                    "evidence": [{"passage_id": passage_id, "quote": "128-byte packets"}]}
     assert snapshot["corpus"] == {"found": 0, "unique": 1, "screened": 0, "included": 1, "full_text": 0}
     tables.edit_cell(research_id, table_id, column_id, source_id, "value", {"text": "256 bytes"}, None,
                      first_revision, 1, None)

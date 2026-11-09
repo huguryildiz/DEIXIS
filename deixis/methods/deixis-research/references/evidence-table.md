@@ -46,7 +46,21 @@ Goal: answer every column in `extraction_target.columns` for the one source
      `unknown`, not a guess.
    - `text`: `{"text": ...}`, at most 500 characters, close to the source's own
      words. Do not add interpretation the passages do not state.
-5. For each supporting span add one `evidence` item. Its `quote` is the shortest
+5. Say what the finding stands in comparison to, in three fields the cited
+   passages must state. Each is null when they do not state it; never infer
+   one, and write none of them for a state other than `value` or for a cell
+   that cites nothing.
+   - `compared_method`: the other method, scheme or baseline this finding is
+     measured against, named as the passages name it.
+   - `condition`: the setting the finding was obtained under, as the passages
+     state it, such as the number of nodes, the depth, the channel or the
+     dataset.
+   - `direction`: `higher`, `lower`, `comparable` or `mixed` — which way this
+     source's subject stands against `compared_method` on this column. It
+     describes the quantity, not whether the result is good. Use `mixed` when
+     the passages give results that go different ways under their own
+     conditions. A direction needs a `compared_method`; without one it is null.
+6. For each supporting span add one `evidence` item. Its `quote` is the shortest
    exact, contiguous span that supports the answer, and its `passage_id` is the
    passage that contains that span. The same sentence can appear in more than
    one passage of a source; cite the one whose text you copied. Copy it exactly:
@@ -75,11 +89,13 @@ Goal: answer every column in `extraction_target.columns` for the one source
    such an equation only with the page as the check, and say so in `note`.
    `equation_fallbacks` gives the PDF's raw text of the same equation for
    comparison; it is not part of the passage and cannot be cited.
-6. Keep `note` to a short reason, or null. Do not put page, equation, table,
+7. Keep `note` to a short reason, or null. Do not put page, equation, table,
    figure or section numbers in it; the application shows locators from its own
    records.
-7. An abstract cannot support method details, equations, constraints or results
-   it does not state.
+8. An abstract cannot support method details, equations, constraints or results
+   it does not state. A measurement the abstract does not state is
+   `not_found_in_inspected_scope`, which the application shows as "not stated in
+   the abstract that was read".
 
 Write notes in the question's language unless the StepInput says otherwise.
 

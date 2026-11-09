@@ -38,12 +38,19 @@ WARNINGS = (
     ("text_superseded", "This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction."),
 )
 INFO_WIDTHS = (12.0, 50.0, 40.0, 30.0, 6.0, 18.0, 14.0, 16.0)
-PER_COLUMN = ("", "{name} — evidence", "{name} — source", "{name} — state", "{name} — warnings")
+PER_COLUMN = ("", "{name} — comparison", "{name} — evidence", "{name} — source", "{name} — state", "{name} — warnings")
+# Which way a finding went against the method it was measured against.
+DIRECTIONS = {"higher": "higher than {method}", "lower": "lower than {method}", "comparable": "comparable with {method}",
+              "mixed": "mixed against {method}"}
+# A measurement column answered from an abstract that states no measurement says so in those words (the design's
+# wording). A depth a report narrowed to its own reading keeps the general state, so the words stay true of the cell.
+ABSTRACT_SILENT = "Not stated in the abstract that was read"
 
 
 @dataclass(frozen=True)
 class CellText:
     value: str | int | float  # the CSV's value text; a bare number stays a number
+    comparison: str            # what the finding was measured against, which way it went and under what setting
     evidence: tuple[str, ...]  # one "“quote” — locator" per evidence item, as stored
     source: str                # the grid's source line
     state: str                 # the stored state, written out; empty for an empty cell
@@ -84,13 +91,35 @@ def _value(t: Translate, language: Language, column: dict[str, Any], value: dict
     return value.get("text") or ""
 
 
+def _state_text(t: Translate, column: dict[str, Any], current: dict[str, Any]) -> str:
+    """The words a stored state reads as, in the grid's language."""
+    state = current.get("state")
+    if not state:
+        return ""
+    if (state == "not_found_in_inspected_scope" and column.get("answer_format") == "number_unit"
+            and current.get("reading_depth") == "abstract" and current.get("depth_narrowed") is False):
+        return t(ABSTRACT_SILENT)
+    return t(STATES[state]) if state in STATES else state
+
+
+def _comparison(t: Translate, current: dict[str, Any]) -> str:
+    """What the finding stands against, written out; empty when the cell stores none."""
+    method, direction, condition = current.get("compared_method"), current.get("direction"), current.get("condition")
+    parts = []
+    if method:
+        parts.append(t(DIRECTIONS[direction], method=method) if direction in DIRECTIONS else t("vs {method}", method=method))
+    if condition:
+        parts.append(condition)
+    return "; ".join(parts)
+
+
 def _cell(t: Translate, language: Language, column: dict[str, Any], summary: dict[str, Any] | None) -> CellText:
     current = (summary or {}).get("current")
     if not current:
-        return CellText("", (), "", "", None, ())
+        return CellText("", "", (), "", "", None, ())
     state = current.get("state")
     value = _value(t, language, column, current.get("value")) if state in ("value", "not_verified") \
-        else t(STATES[state]) if state else ""
+        else _state_text(t, column, current)
     evidence = tuple(" — ".join(part for part in (f"“{e['anchor_text']}”" if e.get("anchor_text") else "", locator_text(t, e)) if part)
                      for e in current.get("evidence") or [])
     depth = current.get("reading_depth")
@@ -99,7 +128,7 @@ def _cell(t: Translate, language: Language, column: dict[str, Any], summary: dic
                                           t("no linked evidence") if state == "not_verified" else "") if part)
     flags = set((summary or {}).get("flags") or [])
     warnings = tuple(t(text, old=current.get("column_revision")) for flag, text in WARNINGS if flag in flags)
-    return CellText(value, evidence, source, t(STATES[state]) if state in STATES else (state or ""), state, warnings)
+    return CellText(value, _comparison(t, current), evidence, source, _state_text(t, column, current), state, warnings)
 
 
 def rows(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Language, style: CitationStyle):
@@ -124,9 +153,10 @@ def xlsx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Langu
     info_header, names, data = rows(view, sources, language=language, style=style)
     header = info_header + [t(label, name=name) if label else name for name in names for label in PER_COLUMN]
     body = tuple(tuple(info) + tuple(item for cell in cells for item in
-                                     (cell.value, " | ".join(cell.evidence), cell.source, cell.state, " | ".join(cell.warnings)))
+                                     (cell.value, cell.comparison, " | ".join(cell.evidence), cell.source, cell.state,
+                                      " | ".join(cell.warnings)))
                  for info, cells in data)
-    widths = INFO_WIDTHS + (24.0, 50.0, 18.0, 18.0, 40.0) * len(names)
+    widths = INFO_WIDTHS + (24.0, 30.0, 50.0, 18.0, 18.0, 40.0) * len(names)
     return ooxml.xlsx([ooxml.Sheet(view["table"]["title"], tuple(header), body, widths)], title=view["table"]["title"])
 
 
@@ -153,7 +183,9 @@ def docx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Langu
             # A state other than a plain value is named on its own line unless the value text already is that name.
             state = [ooxml.paragraph(t("State: {state}", state=cell.state), style="Small")] \
                 if cell.stored_state not in (None, "value") and cell.state != text else []
-            row.append([ooxml.paragraph(text), *([ooxml.paragraph(cell.source, style="Small")] if cell.source else []), *state,
+            row.append([ooxml.paragraph(text),
+                        *([ooxml.paragraph(cell.comparison, style="Small")] if cell.comparison else []),
+                        *([ooxml.paragraph(cell.source, style="Small")] if cell.source else []), *state,
                         *(ooxml.paragraph(ooxml.Run(w, bold=True), style="Small") for w in cell.warnings),
                         *(ooxml.paragraph(item, style="Small") for item in cell.evidence)])
         values.append(row)

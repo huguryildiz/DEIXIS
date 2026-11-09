@@ -1,5 +1,5 @@
 import { downloadName } from '../lib/downloadName'
-import { type CellRevision, type CellState, type CellValue, type ResearchView, type Source, type TableColumn, type TableRow, type TableSummary, type TableView } from '../lib/api'
+import { type CellDirection, type CellRevision, type CellState, type CellValue, type ResearchView, type Source, type TableColumn, type TableRow, type TableSummary, type TableView } from '../lib/api'
 import { locatorText, versionText } from '../lib/labels'
 import { citationStyle, formatReferenceText, type CitationStyle } from '../lib/citations'
 import { t, uiLocale } from '../lib/i18n'
@@ -11,6 +11,10 @@ import { t, uiLocale } from '../lib/i18n'
 export const stateLabels: Record<CellState, string> = {
   value: 'Value', not_verified: 'Value without linked evidence', unknown: 'Unclear in the source', not_reported: 'Not reported',
   not_applicable: 'Not applicable', inaccessible: 'No text', not_found_in_inspected_scope: 'Not found in the text read',
+}
+// Which way a finding went against the method it was measured against.
+const directionLabels: Record<CellDirection, string> = {
+  higher: 'higher than {method}', lower: 'lower than {method}', comparable: 'comparable with {method}', mixed: 'mixed against {method}',
 }
 // Whether a row is in the table's report, and why; the Python exports write the same words.
 const inReportLabels: Record<string, string> = { included: 'Yes', full_text_read: 'Yes, read in full, did not meet the whole criterion', abstract_only: 'Yes, abstract only', none: 'No' }
@@ -31,7 +35,27 @@ function savedStyle(): CitationStyle {
 }
 
 export const hasValue = (rev: CellRevision) => rev.state === 'value' || rev.state === 'not_verified'
-export const revisionText = (column: TableColumn, rev: CellRevision) => (hasValue(rev) ? valueText(column, rev.value) : rev.state ? t(stateLabels[rev.state]) : '')
+
+// A measurement column answered from an abstract that states no measurement says so in those words. The cell's own
+// depth decides, so a report that narrowed a depth to its own reading keeps the general wording — and so does a
+// record that does not say either way (`null`), since a view frozen before that field may already have narrowed one.
+export function stateText(column: { answer_format: TableColumn['answer_format'] }, rev: { state: CellState | null; reading_depth?: CellRevision['reading_depth']; depth_narrowed?: boolean | null }) {
+  if (!rev.state) return ''
+  if (rev.state === 'not_found_in_inspected_scope' && column.answer_format === 'number_unit' && rev.reading_depth === 'abstract' && rev.depth_narrowed === false) {
+    return t('Not stated in the abstract that was read')
+  }
+  return t(stateLabels[rev.state])
+}
+
+// What the finding stands against, which way it went and under what setting; empty when the cell stores none.
+export function comparisonText(rev: { compared_method: string | null; condition: string | null; direction: CellDirection | null }) {
+  const parts: string[] = []
+  if (rev.compared_method) parts.push(t(rev.direction ? directionLabels[rev.direction] : 'vs {method}', { method: rev.compared_method }))
+  if (rev.condition) parts.push(rev.condition)
+  return parts.join('; ')
+}
+
+export const revisionText = (column: TableColumn, rev: CellRevision) => (hasValue(rev) ? valueText(column, rev.value) : stateText(column, rev))
 
 // The table as CSV: one value column and one evidence column (quote and locator) per table column. Current values only;
 // proposals waiting for a decision are left out. The BOM lets spreadsheet apps read the file as UTF-8. Exported for
@@ -44,12 +68,12 @@ export function tableCsv(table: TableView, sources: Source[]) {
     const text = v == null ? '' : String(v)
     return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
   }
-  const head = [t('Key'), t('Reference'), t('Title'), t('Authors'), t('Year'), t('Version'), t('Access'), t('In report'), ...table.columns.flatMap(c => [c.name, t('{name} — evidence', { name: c.name })])]
+  const head = [t('Key'), t('Reference'), t('Title'), t('Authors'), t('Year'), t('Version'), t('Access'), t('In report'), ...table.columns.flatMap(c => [c.name, t('{name} — comparison', { name: c.name }), t('{name} — evidence', { name: c.name })])]
   const lines = table.rows.map(row => { const source = byId.get(row.source_version_id); return [row.source_key ?? '', source ? formatReferenceText(style, source) : '', row.title, row.authors.join('; '), row.year, versionText(row.version_label), t(accessLabels[row.access_level]), t(inReportLabels[row.report_membership ?? 'none']),
     ...table.columns.flatMap(col => {
       const current = cells.get(`${col.id}:${row.source_version_id}`)?.current
-      if (!current) return ['', '']
-      return [revisionText(col, current), current.evidence.map(e => [e.anchor_text && `“${e.anchor_text}”`, locatorText(e)].filter(Boolean).join(' — ')).join(' | ')]
+      if (!current) return ['', '', '']
+      return [revisionText(col, current), comparisonText(current), current.evidence.map(e => [e.anchor_text && `“${e.anchor_text}”`, locatorText(e)].filter(Boolean).join(' — ')).join(' | ')]
     })] })
   return `\uFEFF${[head, ...lines].map(line => line.map(quote).join(',')).join('\r\n')}\r\n`
 }

@@ -336,28 +336,33 @@ def test_answer_docx_route_names_refusals_and_content(tmp_path):
 
 # ---- evidence table --------------------------------------------------------------------------------------------
 
-def _current(state, author, depth, value, evidence=(), revision=1):
+def _current(state, author, depth, value, evidence=(), revision=1, **qualifiers):
     return {"state": state, "author": author, "reading_depth": depth, "value": value, "column_revision": revision,
-            "evidence": [{"anchor_text": a, "kind": k, "physical_page": p, "printed_label": l} for a, k, p, l in evidence]}
+            "depth_narrowed": False, "compared_method": None, "condition": None, "direction": None,
+            "evidence": [{"anchor_text": a, "kind": k, "physical_page": p, "printed_label": l} for a, k, p, l in evidence]} | qualifiers
 
 
 SYNTHETIC_TABLE = {
     "table": {"title": "SYNTHETIC tablo ğ & <x>", "version": 4},
     "columns": [
-        {"id": "c1", "name": "Size", "options": None},
-        {"id": "c2", "name": "Kind", "options": [{"id": "o1", "label": "Fast"}, {"id": "o2", "label": "Slow"}]},
-        {"id": "c3", "name": "Note", "options": None},
+        {"id": "c1", "name": "Size", "options": None, "answer_format": "number_unit"},
+        {"id": "c2", "name": "Kind", "answer_format": "choice", "options": [{"id": "o1", "label": "Fast"}, {"id": "o2", "label": "Slow"}]},
+        {"id": "c3", "name": "Note", "options": None, "answer_format": "text"},
     ],
     "rows": [
         {"source_version_id": "s1", "source_key": "Lov21", "title": "SYNTHETIC routing", "authors": ["Ada Lovelace", "B C"],
          "year": 2021, "version_label": "acceptedVersion", "access_level": "pdf_available"},
         {"source_version_id": "s2", "source_key": None, "title": "SYNTHETIC scan", "authors": [], "year": None,
          "version_label": None, "access_level": "abstract"},
+        {"source_version_id": "s3", "source_key": None, "title": "SYNTHETIC abstract only", "authors": [], "year": None,
+         "version_label": None, "access_level": "abstract"},
     ],
     "cells": [
+        # A measurement with what it was measured against, so the CSV, the workbook and the Word file all carry it.
         {"column_id": "c1", "source_version_id": "s1", "flags": ["stale_column", "ocr_numbers_unchecked"],
          "current": _current("value", "model", "full_text", {"number": 1234.5, "unit": "kB"},
-                             [("size is 1,234.5 kB", "pdf_page", 4, "12"), (None, "abstract", None, None)])},
+                             [("size is 1,234.5 kB", "pdf_page", 4, "12"), (None, "abstract", None, None)],
+                             compared_method="SYNTHETIC VBF", condition="10 düğüm & <1> km", direction="lower")},
         {"column_id": "c2", "source_version_id": "s1", "flags": [],
          "current": _current("not_verified", "human", None, {"option_ids": ["o2", "zz"]})},
         {"column_id": "c3", "source_version_id": "s1", "flags": ["pdf_replaced", "text_superseded"],
@@ -368,6 +373,10 @@ SYNTHETIC_TABLE = {
          "current": _current("not_reported", "system", "metadata", None),
          "pending_proposal": {"state": "value", "value": {"option_ids": ["o1"]}}},
         {"column_id": "c3", "source_version_id": "s2", "flags": [], "current": None},
+        {"column_id": "c1", "source_version_id": "s3", "flags": [],
+         "current": _current("not_found_in_inspected_scope", "model", "abstract", None)},
+        {"column_id": "c2", "source_version_id": "s3", "flags": [], "current": None},
+        {"column_id": "c3", "source_version_id": "s3", "flags": [], "current": None},
     ],
 }
 STALE = "Made under an earlier definition of this column (revision 1). It stays until you edit it or use a newer proposal."
@@ -394,10 +403,10 @@ def test_table_xlsx_is_the_browser_csv_plus_source_state_and_warnings(lang, styl
     data = table_export.xlsx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language=lang, style=style)
     rows = xlsx_rows(data)
     names = ("Size", "Kind", "Note")
-    width = 8 + 5 * len(names)  # eight source fields since that change added "In report"
+    width = 8 + 6 * len(names)  # eight source fields, then six per column since the comparison field was added
     head = expected[0]
     suffix = ("source", "state", "warnings") if lang == "en" else ("kaynak", "durum", "uyarılar")
-    assert rows[0] == head[:8] + [x for k, name in enumerate(names) for x in (head[8 + 2 * k], head[9 + 2 * k],
+    assert rows[0] == head[:8] + [x for k, name in enumerate(names) for x in (head[8 + 3 * k], head[9 + 3 * k], head[10 + 3 * k],
                                                                              *(f"{name} — {s}" for s in suffix))]
 
     def text(value):
@@ -405,15 +414,21 @@ def test_table_xlsx_is_the_browser_csv_plus_source_state_and_warnings(lang, styl
 
     for row, line in zip(rows[1:], expected[1:]):
         row = row + [""] * (width - len(row))
-        assert [str(v) for v in row[:8]] + [text(row[8 + 5 * k + j]) for k in range(len(names)) for j in (0, 1)] == line
+        assert [str(v) for v in row[:8]] + [text(row[8 + 6 * k + j]) for k in range(len(names)) for j in (0, 1, 2)] == line
     assert rows[1][4] == 2021 and rows[2][8] == 7  # numbers stay numbers in the workbook
     if lang == "en":
         for row, extras in zip(rows[1:], SYNTHETIC_EXTRAS):
             row = row + [""] * (width - len(row))
-            assert [tuple(row[10 + 5 * k: 13 + 5 * k]) for k in range(len(names))] == extras
+            assert [tuple(row[11 + 6 * k: 14 + 6 * k]) for k in range(len(names))] == extras
     else:
-        assert rows[1][10] == "Model · Tam metin" and rows[1][15] == "Siz · bağlı kanıt yok"
-        assert rows[1][16] == "Bağlı kanıtı olmayan değer" and rows[1][12].startswith("Bu sütunun önceki bir tanımıyla üretildi (revizyon 1).")
+        assert rows[1][11] == "Model · Tam metin" and rows[1][17] == "Siz · bağlı kanıt yok"
+        assert rows[1][18] == "Bağlı kanıtı olmayan değer" and rows[1][13].startswith("Bu sütunun önceki bir tanımıyla üretildi (revizyon 1).")
+    # The comparison field and the abstract wording are written, in this language, by both files: the CSV above is the
+    # browser's own, so the equality already compared them cell for cell, and these name what is being compared.
+    comparison = "SYNTHETIC VBF karşısında daha düşük; 10 düğüm & <1> km" if lang == "tr" else "lower than SYNTHETIC VBF; 10 düğüm & <1> km"
+    silent = "Okunan özette belirtilmemiş" if lang == "tr" else "Not stated in the abstract that was read"
+    assert rows[1][9] == comparison and expected[1][9] == comparison
+    assert rows[3][8] == silent and expected[3][8] == silent
     workbook = parts(data, XLSX_PARTS)["xl/workbook.xml"]
     assert [s.get("name") for s in workbook.iter(S + "sheet")] == ["SYNTHETIC tablo ğ & <x>"]
     assert "Fast" not in raw_text(data)  # the proposal waiting for a decision is left out, as in the CSV
@@ -440,16 +455,16 @@ def test_table_routes_on_a_filled_synthetic_table(tmp_path):
         assert xlsx.headers["content-disposition"] == f"attachment; filename=\"{name}\"; filename*=UTF-8''{quote(name, safe='')}"
         rows = xlsx_rows(xlsx.content)
         expected = _csv(browser_exports(lang="en", style="apa", sources=sources, table=view)["csv"])
-        assert len(rows) == len(expected) and len(rows[0]) == 8 + 5 * len(view["columns"])
+        assert len(rows) == len(expected) and len(rows[0]) == 8 + 6 * len(view["columns"])
         cells = {(c["column_id"], c["source_version_id"]): c["current"] for c in view["cells"]}
         for row, line, source in zip(rows[1:], expected[1:], view["rows"]):
             row = row + [""] * (len(rows[0]) - len(row))
-            assert [str(v) for v in row[:8]] + [row[8 + 5 * k + j] for k in range(len(view["columns"])) for j in (0, 1)] == line
+            assert [str(v) for v in row[:8]] + [row[8 + 6 * k + j] for k in range(len(view["columns"])) for j in (0, 1, 2)] == line
             for index, column in enumerate(view["columns"]):
                 current = cells[(column["id"], source["source_version_id"])]
                 for e in current["evidence"]:
-                    assert f"“{e['anchor_text']}” — PDF p. {e['physical_page']}" in row[9 + 5 * index]
-                assert row[10 + 5 * index: 12 + 5 * index] == ["Model · Selected pages", "Value"]
+                    assert f"“{e['anchor_text']}” — PDF p. {e['physical_page']}" in row[10 + 6 * index]
+                assert row[11 + 6 * index: 13 + 6 * index] == ["Model · Selected pages", "Value"]
         docx = client.get(base + "/docx?lang=tr&style=chicago")
         assert docx.status_code == 200 and docx.headers["content-type"] == ooxml.DOCX_MEDIA_TYPE
         assert docx.headers["content-disposition"].endswith(quote(f' - V{view["table"]["version"]}.docx', safe=''))

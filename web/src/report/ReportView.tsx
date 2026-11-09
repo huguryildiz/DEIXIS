@@ -11,7 +11,7 @@ import { printPanel } from '../research/printPanel'
 import { usePanels } from '../research/usePanelStack'
 import { excerpt } from '../research/excerpt'
 import { HighlightedPassageText } from '../reading/PassageSheet'
-import { reportGate, stateLabels } from '../table/tableCsv'
+import { comparisonText, reportGate, stateLabels, stateText } from '../table/tableCsv'
 import { Notice } from '../components/Notice'
 import { PassageFreshnessNotice } from './PassageFreshnessNotice'
 import { ReportBasisNotice } from './ReportBasisNotice'
@@ -78,11 +78,19 @@ const passageStatusText = {
   text_superseded: 'This passage comes from an earlier text extraction of its PDF; the current text may differ.',
 } as const
 type FrozenCell = NonNullable<ReportDetail['table_i']>['cells'][number]
-// A cell as frozen with the report: its value, a value with no linked quote, or its state in words.
-function frozenCellText(cell: FrozenCell, options: { id: string; label: string }[] | null) {
-  return cell.state === 'value' ? valueText(cell.value, options)
-    : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, options) })
-    : t(stateLabels[cell.state as keyof typeof stateLabels] ?? cell.state)
+type FrozenColumn = NonNullable<ReportDetail['table_i']>['columns'][number]
+// A cell as frozen with the report: its value with what it was measured against, a value with no linked quote, or its
+// state in words. Two cells of one column that differ in their comparison read differently here, as the report does.
+function frozenCellText(cell: FrozenCell, column: FrozenColumn | undefined) {
+  const options = column?.options ?? null
+  if (cell.state === 'value') {
+    const comparison = comparisonText(cell)
+    const value = valueText(cell.value, options)
+    return comparison ? `${value} (${comparison})` : value
+  }
+  if (cell.state === 'not_verified') return t('{value} (not verified: no quote linked)', { value: valueText(cell.value, options) })
+  if (column) return stateText(column, cell)
+  return t(stateLabels[cell.state as keyof typeof stateLabels] ?? cell.state.replaceAll('_', ' '))
 }
 // Whether the stored evidence behind a cell or a row differs from the live table, seen or not (`evidence_changes.stale`).
 function staleFor(report: ReportDetail, cellId: string | null | undefined, sourceId: string) {
@@ -315,7 +323,8 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   const table = report?.table_i
   const tableNode = table && <div className="evidence-report-table-scroll" tabIndex={0} role="region" aria-label={t('Evidence table, scrolls sideways')}><table className="evidence-report-table"><caption>{t(table.columns.length === 1 ? 'TABLE I. Evidence table as frozen for this report ({rows} sources, 1 column).' : 'TABLE I. Evidence table as frozen for this report ({rows} sources, {columns} columns).', { rows: table.rows.length, columns: table.columns.length })}</caption><thead><tr><th>{t('Source')}</th>{table.columns.map(column => <th key={column.column_id}>{column.name}</th>)}</tr></thead><tbody>{table.rows.map(row => <tr key={row.source_version_id}><th>{row.ref_number ? `[${row.ref_number}] ` : ''}{row.source_key ?? row.title ?? t('Source record unavailable')}{row.abstract_only && <span className="evidence-report-depth"> {t('(abstract only)')}</span>}{!row.abstract_only && row.full_text_read && <span className="evidence-report-depth"> {t('(read in full, criterion not fully met)')}</span>}</th>{table.columns.map(column => {
     const cell = table.cells.find(item => item.source_version_id === row.source_version_id && item.column_id === column.column_id)
-    return <td key={column.column_id}>{cell ? cell.state === 'value' ? valueText(cell.value, column.options) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column.options) }) : t(cell.state.replaceAll('_', ' ')) : '—'}</td>
+    // The same words the evidence view and the downloads use, so Table I says what the finding was measured against.
+    return <td key={column.column_id}>{cell ? frozenCellText(cell, column) : '—'}</td>
   })}</tr>)}</tbody></table></div>
   // "Write a new version" (mockup `ewrite`): a new report from the same table, under the table panel's own rule.
   const tableSummary = tables?.find(item => item.id === report?.table_id)
@@ -473,7 +482,7 @@ function EvidenceViewCells({ report, claim }: { report: ReportDetail; claim: Rep
     const column = table.columns.find(item => item.column_id === cell.column_id)
     const row = table.rows.find(item => item.source_version_id === cell.source_version_id)
     return <tr key={cell.cell_id}><td>{row?.source_key ?? row?.title ?? t('Source record unavailable')}</td><td>{column?.name ?? ''}</td>
-      <td>{frozenCellText(cell, column?.options ?? null)}{staleFor(report, cell.cell_id, cell.source_version_id).length > 0 && <span className="edited">{t('changed since')}</span>}</td></tr>
+      <td>{frozenCellText(cell, column)}{staleFor(report, cell.cell_id, cell.source_version_id).length > 0 && <span className="edited">{t('changed since')}</span>}</td></tr>
   })}</tbody></table>
 }
 
@@ -508,7 +517,7 @@ function EvidenceCitePanel({ researchId, report, link, eventCursor, onClose, onO
   const evidenceStatus = recorded && recorded !== 'current' ? recorded : passage?.evidence_status ?? 'current'
   const quote = passage ? excerpt(passage.text, anchor) : null
   const located = Boolean(anchor && quote?.located)
-  const heading = cell ? frozenCellText(cell, column?.options ?? null) : ref?.title ?? name
+  const heading = cell ? frozenCellText(cell, column) : ref?.title ?? name
   // Every change since the report, including one a section marked as seen: seeing a change never makes the evidence current.
   const changes = staleFor(report, cell?.cell_id, cell?.source_version_id ?? link.source_version_id)
   const cellChanged = changes.some(change => change.kind === 'cell_changed')

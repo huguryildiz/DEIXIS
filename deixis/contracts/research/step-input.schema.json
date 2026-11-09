@@ -1946,6 +1946,10 @@
               "state": { "type": "string", "enum": ["value", "unknown", "not_reported", "not_verified", "not_applicable", "inaccessible", "not_found_in_inspected_scope"] },
               "value": { "type": ["object", "null"] },
               "reading_depth": { "type": ["string", "null"], "enum": ["metadata", "abstract", "selected_sections", "full_text", null] },
+              "compared_method": { "type": ["string", "null"], "maxLength": 120 },
+              "condition": { "type": ["string", "null"], "maxLength": 200 },
+              "direction": { "type": ["string", "null"], "enum": ["higher", "lower", "comparable", "mixed", null] },
+              "depth_narrowed": { "type": "boolean" },
               "evidence": {
                 "type": "array",
                 "items": {

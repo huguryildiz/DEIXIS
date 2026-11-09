@@ -103,8 +103,13 @@ def valid_response(si: dict[str, Any]) -> str:
         first = si["passages"][0]
         values = {"choice": lambda c: {"option_ids": [c["options"][0]["id"]]}, "number_unit": lambda c: {"number": 128, "unit": "byte", "as_stated": None},
                   "yes_no": lambda c: {"answer": "yes"}, "text": lambda c: {"text": "SYNTHETIC fake value"}}
+        # A measurement column also gets what its number was measured against, so the happy path carries a real
+        # comparison; every other column leaves the three null, as a passage that states none does.
         return json.dumps(envelope(si, "deixis.evidence_cell_draft.v1") | {"cells": [
             {"column_id": c["column_id"], "state": "value", "value": values[c["answer_format"]](c), "note": None,
+             "compared_method": "SYNTHETIC baseline" if c["answer_format"] == "number_unit" else None,
+             "condition": "SYNTHETIC condition" if c["answer_format"] == "number_unit" else None,
+             "direction": "lower" if c["answer_format"] == "number_unit" else None,
              "evidence": [{"passage_id": first["passage_id"], "quote": " ".join(first["text"].split())[:600]}]}
             for c in si["extraction_target"]["columns"]
         ]})

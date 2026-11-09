@@ -149,7 +149,9 @@ def test_an_abstract_only_row_fills_from_its_abstract_and_quotes_must_be_in_it(t
                 answer["evidence"][0]["quote"] = broken["quote"]
         if broken.get("absent") and any(p["text"] == ABSTRACT for p in si["passages"]):
             for answer in draft["cells"]:
-                answer.update(state="not_found_in_inspected_scope", value=None, evidence=[])
+                # A cell that found nothing states no finding, so it carries no comparison either.
+                answer.update(state="not_found_in_inspected_scope", value=None, evidence=[],
+                              compared_method=None, condition=None, direction=None)
         return json.dumps(draft)
 
     lib = make_library(tmp_path, respond)

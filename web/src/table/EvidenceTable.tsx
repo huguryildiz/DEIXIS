@@ -23,7 +23,7 @@ import '../lineage/lineage.css'
 import { Notice } from '../components/Notice'
 import { focusWhenLost } from '../lib/focus'
 import { UploadedTextNote } from '../components/SemanticNotes'
-import { accessLabels, downloadTableCsv, hasValue, reportGate, revisionText, stateLabels } from './tableCsv'
+import { accessLabels, comparisonText, downloadTableCsv, hasValue, reportGate, revisionText, stateLabels, stateText } from './tableCsv'
 
 // The Evidence table panel (mockup `evtable()`, P21-P29): a table whose rows are source versions and whose
 // cells are append-only revisions. The screen renders the recorded cell state; only the user's edit or decision changes
@@ -885,13 +885,14 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <div className="venue"><FormatIcon size={16} aria-hidden />{column.name} · {t(formatLabels[column.answer_format])}</div>
           <h1 className={`evidence-current${value ? '' : ' is-state'}`}>{current ? revisionText(column, current) : t('Empty: no value recorded yet.')}</h1>
           {current?.value?.as_stated && <p className="foot-note">{t('As written in the source: {text}', { text: current.value.as_stated })}</p>}
+          {current && comparisonText(current) && <p className="foot-note">{comparisonText(current)}</p>}
         </div>
         {value && current.evidence.length > 0 && <p className="cell-chips">
           <span className="cell-chip is-ok">{t(quoteCount(current.evidence) === 1 ? '{n} quote found in the source' : '{n} quotes found in the source', { n: quoteCount(current.evidence) })}</span>
           <span className="cell-chip is-warn">{t('Semantic support not checked')}</span>
         </p>}
         {current && <p className="dmeta">
-          <span className={current.state === 'not_verified' || current.state === 'unknown' ? 'warn-t' : undefined}>{current.state ? t(stateLabels[current.state]) : ''}</span>
+          <span className={current.state === 'not_verified' || current.state === 'unknown' ? 'warn-t' : undefined}>{stateText(column, current)}</span>
           <span>{t(authorLabels[current.author])}{current.reading_depth ? ` · ${t(depthLabels[current.reading_depth])}` : ''}</span>
           {current.model?.connection && current.model.resolved_model && <span><ModelName connection={current.model.connection} text={modelText(current.model.resolved_model)} /></span>}
           <span>{dateText(current.created_at)}</span>

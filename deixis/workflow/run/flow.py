@@ -4814,7 +4814,8 @@ class ResearchFlow:
                 step_id=payload["step_id"], step_input_id=payload["step_input_id"], model_connection=session["connection"],
                 resolved_model=session["resolved_model"], scope_revision=payload["scope_revision"],
                 cell_version_at_request=cell_versions.get(column["column_id"]), recheck=recheck, refresh=refresh,
-                unverified_fill=unverified_fill,
+                unverified_fill=unverified_fill, compared_method=cell.get("compared_method"), condition=cell.get("condition"),
+                direction=cell.get("direction"),
             ) is not None
         return saved
 

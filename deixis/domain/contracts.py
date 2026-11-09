@@ -1838,6 +1838,20 @@ def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: 
                                          f"{column_id}: the value states a number or equation read only from OCR text; check it against the PDF page"))
         if state == "not_applicable" and not (cell["note"] or "").strip():
             report.issues.append(Issue("not_applicable_without_note", f"{path}/note", column_id))
+        # What a finding was measured against belongs to a finding. These two rules cannot go in the output schema
+        # (the providers' strict mode takes no cross-field keyword), so they are rules here and a CHECK in the library.
+        for name in ("compared_method", "condition"):
+            if cell[name] is not None and not cell[name].strip():
+                report.issues.append(Issue("blank_qualifier", f"{path}/{name}",
+                                           f"{column_id}: write what the passages state, or null"))
+        stated = sorted(name for name in ("compared_method", "condition", "direction") if cell[name] is not None)
+        if state != "value" and stated:
+            report.issues.append(Issue("qualifier_outside_a_value", f"{path}/{stated[0]}",
+                                       f"{column_id}: a '{state}' cell states no finding, so it says nothing about what"
+                                       " one was measured against"))
+        elif cell["direction"] is not None and cell["compared_method"] is None:
+            report.issues.append(Issue("direction_without_compared_method", f"{path}/direction",
+                                       f"{column_id}: a direction needs the method it is a direction against"))
         if cell["note"] and (match := LOCATOR_IN_TEXT.search(cell["note"])):
             report.issues.append(Issue("locator_in_note", f"{path}/note",
                                        f"remove {match.group(0)!r}; locators are attached from passage records"))
@@ -4069,6 +4083,11 @@ CELL_SALVAGE_HINTS = {
     "not_applicable_without_note": "A 'not_applicable' answer needs a short note saying why.",
     "locator_in_note": "The note named a page, equation, table, figure or section number. Leave locators out of the note.",
     "column_without_answer": "The column was not answered. Answer it once.",
+    "blank_qualifier": "A compared method or condition was blank. Write what the passages state, or leave it null.",
+    "qualifier_outside_a_value": "An answer that is not a 'value' states no finding, so it carries no compared method,"
+                                 " condition or direction. Leave all three null.",
+    "direction_without_compared_method": "A direction needs the method it is a direction against. Name that method, or"
+                                         " leave the direction null.",
 }
 
 
@@ -4154,6 +4173,11 @@ def storable_cells(step_input: dict[str, Any], data: str | dict[str, Any]) -> li
         evidence = cell.get("evidence") if isinstance(cell.get("evidence"), list) else []
         kept.append({"column_id": cell["column_id"], "state": cell["state"], "value": value,
                      "note": cell["note"] if isinstance(cell.get("note"), str) else None,
+                     # What the finding was measured against travels with it; the store's own check drops a qualifier
+                     # that the kept answer no longer carries evidence for.
+                     "compared_method": cell["compared_method"] if isinstance(cell.get("compared_method"), str) else None,
+                     "condition": cell["condition"] if isinstance(cell.get("condition"), str) else None,
+                     "direction": cell["direction"] if isinstance(cell.get("direction"), str) else None,
                      "evidence": [e for e in evidence if isinstance(e, dict) and e.get("passage_id") in allowed
                                   and isinstance(e.get("quote"), str)]})
     return kept

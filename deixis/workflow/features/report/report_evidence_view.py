@@ -91,8 +91,11 @@ def build(store: Any, research_id: str, table_id: str, answer_input: dict[str, A
             if cell["state"] == "value":
                 cell["state"] = "not_verified"
             cell["evidence"] = []
+            # What the finding was measured against rested on those quotes and goes with them.
+            cell["compared_method"] = cell["condition"] = cell["direction"] = None
         if svid in shallow and cell.get("reading_depth") in BEYOND_ABSTRACT:
             cell["reading_depth"] = "abstract"
+            cell["depth_narrowed"] = True  # cut to what this answer bound, so no surface reads it as an abstract-only cell
         cells.append(cell)
 
     view["rows"], view["cells"] = rows, cells

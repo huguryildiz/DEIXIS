@@ -134,6 +134,8 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
             break
     # Count members come from the frozen included rows only; a row read from its abstract only is never counted.
     return {"source_ids": countable_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
+            # The count context names a cell, its state and its value only: a count is a count of cells, so what a
+            # finding was measured against is no part of it.
             "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")}
                       for c in selection.usable_cells(snapshot)],
             "accepted_gaps": accepted, "basis_cells": basis_cells, "basis_passages": basis_passages}

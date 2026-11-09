@@ -115,8 +115,13 @@ that section, in fixed-skeleton order, and do not invent a section this report d
     sentence may mention summary-only rows in aggregate ("2 of 6 summary-only sources could not be assessed").
   - A cell whose extraction failed technically is not a `not_found` value and never enters a denominator.
   - Never infer a method or result from the gap between two unrelated cells.
+  - A cell may carry `compared_method`, `condition` and `direction`: what its finding was measured against, the
+    setting it was obtained under and which way it went. When a cell has them, a sentence about its value says
+    them too. Two cells of one column whose `condition` or `direction` differ are two findings; write them as
+    two, never as one value with a range.
 - **V (Comparative Findings):** compare cells of one column across sources. A conflict claim requires the
-  compared sources to share the same concept, condition and metric; when conditions differ, write "different
+  compared sources to share the same concept, condition and metric; the cells' own `condition` and
+  `compared_method` are what you read that from, and two cells whose `condition` differs are "different
   conditions, different outcomes", not a conflict. Distinguish `demonstrated` findings from `modelled` or
   `proposed` ones in your wording; a modelled result and a demonstrated result are not equal-weight agreement
   or disagreement.

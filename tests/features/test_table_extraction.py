@@ -50,14 +50,16 @@ def cell_step_input():
 
 def cell_draft(si):
     envelope = {"schema_version": "deixis.evidence_cell_draft.v1"} | {k: si[k] for k in contracts.ENVELOPE_FIELDS}
+    blank = {"compared_method": None, "condition": None, "direction": None}
     return envelope | {"cells": [
         {"column_id": "col_SYNMETHOD1", "state": "value", "value": {"text": "Mixed-integer linear program with binary release variables"},
-         "note": None, "evidence": [{"passage_id": "psg_SYNA1abs01", "quote": "We formulate release-time scheduling as a mixed-integer linear program"}]},
-        {"column_id": "col_SYNCLASS01", "state": "value", "value": {"option_ids": ["o1"]}, "note": None,
+         "note": None, **blank,
+         "evidence": [{"passage_id": "psg_SYNA1abs01", "quote": "We formulate release-time scheduling as a mixed-integer linear program"}]},
+        {"column_id": "col_SYNCLASS01", "state": "value", "value": {"option_ids": ["o1"]}, "note": None, **blank,
          "evidence": [{"passage_id": "psg_SYNA1abs01", "quote": "a mixed-integer linear program with binary release variables"}]},
-        {"column_id": "col_SYNBUDGET1", "state": "unknown", "value": None, "note": "A budget is named without a number.",
+        {"column_id": "col_SYNBUDGET1", "state": "unknown", "value": None, "note": "A budget is named without a number.", **blank,
          "evidence": [{"passage_id": "psg_SYNA1pg003", "quote": "subject to a total molecule budget per frame"}]},
-        {"column_id": "col_SYNMEASUR1", "state": "not_found_in_inspected_scope", "value": None, "note": None, "evidence": []},
+        {"column_id": "col_SYNMEASUR1", "state": "not_found_in_inspected_scope", "value": None, "note": None, **blank, "evidence": []},
     ]}
 
 

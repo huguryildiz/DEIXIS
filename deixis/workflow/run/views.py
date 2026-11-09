@@ -365,6 +365,13 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                      for row in frozen["rows"]],
             "cells": [{"cell_id": cell["cell_id"], "column_id": cell["column_id"], "source_version_id": cell["source_version_id"],
                        "state": cell["state"], "value": cell["value"],
+                       # What the finding stands against, and whether the depth beside it is the cell's own or this
+                       # report's narrowing: Table I says both, so two results of one column are not read as one.
+                       "compared_method": cell.get("compared_method"), "condition": cell.get("condition"),
+                       "direction": cell.get("direction"), "reading_depth": cell.get("reading_depth"),
+                       # null in a view frozen before this field: it may already have narrowed a depth, so no
+                       # surface may read it as "the cell itself read only an abstract".
+                       "depth_narrowed": cell.get("depth_narrowed"),
                        "evidence_passage_ids": [e["passage_id"] for e in cell["evidence"]]}
                       for cell in frozen["cells"]],
         }

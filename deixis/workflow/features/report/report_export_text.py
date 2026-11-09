@@ -309,16 +309,60 @@ def full_text_reference_note(tr: bool) -> str:
                 "Tam metni okundu; dahil etme ölçütünün tamamını karşılamadı.")
 
 
+# One whole phrase per direction, in both languages: a shared "{way} than {method}" reads wrong for two of them.
+DIRECTION_PHRASES = {
+    "higher": ("higher than {method}", "{method} karşısında daha yüksek"),
+    "lower": ("lower than {method}", "{method} karşısında daha düşük"),
+    "comparable": ("comparable with {method}", "{method} ile benzer"),
+    "mixed": ("mixed against {method}", "{method} karşısında koşula göre değişiyor"),
+}
+NO_DIRECTION = ("vs {method}", "{method} karşısında")
+
+
+def comparison_text(cell: dict[str, Any] | None, tr: bool) -> str:
+    """PLAIN: What a finding was measured against, which way it went and under what setting; empty when none is stored.
+
+    Two results of one column that differ here are two findings, so the words travel with the value wherever it is
+    written out.
+    """
+    if not cell:
+        return ""
+    method, direction, condition = cell.get("compared_method"), cell.get("direction"), cell.get("condition")
+    parts = []
+    if method:
+        english, turkish = DIRECTION_PHRASES.get(direction or "", NO_DIRECTION)
+        parts.append(pick(english, tr, turkish).replace("{method}", method))
+    if condition:
+        parts.append(condition)
+    return "; ".join(parts)
+
+
+def empty_state_text(cell: dict[str, Any], column: dict[str, Any], tr: bool) -> str:
+    """PLAIN: The words a cell without a value reads as.
+
+    A measurement column answered from an abstract that states none says so in those words, as the design asks: the
+    reader learns the abstract was silent, not that the publication reports nothing. It needs the cell's own depth, so
+    a depth a report narrowed to its own reading keeps the general wording — and so does a record that does not say
+    either way, because a view frozen before this field existed may already have narrowed one.
+    """
+    if (cell["state"] == "not_found_in_inspected_scope" and column.get("answer_format") == "number_unit"
+            and cell.get("reading_depth") == "abstract" and cell.get("depth_narrowed") is False):
+        return pick("not stated in the abstract that was read", tr, "okunan özette belirtilmemiş")
+    return cell["state"].replace("_", " ")
+
+
 def cell_text(cell: dict[str, Any] | None, column: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:
     """PIECEWISE: Escape the value or state; keep the fixed suffix raw."""
     if cell is None:
         return "—"
+    comparison = comparison_text(cell, tr)
     if cell["state"] == "value":
-        return esc(value_text(cell.get("value"), column.get("options"), tr))
+        value = esc(value_text(cell.get("value"), column.get("options"), tr))
+        return f"{value} ({esc(comparison)})" if comparison else value
     if cell["state"] == "not_verified":
         value = esc(value_text(cell.get("value"), column.get("options"), tr))
         return f"{value} ({pick('not verified: no quote linked', tr, 'doğrulanmadı: bağlı alıntı yok')})"
-    return esc(cell["state"].replace("_", " "))
+    return esc(empty_state_text(cell, column, tr))
 
 
 def corpus_footer(corpus: dict[str, int] | None, tr: bool) -> str:

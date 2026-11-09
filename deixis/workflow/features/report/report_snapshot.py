@@ -149,7 +149,7 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
     cells = []
     for row in store.conn.execute(
         "SELECT c.id AS cell_id, c.column_id, c.source_version_id, r.id AS cell_revision_id,"
-        " r.state, r.value_json, r.reading_depth FROM evidence_cells c"
+        " r.state, r.value_json, r.reading_depth, r.compared_method, r.condition, r.direction FROM evidence_cells c"
         " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?", (table_id,),
     ):
         if row["source_version_id"] not in source_ids or row["column_id"] not in column_ids:
@@ -158,7 +158,8 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
             "SELECT passage_id, anchor_text FROM cell_evidence_links WHERE cell_revision_id = ? ORDER BY rowid",
             (row["cell_revision_id"],),
         )]
-        state, depth = row["state"], row["reading_depth"]
+        state, depth, narrowed = row["state"], row["reading_depth"], False
+        compared_method, condition, direction = row["compared_method"], row["condition"], row["direction"]
         bound = abstract_bound.get(row["source_version_id"])
         if bound is not None:
             if any(link["passage_id"] not in bound for link in evidence):
@@ -167,12 +168,20 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
                 if state == "value":
                     state = "not_verified"
                 evidence = []
+                # The comparison rested on those quotes, so it goes with them: the library's own CHECK keeps no
+                # qualifier on a value without linked evidence, and a frozen record must not say otherwise.
+                compared_method = condition = direction = None
             if depth in ("selected_sections", "full_text"):
                 depth = "abstract"
+                # The cell read more than this report may: its depth is cut to what the report is allowed to stand on,
+                # and the cut is recorded so no surface says the cell itself looked only at an abstract.
+                narrowed = True
         cells.append({"cell_id": row["cell_id"], "cell_revision_id": row["cell_revision_id"],
                       "column_id": row["column_id"], "source_version_id": row["source_version_id"],
                       "state": state, "value": json.loads(row["value_json"]) if row["value_json"] else None,
-                      "reading_depth": depth, "evidence": evidence})
+                      "reading_depth": depth, "depth_narrowed": narrowed,
+                      "compared_method": compared_method, "condition": condition, "direction": direction,
+                      "evidence": evidence})
     row_order = {source_id: index for index, source_id in enumerate(source_ids)}
     column_order = {column["id"]: index for index, column in enumerate(columns)}
     cells.sort(key=lambda cell: (row_order[cell["source_version_id"]], column_order[cell["column_id"]]))

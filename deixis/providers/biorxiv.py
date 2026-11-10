@@ -23,6 +23,10 @@ MAX_RESULTS = openalex.MAX_RESULTS
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                  contact_email: str | None = None, cursor: str | None = None,
-                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
-    return await openalex.search_works(client, query, limit, api_key, contact_email, works_filter=WORKS_FILTER,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+                 works_filter: str | None = None) -> SearchOutcome:
+    """bioRxiv's records through OpenAlex. `works_filter` is the caller's own bound, sent beside the one that
+    selects this repository: a comma is OpenAlex's AND, so both hold."""
+    both = ",".join(part for part in (WORKS_FILTER, works_filter) if part)
+    return await openalex.search_works(client, query, limit, api_key, contact_email, works_filter=both,
                                        cursor=cursor, max_rate_limit_retries=max_rate_limit_retries)

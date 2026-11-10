@@ -242,7 +242,7 @@ def test_baseline_and_second_check_announce_only_new_identities(api):
     assert api.sent[-1].url.params["select"].endswith(",publication_date")
     row = api.watches.reads(api.watches.check(api.rid, second["check_id"]))[0]
     assert "sort=publication_date:desc select+publication_date" in row["request_description"]
-    assert json.loads(row["connector_json"])["adapter_revision"] == 3
+    assert json.loads(row["connector_json"])["adapter_revision"] == 4
     assert card["observed"]["units"]["query:0"]["sort_sent"] == "publication_date:desc"
 
 

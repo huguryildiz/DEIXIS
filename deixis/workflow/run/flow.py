@@ -2226,6 +2226,7 @@ class ResearchFlow:
     def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str,
                       outcome: SearchOutcome | facade.Dispatched | facade.DispatchedLookup,
                       forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
+                      date_bound: str | None = None,
                       batch: list[str] | None, per_page: int, fast_request: int, fast_arrival: dict[str, Any],
                       normalised: bool = False) -> None:
         """Write one answered fast-chain request (OpenAlex): the filter runs first, and only the records that pass are
@@ -2289,7 +2290,11 @@ class ResearchFlow:
         output = {"status": outcome.status, "direction": direction, "returned": returned_count,
                   "passed_filter": len(passed), "rescued": len(fresh),
                   "next_cursor": outcome.next_cursor if cites is not None else None,
-                  "provider_total": outcome.provider_total}
+                  "provider_total": outcome.provider_total,
+                  # How this request stood to the run's date scope: the forward direction carries the bound, the
+                  # backward one is a read by identifier and not a date search at all. A run that bounds no years
+                  # records neither.
+                  **({"date_bound": date_bound} if date_bound else {})}
         output = lookups.transport_output(self.store, step, output) | fast_arrival
         if dispatched is not None and dispatched.dropped_records:
             output["dropped_records"] = dispatched.dropped_records

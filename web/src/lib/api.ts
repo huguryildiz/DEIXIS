@@ -247,6 +247,16 @@ export type Run = {
   // another run kind and for a run whose frozen plan holds no field block.
   field_search?: FieldSearch | null
   broad_index?: BroadIndex | null
+  // The years this discovery run searched in, where its question or a measurement bounded them; null where none did.
+  date_scope?: DateScope | null
+}
+// The years a run is bounded to. origin: `question` read from the person's own words (`basis` quotes them),
+// `given` supplied with the run by a measurement. `planned` counts the requests the frozen plan holds — not what
+// was sent — by what each can do with the bound: `applied` carries it with the request, `not_supported` its route
+// takes none so it goes out unbounded, `not_applied` a plan frozen before the years were read.
+export type DateScope = {
+  rule: string; from_year: number | null; to_year: number | null; basis: string; origin: 'question' | 'given'
+  planned: Partial<Record<'applied' | 'not_supported' | 'not_applied', number>>
 }
 // One row per source the routing table names. state: `searched` a reply came back (a search that found nothing
 // answered too), `planned` the plan held the request and nothing was recorded for it, `request_failed` its request

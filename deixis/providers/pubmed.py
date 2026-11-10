@@ -129,7 +129,15 @@ def records_from_xml(value: str) -> list[ProviderRecord]:
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                  contact_email: str | None = None, cursor: str | None = None,
-                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+                 year_range: str | None = None) -> SearchOutcome:
+    """One page of an ESearch, then the EFetch of the records it named.
+
+    `year_range` is the caller's publication-year bound, sent as ESearch's own `datetype` / `mindate` / `maxdate`
+    rather than written into the query text, so the recorded query stays the one the plan froze. Both sides are
+    always sent: a `mindate` without a `maxdate` is ignored (checked against ESearch on 10 Nov 2026 — 802 records
+    unbounded, 802 with `mindate` alone, 360 with both).
+    """
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
     common: dict[str, Any] = {"db": "pubmed", "tool": "DEIXIS"}
@@ -140,7 +148,11 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     access_mode = "api_key" if api_key else "keyless"
     search_description = (f"GET {SEARCH_URL} db=pubmed term={query!r} retmax={count}"
                           + (f" retstart={offset}" if cursor is not None else "") + f" access={access_mode}")
-    esearch = {"term": query, "retmode": "json", "retmax": count, "sort": FIXED_SORT}
+    esearch: dict[str, Any] = {"term": query, "retmode": "json", "retmax": count, "sort": FIXED_SORT}
+    if year_range:
+        lower, upper = year_range.split("-", 1)
+        esearch |= {"datetype": "pdat", "mindate": lower, "maxdate": upper}
+        search_description += f" datetype=pdat mindate={lower} maxdate={upper}"
     if cursor is not None:
         esearch["retstart"] = offset  # ESearch reaches record 9,999; the read limit stops well before that
     response, outcome = await send(

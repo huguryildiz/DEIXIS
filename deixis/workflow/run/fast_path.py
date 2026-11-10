@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple, Protocol
 
@@ -74,6 +75,10 @@ BROAD_INDEX_ARMS = ("off", "conditional", "always")
 # on every question of the depth that named such a part, `off` never.
 SUBTOPIC_RULE = "subtopic_search_v1"
 SUBTOPIC_ARMS = ("off", "conditional", "always")
+# The years a run searches in, where the question states them or a measurement supplies them
+# (`search.date_scope`). Frozen here with the rest of the policy, before the first request opens: the question's
+# own semantic request goes out before the protocol is frozen, so a bound kept only in the protocol would miss it.
+DATE_SCOPE_RULE = "date_scope_v1"
 # A run in one of these states will send nothing more, so whether it met its target is settled.
 TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
@@ -177,7 +182,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
                   method: str = "legacy", deep_screening: bool = False,
                   lexical_exclusion: bool = True, candidate_embedding: bool = True,
                   completion_arm: str = "off", broad_index_arm: str = "off",
-                  subtopic_arm: str = "off") -> dict[str, Any]:
+                  subtopic_arm: str = "off", date_scope: dict[str, Any] | None = None) -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -203,7 +208,11 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
 
     `broad_index_arm` is the same shape for the second independent index (`BROAD_INDEX_ARMS`): `off` writes no
     key, which is the policy frozen before the rule, and the other two name the arm and the records.
-    `subtopic_arm` is the same shape again for the one sub-topic search of that index (`SUBTOPIC_ARMS`)."""
+    `subtopic_arm` is the same shape again for the one sub-topic search of that index (`SUBTOPIC_ARMS`).
+
+    `date_scope` is the years this run searches in, built by `search.date_scope` from the person's own question or
+    supplied with the run by a measurement. A run that bounds no years names no key, which is byte for byte the
+    policy frozen before the rule."""
     if method not in SEARCH_METHODS:
         raise ValueError(f"unknown search method {method!r}")
     if completion_arm not in COMPLETION_ARMS:
@@ -274,6 +283,17 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # keyword totals. A run that sends it reads these records on top of the keyword cap. An `off` policy
         # names no key, which is the policy frozen before the rule.
         policy["subtopic_search"] = {"rule": SUBTOPIC_RULE, "arm": subtopic_arm, "records": mode.subtopic_records}
+    if date_scope is not None:
+        if date_scope.get("rule") != DATE_SCOPE_RULE:
+            raise ValueError(f"unknown date scope rule {date_scope.get('rule')!r}")
+        bounds = (date_scope.get("from_year"), date_scope.get("to_year"))
+        if all(year is None for year in bounds):
+            raise ValueError("a date scope names a lower bound, an upper bound, or both")
+        if any(year is not None and not isinstance(year, int) for year in bounds):
+            raise ValueError("a date scope's bounds are years")
+        # The whole scope is frozen, the words it was read from included, so the measurement can say what the run
+        # was bounded by and why without re-reading the question.
+        policy["date_scope"] = {key: date_scope[key] for key in ("rule", "from_year", "to_year", "basis", "origin")}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
     if not candidate_embedding:
@@ -366,6 +386,27 @@ def subtopic_search(budget: dict[str, Any]) -> dict[str, Any] | None:
     """The sub-topic search's arm this run froze, or None for a run of the `off` arm and for every run queued
     before the rule."""
     return (budget.get("fast_path") or {}).get("subtopic_search")
+
+
+def date_scope(budget: dict[str, Any]) -> dict[str, Any] | None:
+    """The years this run searches in, or None for a run that bounds none and for every run queued before the rule."""
+    return (budget.get("fast_path") or {}).get("date_scope")
+
+
+def scope_years(store, research_id: str, scope_revision: int) -> dict[str, Any] | None:
+    """The years the searches of this question revision are bounded to, read from its own discovery runs.
+
+    A later search of the same question — a follow-up search, a citation-map walk, a watch — searches the same
+    years: the candidates are one pool per question revision, and a request outside those years would add records
+    the question never asked for. None where nothing bounded them, which is every question asked before the rule.
+    """
+    for row in store.conn.execute(
+            "SELECT budget_json FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery'"
+            " ORDER BY rowid", (research_id, scope_revision)):
+        years = date_scope(json.loads(row["budget_json"]))
+        if years is not None:
+            return years
+    return None
 
 
 def candidate_embedding_on(budget: dict[str, Any]) -> bool:

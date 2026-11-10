@@ -35,6 +35,7 @@ from deixis.providers import openalex
 from deixis.providers.common import OtherVersion, ProviderRecord, SearchOutcome
 from deixis.providers.registry import CONNECTORS, effective_sort
 from deixis.storage.db import dumps, now, transaction
+from deixis.workflow.run import fast_path
 from deixis.workflow.screen import abstract_stage
 from deixis.workflow.screen.decisions import DecisionStore
 
@@ -265,22 +266,30 @@ async def _query(flow: Any, run: dict[str, Any], scope: dict[str, Any], card: di
     return output
 
 
-def request_plan(question: str, blocks: dict[str, Any], providers: list[str]) -> dict[str, Any]:
+def request_plan(question: str, blocks: dict[str, Any], providers: list[str],
+                 years: dict[str, Any] | None = None) -> dict[str, Any]:
     """The requests the run may send, in order, frozen before any is sent: OpenAlex's semantic search with the
-    follow-up question as written, then the compiled keyword queries. Raises `terms.InvalidTerms`."""
+    follow-up question as written, then the compiled keyword queries. Raises `terms.InvalidTerms`.
+
+    `years` are the years the question's own searches are bounded to (`fast_path.scope_years`): a follow-up adds
+    to the same candidate pool, so it searches the same span and nothing outside it enters by this door.
+    """
     from deixis.workflow.features.candidates import candidates_terms as terms
+    from deixis.workflow.search.search import with_date_scope
     vocabulary = terms.block_vocabulary([t["term"] for t in blocks["setting"]], [t["term"] for t in blocks["task"]])
     vocabulary["block_assignment"] = KIND
     for term in vocabulary["terms"]:
         term["origin"] = KIND
     requests = []
     if "openalex" in providers and question.strip():
-        requests.append({"provider_id": "openalex", "endpoint": "semantic", "query_text": openalex.semantic_text(question),
-                         "limit": RECORDS_PER_REQUEST, "origin": "semantic"})
+        requests.append(with_date_scope(
+            {"provider_id": "openalex", "endpoint": "semantic", "query_text": openalex.semantic_text(question),
+             "limit": RECORDS_PER_REQUEST, "origin": "semantic"}, years))
     for query in terms.compile_queries(vocabulary, providers, MAX_KEYWORD_QUERIES):
-        requests.append({k: query[k] for k in ("provider_id", "query_text") if k in query}
-                        | {k: query[k] for k in ("endpoint", "sort") if query.get(k) is not None}
-                        | {"limit": RECORDS_PER_REQUEST, "origin": "keyword"})
+        requests.append(with_date_scope(
+            {k: query[k] for k in ("provider_id", "query_text") if k in query}
+            | {k: query[k] for k in ("endpoint", "sort") if query.get(k) is not None}
+            | {"limit": RECORDS_PER_REQUEST, "origin": "keyword"}, years))
     return {"blocks": {k: blocks[k] for k in ("setting", "task", "setting_backup", "task_backup")},
             "vocabulary": vocabulary, "requests": requests}
 
@@ -628,7 +637,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None
             output = await _query(flow, run, scope, context["card"])
             from deixis.workflow.features.candidates import candidates_terms as terms
             try:
-                built = request_plan(run["target"]["question"], output["result"], run["target"]["providers"])
+                built = request_plan(run["target"]["question"], output["result"], run["target"]["providers"],
+                                     fast_path.scope_years(store, run["research_id"], run["scope_revision"]))
             except terms.InvalidTerms as exc:
                 flow._fail(run_id, "followup_query_invalid", {"detail": str(exc)})
             plan = _code(flow, run, PLAN_KEY, lambda: built)

@@ -47,8 +47,9 @@ def test_declared_capabilities_and_bindings():
     assert not hasattr(registry, "UNBOUND_HELPERS") and not hasattr(facade, "UNBOUND_HELPERS")
     assert {pid: registry.CONNECTORS[pid].adapter_revision for pid in expected} == {
         # Semantic Scholar went to 3 with its snippet endpoint, whose search sends a second request of its own;
-        # Scopus with the record view its search asks for and the abstract that view carries.
-        "openalex": 3, "semantic_scholar": 3, "crossref": 2, "scopus": 3}
+        # Scopus with the record view its search asks for and the abstract that view carries; OpenAlex to 4 with
+        # the filter its semantic route now sends.
+        "openalex": 4, "semantic_scholar": 3, "crossref": 2, "scopus": 3}
     assert contract.CONTRACT_ID == "deixis.scholarly_connector.v1"
     check_coverage(FIXTURES)
 

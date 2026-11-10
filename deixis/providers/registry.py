@@ -42,6 +42,9 @@ class Endpoint:
     # snippet search that finds nothing sends no lookup — and every reader that goes through `reading()` sees it, so
     # the request allowance and the quota reserve are both counted for the endpoint the query names.
     requests_per_search: int | None = None
+    # Which bound this endpoint's own route takes for a research's date scope, where it takes one: an endpoint
+    # names its own form and inherits none, because two routes of one provider rarely agree on it.
+    date_filter: str | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +103,12 @@ class Connector:
     # provider list — candidate search, watch units, the model's provider list, the research's scope view — is
     # given it.
     broad_index: bool = False
+    # Which bound this connector's search takes for a research's date scope, so the scope travels **with** the
+    # request: `works_filter` is OpenAlex's own filter syntax, `year_range` the `<min>-<max>` string Semantic
+    # Scholar's bulk search and PubMed's ESearch both take (`date_scope.provider_bound`). None means its search
+    # takes no bound, so it is searched unbounded and the request records that; filtering an answer afterwards
+    # cannot give back the places the out-of-scope records took on the first page.
+    date_filter: str | None = None
     # How a search query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
@@ -156,16 +165,21 @@ def _host(url: str) -> str:
 
 CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
+              date_filter="works_filter",
               sw_options={"reference_count": True, "references": True}, options=("sort", "publication_date", "works_filter"),
-              host=_host(openalex.WORKS_URL), adapter_revision=3,
+              host=_host(openalex.WORKS_URL), adapter_revision=4,
               endpoints={"semantic": Endpoint("single_page", 50, 50,
-                         options=("reference_count", "references"), query_syntax=QuerySyntax("plain"),
+                         # `works_filter` is this route's own filter: a research's date scope travels with the
+                         # request, since the semantic route takes `publication_year` and not the date filters.
+                         options=("reference_count", "references", "works_filter"), date_filter="works_filter",
+                         query_syntax=QuerySyntax("plain"),
                          retry={"min_interval": openalex.SEMANTIC_PACER.interval_seconds,
                                 "shared_gate": "openalex.SEMANTIC_PACER"})},
               capabilities={"id_lookup": CapabilityBinding(_openalex_lookup, openalex.MAX_IDS_PER_REQUEST),
                             "citing_works": CapabilityBinding(_openalex_citing, openalex.MAX_RESULTS,
                                 options=(OptionDescriptor("sort", "str", None),
-                                         OptionDescriptor("publication_date", "bool", None)))},
+                                         OptionDescriptor("publication_date", "bool", None),
+                                         OptionDescriptor("works_filter", "str", None)))},
               display_name="OpenAlex", query_syntax=QuerySyntax(boolean_checks=True)),
     # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. A search query
     # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token.
@@ -174,7 +188,8 @@ CONNECTORS = {c.provider_id: c for c in (
               capabilities={"doi_lookup": CapabilityBinding(_s2_lookup, 500)},
               sw_query={"endpoint": semantic_scholar.BULK_ENDPOINT, "sort": semantic_scholar.BULK_SORT},
               endpoints={semantic_scholar.BULK_ENDPOINT: Endpoint("cursor", semantic_scholar.BULK_MAX_RESULTS,
-                                                               total="estimated", options=("sort",),
+                                                               total="estimated", options=("sort", "year_range"),
+                                                               date_filter="year_range",
                                                                query_syntax=QuerySyntax("bulk")),
                          # Passages this provider found, and the works they came from: one search, then one batch
                          # lookup. The reply is one page and names no cursor, and its `provider_total` is how many
@@ -198,11 +213,11 @@ CONNECTORS = {c.provider_id: c for c in (
                      "min_interval": arxiv.MIN_INTERVAL_SECONDS},
               display_name="arXiv", query_syntax=QuerySyntax("fielded", operand_prefix="abs:")),
     Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",  # searched through OpenAlex
-              host=_host(openalex.WORKS_URL), lineage="openalex", adapter_revision=2,
+              host=_host(openalex.WORKS_URL), lineage="openalex", adapter_revision=3, date_filter="works_filter",
               display_name="bioRxiv", query_syntax=QuerySyntax(boolean_checks=True)),
     # ESearch followed by EFetch; both have their own bounded HTTP retries.
-    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL), requests_per_search=2, adapter_revision=2,
-              fixed_sort=pubmed.FIXED_SORT,
+    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL), requests_per_search=2, adapter_revision=3,
+              fixed_sort=pubmed.FIXED_SORT, options=("year_range",), date_filter="year_range",
               display_name="PubMed", query_syntax=QuerySyntax(operand_suffix="[Title/Abstract]")),
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
               host=_host(ieee_xplore.SEARCH_URL), adapter_revision=2, display_name="IEEE Xplore",
@@ -294,9 +309,28 @@ def reading(query: dict[str, Any]) -> Connector:
 
 
 def endpoint_options(query: dict[str, Any]) -> dict[str, Any]:
-    """The arguments a query that names its endpoint, sort or filter passes to its connector's `search` (a statement
-    research's OpenAlex author query carries `works_filter`, R5); none for any other query."""
-    return {key: query[key] for key in ("endpoint", "sort", "works_filter") if query.get(key) is not None}
+    """The arguments a query that names its endpoint, sort or bound passes to its connector's `search`: a statement
+    research's OpenAlex author query carries `works_filter`, and a bounded research's request carries its own date
+    bound. None for any other query."""
+    return {key: query[key] for key in ("endpoint", "sort", "works_filter", "year_range")
+            if query.get(key) is not None}
+
+
+def date_bound_form(query: dict[str, Any]) -> str | None:
+    """Which bound this request's own route takes for a date scope, or None where it takes none.
+
+    The route decides, not the provider: a connector's own search and each endpoint it offers take their own form,
+    and an endpoint inherits none, so a route nobody has checked is read as taking no bound.
+    """
+    connector = CONNECTORS[query["provider_id"]]
+    endpoint = query.get("endpoint")
+    return connector.date_filter if endpoint is None else connector.endpoints[endpoint].date_filter
+
+
+def date_filter_providers() -> list[str]:
+    """The connectors with a route that takes a research's date scope with the request (`date_filter`)."""
+    return [pid for pid, connector in CONNECTORS.items()
+            if connector.date_filter or any(shape.date_filter for shape in connector.endpoints.values())]
 
 
 def effective_sort(query: dict[str, Any]) -> str | None:

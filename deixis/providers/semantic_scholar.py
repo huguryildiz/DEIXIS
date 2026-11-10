@@ -109,15 +109,20 @@ def _record(paper: dict[str, Any]) -> ProviderRecord:
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                  contact_email: str | None = None, cursor: str | None = None,
                  max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES, endpoint: str | None = None,
-                 sort: str | None = None) -> SearchOutcome:
-    """One page of a relevance search, or of a bulk search when the query names that endpoint."""
+                 sort: str | None = None, year_range: str | None = None) -> SearchOutcome:
+    """One page of a relevance search, or of a bulk search when the query names that endpoint.
+
+    `year_range` is the caller's publication-year bound, which only the bulk route takes (`search_bulk`).
+    """
     if endpoint == BULK_ENDPOINT:
         return await search_bulk(client, query, limit, api_key, contact_email, cursor, max_rate_limit_retries,
-                                 sort or BULK_SORT)
+                                 sort or BULK_SORT, year_range=year_range)
     if endpoint == SNIPPET_ENDPOINT:
         return await search_snippets(client, query, limit, api_key, contact_email, cursor, max_rate_limit_retries)
     if endpoint is not None:
         raise ValueError(f"unknown Semantic Scholar endpoint: {endpoint!r}")
+    if year_range is not None:
+        raise ValueError("the relevance route takes no publication-year bound")
     count = min(limit, MAX_RESULTS)
     params: dict[str, Any] = {"query": query, "limit": count, "fields": FIELDS}
     offset = page_offset(cursor)
@@ -155,22 +160,28 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
 
 async def search_bulk(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                       contact_email: str | None = None, cursor: str | None = None,
-                      max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES, sort: str = BULK_SORT) -> SearchOutcome:
+                      max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES, sort: str = BULK_SORT,
+                      *, year_range: str | None = None) -> SearchOutcome:
     """One batch of a bulk search: up to 1,000 papers, of which the first `limit` are kept.
 
     The request goes through the same `send` as every other Semantic Scholar request, so the process-wide gate
     and the bounded 429 retries apply to it unchanged. The endpoint takes no page size; a batch larger than `limit` is
     cut there and its read ends (`CUT`).
+
+    `year_range` is sent as this route's own `year`, which it takes as `<min>-<max>` and refuses in any other form
+    ("'year' must be of the form <min>-<max>", answered 10 Nov 2026), so both sides are always written.
     """
     if cursor == CUT:
         raise ValueError("a cut bulk batch has no next page")
     params: dict[str, Any] = {"query": query, "fields": FIELDS, "sort": sort}
+    if year_range:
+        params["year"] = year_range
     if cursor not in (None, FIRST_PAGE):
         params["token"] = cursor
     headers = {"x-api-key": api_key} if api_key else {}
     access_mode = "api_key" if api_key else "keyless"
-    description = (f"GET {BULK_URL} query={query!r} sort={sort}" + (" token=<next>" if "token" in params else "")
-                   + f" access={access_mode}")
+    description = (f"GET {BULK_URL} query={query!r} sort={sort}" + (f" year={year_range}" if year_range else "")
+                   + (" token=<next>" if "token" in params else "") + f" access={access_mode}")
     response, outcome = await send(client, BULK_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
                                    unstated_wait=UNSTATED_RATE_LIMIT_WAIT,
                                    max_rate_limit_retries=max_rate_limit_retries)

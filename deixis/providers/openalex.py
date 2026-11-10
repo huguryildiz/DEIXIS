@@ -205,7 +205,7 @@ async def search_works(
 ) -> SearchOutcome:
     if endpoint == "semantic":
         return await search_semantic(client, query, per_page, api_key, contact_email, reference_count,
-                                     references, max_rate_limit_retries)
+                                     references, max_rate_limit_retries, works_filter=works_filter)
     if endpoint is not None:
         raise ValueError(f"unknown OpenAlex endpoint: {endpoint!r}")
     per_page = min(per_page, MAX_RESULTS)
@@ -233,18 +233,28 @@ async def search_works(
 
 async def search_semantic(client, query, per_page, api_key=None, contact_email=None,
                           reference_count=False, references=False,
-                          max_rate_limit_retries=MAX_RATE_LIMIT_RETRIES):
+                          max_rate_limit_retries=MAX_RATE_LIMIT_RETRIES, *, works_filter=None):
     """Single-page meaning search; ordinary fields include the source-owned abstract.
 
     OpenAlex Help, semantic-search/authentication/example-costs, read 2026-10-09:
     50 results, select supported, Bearer accepted. The help page said 2,000 characters; the live API refuses more than
     1,500 (HTTP 400, measured 11 Oct 2026), so the query is cut to that (`semantic_text`).
+
+    `works_filter` is sent as this route's own `filter`. The semantic-search help page (read 10 Nov 2026) says the
+    route works with 17 filters and writes one in its own example, so a bound the caller asks for is sent with the
+    request rather than applied to its answer: a filter applied afterwards cannot give back the places those
+    records took in a page of 50. A filter the route does not support is refused with HTTP 400, which is recorded
+    like any other refusal.
     """
     select = SELECT + "".join(f",{field}" for field, asked in
                              ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
     params = {"search.semantic": semantic_text(query), "per_page": min(per_page, SEMANTIC_MAX_PER_PAGE), "select": select}
+    if works_filter:
+        params["filter"] = works_filter
     headers, access = _credentials(params, api_key, contact_email)
-    description = f"GET {WORKS_URL} search.semantic={semantic_text(query)!r} per_page={params['per_page']} access={access}"
+    description = (f"GET {WORKS_URL} search.semantic={semantic_text(query)!r}"
+                   + (f" filter={works_filter}" if works_filter else "")
+                   + f" per_page={params['per_page']} access={access}")
     response, outcome = await _get(client, params, headers, description, access, api_key,
                                    RATE_LIMIT_HEADERS + ("x-ratelimit-credits-used",),
                                    max_rate_limit_retries=max_rate_limit_retries, start_pacer=SEMANTIC_PACER)
@@ -295,10 +305,15 @@ MAX_IDS_PER_REQUEST = 100
 async def citing_works(client: httpx.AsyncClient, work_id: str, cursor: str, per_page: int = MAX_RESULTS,
                        api_key: str | None = None, contact_email: str | None = None,
                        max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES, *,
-                       sort: str | None = None, publication_date: bool = False) -> SearchOutcome:
-    """One page of the works that cite `work_id` (`filter=cites:W…`), read by cursor like an sw query's pages."""
+                       sort: str | None = None, publication_date: bool = False,
+                       works_filter: str | None = None) -> SearchOutcome:
+    """One page of the works that cite `work_id` (`filter=cites:W…`), read by cursor like an sw query's pages.
+
+    `works_filter` is the caller's own bound, sent beside the one that selects the citing works: a comma is
+    OpenAlex's AND, so both hold and the page comes back already inside the bound.
+    """
     per_page = min(per_page, MAX_RESULTS)
-    works_filter = f"cites:{work_id}"
+    works_filter = ",".join(part for part in (f"cites:{work_id}", works_filter) if part)
     params: dict[str, Any] = {"filter": works_filter, "per_page": per_page, "select": CHAIN_SELECT, "cursor": cursor}
     if publication_date:
         params["select"] += ",publication_date"

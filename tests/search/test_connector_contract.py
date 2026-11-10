@@ -418,9 +418,11 @@ def test_registration_schema_and_purity(memory_keychain, tmp_path):
     asyncio.run(run())
     assert registry.Connector("synthetic", deny_network, 1).adapter_revision == 1
     # Semantic Scholar is at 3 since its snippet endpoint, whose search sends a second request of its own; Scopus
-    # since its search asks for a record view and reads the abstract that view carries.
-    assert all(c.adapter_revision == (3 if c.provider_id in ("openalex", "semantic_scholar", "scopus") else 2)
-               for c in registry.CONNECTORS.values())
+    # since its search asks for a record view and reads the abstract that view carries; bioRxiv since its search
+    # takes a caller's own filter beside the one that selects the repository; PubMed since its search takes a
+    # publication-date range; OpenAlex at 4 since its semantic route sends a filter of its own.
+    revisions = {"openalex": 4, "semantic_scholar": 3, "scopus": 3, "biorxiv": 3, "pubmed": 3}
+    assert all(c.adapter_revision == revisions.get(c.provider_id, 2) for c in registry.CONNECTORS.values())
     enum = json.loads((ROOT / "deixis/contracts/research/common.schema.json").read_text(encoding="utf-8"))["$defs"]["provider_id"]["enum"]
     assert set(enum) == set(registry.CONNECTORS)
     assert os.environ == before_env and memory_keychain.items == before_keys and list(tmp_path.iterdir()) == before_files

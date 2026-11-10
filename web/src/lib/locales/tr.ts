@@ -6151,6 +6151,11 @@ export const tr: Record<string, string> = {
   'also searched as the subject headings {headings}': 'konu başlıklarıyla da arandı: {headings}',
   'searched as a second index, {records} records': 'kendi başına ikinci indeks olarak arandı, {records} kayıt',
   'searched for the part “{subtopic}”, {records} records': '“{subtopic}” parçası için arandı, {records} kayıt',
+  'Bounded to {years}': '{years} ile sınırlandı',
+  'Bounded to {years}, from “{basis}” in your question': '{years} ile sınırlandı, sorunuzdaki “{basis}” ifadesinden',
+  '{n} planned requests use routes that take no year bound': 'planlanan {n} istek, yıl sınırı kabul etmeyen yolları kullanıyor',
+  '{year} onwards': '{year} ve sonrası',
+  'up to {year}': '{year} ve öncesi',
   'this depth sends no sub-topic search': 'bu derinlik alt başlık araması göndermiyor',
   'it was searched as an index of its own instead': 'onun yerine kendi başına indeks olarak arandı',
   'no field source was searched to leave a part of the question open':

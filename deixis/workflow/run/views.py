@@ -214,6 +214,27 @@ def field_search_view(store: Store, run: dict[str, Any], body: dict[str, Any] | 
     return {"rule": rule.get("rule"), "sources": rule.get("sources"), "records": rule.get("records"), "rows": rows}
 
 
+def date_scope_view(run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The years this run is bounded to, and how the requests its plan froze stand to them.
+
+    The years are the person's own date condition, read from their question, or the cutoff a measurement supplied
+    with the run (`origin`); `basis` quotes the words they were read from. The counts are of **planned** requests,
+    read from the frozen plan and not from what was sent: `applied` carries the bound with the request, so that
+    provider never answered outside it; `not_supported` is a route that takes no bound, so it was searched
+    unbounded; `not_applied` a plan frozen before the years were read. Whether a planned request was really sent is
+    its own step's business, which the steps below it report. A run that bounds no years has nothing to report.
+    """
+    years = fast_path.date_scope(run["budget"])
+    if years is None:
+        return None
+    counts: dict[str, int] = {}
+    for request in fast_search.sent_plan(body) if body else []:
+        state = request.get("date_bound")
+        if state:
+            counts[state] = counts.get(state, 0) + 1
+    return {key: years[key] for key in ("rule", "from_year", "to_year", "basis", "origin")} | {"planned": counts}
+
+
 def broad_index_view(store: Store, run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
     """What this run did with the broad index: searched it as an index of its own, sent its one sub-topic search,
     or neither, with the reason the plan recorded.
@@ -842,6 +863,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["field_search"] = field_search_view(store, run, frozen) if run["kind"] == "discovery" else None
         # The second independent index this run searched beside the field source, or why it searched none.
         run["broad_index"] = broad_index_view(store, run, frozen) if run["kind"] == "discovery" else None
+        # The years this run searched in, where its question or a measurement bounded them.
+        run["date_scope"] = date_scope_view(run, frozen) if run["kind"] == "discovery" else None
         # What became of the fast chain's requests, by the one rule the report's method section uses too.
         run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).

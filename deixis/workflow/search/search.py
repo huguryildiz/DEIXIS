@@ -9,12 +9,12 @@ from dataclasses import replace
 from deixis.domain.rules import PROVIDER_WAIT, SOURCE_ROUTES
 from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE, SearchOutcome
-from deixis.providers.registry import CONNECTORS, broad_index_providers, reading
+from deixis.providers.registry import CONNECTORS, broad_index_providers, date_bound_form, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex, query_compiler
 from deixis.workflow.search import mesh
-from deixis.workflow.search import (completion, english_question, routing, search_page, search_plan, search_query,
-                                    seed_match, user_plan)
+from deixis.workflow.search import (completion, date_scope, english_question, routing, search_page, search_plan,
+                                    search_query, seed_match, user_plan)
 from deixis.workflow.run import fast_path
 from deixis.workflow.search.search_page import Page
 from deixis.workflow.search.expansion import queried_form
@@ -39,6 +39,52 @@ BLOCK_SEMANTIC_KEY = "search:fast:semantic:blocks"
 BLOCK_SEMANTIC_OFF = {"rule": "block_terms_off_v2", "query_text": None, "skipped": "turned_off"}
 
 
+def with_date_scope(query, years):
+    """`query` with this run's date scope in the bound its own route takes, or unchanged where it takes none.
+
+    The route decides, not the provider: OpenAlex's keyword route takes the publication dates, its semantic route
+    only `publication_year`, Semantic Scholar's bulk search and PubMed's ESearch a year range
+    (`date_scope.provider_bound`, `registry.date_bound_form`). A route that takes no bound is searched unbounded;
+    `sent_plan` says so for every planned request, so nothing reads a bound back that never left with one.
+
+    An OpenAlex filter is joined to any the query already carries — a statement research's author filter — with a
+    comma, which is OpenAlex's own AND, so both hold.
+    """
+    bound = date_scope.provider_bound(date_bound_form(query), years, query.get("endpoint"))
+    if not bound:
+        return query
+    if "works_filter" in bound:
+        bound = {"works_filter": date_scope.with_filter(query.get("works_filter"), bound["works_filter"])}
+    return query | bound
+
+
+def carried_bound(query):
+    """The bound a planned request really carries, where its plan kept a copy of the query that holds one.
+
+    A stored plan whose keyword entry names only its index keeps none, and the row then reads as the compiled
+    query does: nothing is written in that the plan does not say.
+    """
+    return {key: query[key] for key in date_scope.BOUND_KEYS if (query or {}).get(key)} if query else {}
+
+
+def date_bound(years, query):
+    """How a planned request stands to this run's date scope, read from the request itself.
+
+    `applied` means the request really carries the bound, so the provider never answered outside it.
+    `not_supported` means its own route takes none, so it was sent unbounded and whatever it brought is bounded, if
+    at all, only after the search. `not_applied` is a request whose route takes a bound that the plan does not
+    carry — a plan frozen before this run's scope was read, resumed as it stands. A run that bounds no years
+    records none of the three.
+    """
+    if not years:
+        return {}
+    expected = date_scope.provider_bound(date_bound_form(query), years, query.get("endpoint"))
+    if not expected:
+        return {"date_bound": "not_supported"}
+    (key, value), = expected.items()
+    return {"date_bound": "applied" if value in (query.get(key) or "") else "not_applied"}
+
+
 def seed_query(question, envelope):
     """The semantic query with the seed PDFs' text behind the question, which is never cut, and what of each seed went
     in. One seed: the `seed_pdf_v1` string. Several: the room the question leaves, less one separator per seed, shared
@@ -60,16 +106,21 @@ def seed_query(question, envelope):
                                     for svid, origin, part in parts]
 
 
-def seed_requests(envelope, limit):
+def seed_requests(envelope, limit, years=None):
     """One OpenAlex semantic request per seed with text: the seed's own text (`seed_match.seed_text`) cut to what
-    OpenAlex accepts, in seed order; a seed with no text sends nothing. `index` is the seed's place in the envelope."""
+    OpenAlex accepts, in seed order; a seed with no text sends nothing. `index` is the seed's place in the envelope.
+
+    A seed's request is a search of the person's question like any other, so it carries the run's date scope too: a
+    seed PDF says what to look for, not which years to look in.
+    """
     specs = []
     for i, context in enumerate(envelope["seeds"]):
         text, origin = seed_match.seed_text(context)
         if text.strip():
-            specs.append({"index": i, "source_version_id": context["source_version_id"], "origin": origin,
-                          "provider_id": "openalex", "endpoint": "semantic",
-                          "query_text": openalex.semantic_text(text), "limit": limit})
+            specs.append(with_date_scope(
+                {"index": i, "source_version_id": context["source_version_id"], "origin": origin,
+                 "provider_id": "openalex", "endpoint": "semantic",
+                 "query_text": openalex.semantic_text(text), "limit": limit}, years))
     return specs
 
 
@@ -96,27 +147,37 @@ def sent_plan(body):
         return [dict(q, key=f"search:{i}", arm="keyword", watchable=q.get("origin") != "author", compiled_index=i)
                 for i, q in enumerate(compiled)]
     semantic = plan["semantic"]
+    # The years this run searches in, as its plan froze them, and for each request below how it stands to them
+    # (`date_bound`): it carries the bound, its route takes none, or its plan was frozen before the years were
+    # read. A plan frozen before the rule names no years and every row reads as it did.
+    years = plan.get("date_scope")
     sent = [{"provider_id": "openalex", "endpoint": "semantic", "query_text": semantic.get("query_text"),
              "origin": semantic.get("query_origin"), "key": "search:fast:semantic", "arm": "semantic",
-             "watchable": False}]
+             "watchable": False, **date_bound(years, semantic)}]
     blocks = plan.get("block_semantic") or {}
     if blocks.get("query_text"):
         sent.append({"provider_id": "openalex", "endpoint": "semantic", "query_text": blocks["query_text"],
                      "origin": blocks["query_origin"], "key": BLOCK_SEMANTIC_KEY, "arm": "block_semantic",
-                     "watchable": False})
+                     "watchable": False, **date_bound(years, blocks)})
     sent += [{"provider_id": spec["provider_id"], "endpoint": "semantic", "query_text": spec["query_text"],
-              "origin": spec["origin"], "key": seed_key(spec), "arm": "seed_semantic", "watchable": False}
+              "origin": spec["origin"], "key": seed_key(spec), "arm": "seed_semantic", "watchable": False,
+              **date_bound(years, spec)}
              for spec in plan.get("seed_semantic") or []]
-    # An author query (R5) is not watchable: a watch sends the query text without the author filter.
+    # An author query is not watchable: a watch sends the query text without the author filter. The bound the
+    # plan's own copy carries is written in, so a recorded request reads with what it was really sent with.
     sent += [dict(compiled[item["index"]], key=f"search:{item['index']}", arm="keyword",
-                  watchable=compiled[item["index"]].get("origin") != "author", compiled_index=item["index"])
+                  watchable=compiled[item["index"]].get("origin") != "author", compiled_index=item["index"],
+                  **date_bound(years, item.get("query") or compiled[item["index"]]))
+             | carried_bound(item.get("query"))
              for item in plan["keywords"]]
     # The field sources this depth pays for: one planned request each, under the page key its own walk writes. The
     # text here is the text the page really sends, expansion and all, because this list is what the PRISMA-S trace
     # and the Methods box read a recorded search back against; the plan's own word record reads the compiled text.
     sent += [dict(compiled[spec["index"]], key=f"search:{spec['index']}", arm="field",
-                  watchable=compiled[spec["index"]].get("origin") != "author", compiled_index=spec["index"])
+                  watchable=compiled[spec["index"]].get("origin") != "author", compiled_index=spec["index"],
+                  **date_bound(years, spec.get("query") or compiled[spec["index"]]))
              | mesh.sent_text(spec["query"])
+             | carried_bound(spec.get("query"))
              for spec in plan.get("field") or []]
     # The second independent index, where the plan froze one: one planned request under its own page key. No watch
     # follows it — a watch asks its provider for what is new by date, and this index is searched for the breadth of
@@ -124,23 +185,30 @@ def sent_plan(body):
     if plan.get("broad"):
         spec = plan["broad"]
         sent.append(dict(compiled[spec["index"]], key=f"search:{spec['index']}", arm="broad_index",
-                         watchable=False, compiled_index=spec["index"]))
+                         watchable=False, compiled_index=spec["index"],
+                         **date_bound(years, spec.get("query") or compiled[spec["index"]]))
+                    | carried_bound(spec.get("query")))
     # The one sub-topic search of that index, where the plan froze one: a planned request that goes out only if
     # its own condition still holds, so it is listed here (a cancelled step reads as `not_sent`) and no watch
     # follows it either.
     if plan.get("subtopic"):
         spec = plan["subtopic"]
         sent.append(dict(compiled[spec["index"]], key=f"search:{spec['index']}", arm="subtopic",
-                         watchable=False, compiled_index=spec["index"]))
+                         watchable=False, compiled_index=spec["index"],
+                         **date_bound(years, spec.get("query") or compiled[spec["index"]]))
+                    | carried_bound(spec.get("query")))
     if plan.get("s2_bulk"):
         sent.append(dict(plan["s2_bulk"], key="search:fast:s2_bulk", arm="s2_bulk", watchable=True,
-                         compiled_index=plan["s2_bulk_index"]))
+                         compiled_index=plan["s2_bulk_index"],
+                         **date_bound(years, plan["s2_bulk"])))
     # The completion arm, when the run froze one: a planned request that goes out only if its own condition holds, so
     # it is listed here (the PRISMA reader marks a cancelled step `not_sent`) and no watch follows it.
     if plan.get("s2_relevance"):
-        sent.append(dict(plan["s2_relevance"], key=completion.RELEVANCE_KEY, arm="s2_relevance", watchable=False))
+        sent.append(dict(plan["s2_relevance"], key=completion.RELEVANCE_KEY, arm="s2_relevance", watchable=False,
+                         **date_bound(years, plan["s2_relevance"])))
     sent += [{k: v for k, v in spec.items() if k not in ("index", "focused")}
              | {"key": completion.snippet_key(position), "arm": "s2_snippet", "watchable": False}
+             | date_bound(years, spec)
              for position, spec in enumerate(plan.get("s2_snippet") or [])]
     return sent
 
@@ -201,11 +269,15 @@ def semantic_spec(scope, policy, seed_context=None):
     seed, parts = None, []
     if seed_context and not seeded_question(seed_context):
         question, seed, parts = seed_query(question, seed_context)
-    return {"provider_id": "openalex", "endpoint": "semantic",
-            "query_text": openalex.semantic_text(question), "limit": policy["semantic_top"],
-            "query_origin": "question",
-            **({"seed_text": seed} if seed else {}),
-            **({"seed_parts": parts} if seed_context and not seeded_question(seed_context) else {})}
+    # The run's own date scope rides with this request, which is the first one sent: it goes out before anything
+    # plans, so a bound read only at plan time would miss it (`fast_path.DATE_SCOPE_RULE`).
+    return with_date_scope(
+        {"provider_id": "openalex", "endpoint": "semantic",
+         "query_text": openalex.semantic_text(question), "limit": policy["semantic_top"],
+         "query_origin": "question",
+         **({"seed_text": seed} if seed else {}),
+         **({"seed_parts": parts} if seed_context and not seeded_question(seed_context) else {})},
+        policy.get("date_scope"))
 
 
 def first_request_plan(run, scope, seed_context=None):
@@ -405,11 +477,17 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     if seeded_question(seed_context):
         # The question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
         plan = build_plan(store, run, scope, queries, vocabulary=vocabulary)
-        return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2)}
+        return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2,
+                                                                   policy.get("date_scope"))}
     deep = policy["mode"] == "deep"
     # The providers a person left out of a saved search plan get no request (S23a); OpenAlex cannot be left out.
     excluded = user_plan.excluded(scope)
-    keyword = [{"index": i, "query": q} for i, q in enumerate(queries) if q["provider_id"] == "openalex"]
+    # The years this run searches in, frozen with the rest of the policy before the first request opened. Every
+    # query below is bounded by it where its route takes a bound, so the plan is also the record of what each
+    # request was sent with: `sent_plan` reads it back per request.
+    years = policy.get("date_scope")
+    keyword = [{"index": i, "query": with_date_scope(q, years)}
+               for i, q in enumerate(queries) if q["provider_id"] == "openalex"]
     s2_index = next((i for i, q in enumerate(queries)
                      if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"
                      and "semantic_scholar" not in excluded), None)
@@ -429,10 +507,14 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     # not send gives its records back to the keyword queries and keeps no admission place: the places belong to the
     # plan, so a source that fails later cannot move them either.
     field_specs, field_dropped, field_reasons = field_plan(store, run, scope, queries, policy, excluded)
+    # A field source is bounded the same way as the question's own index, where its connector takes a bound; most
+    # take none and are searched unbounded, which the request's own record says.
+    field_specs = [spec | {"query": with_date_scope(spec["query"], years)} for spec in field_specs]
     field_records = sum(spec["records"] for spec in field_specs)
     # The second independent index this depth pays for, decided after the field sources because the conditional
     # arm's own condition is that this run plans none of its own. Its records come off the same keyword cap.
     broad_spec, broad_told = broad_plan(run, scope, queries, excluded, field_specs)
+    broad_spec = broad_spec | {"query": with_date_scope(broad_spec["query"], years)} if broad_spec else None
     broad_records = broad_spec["records"] if broad_spec else 0
     # The one sub-topic search of that index, where this depth pays for no second index of its own. Decided after
     # the broad plan, because its own condition is that there is none. Its records are its own and come off no
@@ -440,12 +522,16 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     # would be lost on every question where nothing is sent, and the arms could not be compared on one total.
     subtopic_spec, subtopic_told = subtopic_plan(run, scope, queries, vocabulary, excluded, broad_spec,
                                                 field_specs)
+    subtopic_spec = subtopic_spec | {"query": with_date_scope(subtopic_spec["query"], years)} if subtopic_spec else None
     # The queries those two arms own are reported on their own arms, with their own reasons: the field plan's list
     # of what was not sent does not also name them as field sources that lost their place.
     owned = {broad_told["index"]} if broad_told and broad_told["index"] is not None else set()
     owned |= set(subtopic_told["indexes"]) if subtopic_told else set()
     field_dropped = [row for row in field_dropped if row["index"] not in owned]
     return {"version": 1, "semantic": semantic_spec(scope, policy, seed_context),
+            # The whole scope, in the plan a person reads as well as in the budget the run froze: the two come from
+            # one reading, and the plan is what the search record and the Methods box are read back against.
+            **({"date_scope": years} if years else {}),
             **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
             **({"completion": {"rule": arm["rule"], "arm": arm["arm"], "records": reserved,
                                # Where each request of the arm is admitted: the fallback waits for the keyword pages
@@ -476,7 +562,10 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
             **({"subtopic": subtopic_spec} if subtopic_spec else {}),
             **({"subtopic_not_sent": {"provider_id": subtopic_told["provider_id"], "reason": subtopic_told["reason"]}}
                if subtopic_told and "reason" in subtopic_told else {}),
-            "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
+            "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query",
+            # The bulk route takes a year range of its own, so the depth that pays for this request sends it
+            # inside the same years as the question's own index.
+            "s2_bulk": with_date_scope(s2, years) if deep and s2 is not None else None,
             "s2_bulk_index": s2_index,
             "s2_reserved": s2_records,
             **({"s2_skipped": s2_skipped} if s2_skipped else {}),

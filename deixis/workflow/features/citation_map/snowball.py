@@ -33,7 +33,8 @@ from deixis.providers.common import FIRST_PAGE, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, now, transaction
 from deixis.workflow.screen import abstract_stage
-from deixis.workflow.search import chaining, lookups
+from deixis.workflow.run import fast_path
+from deixis.workflow.search import chaining, date_scope, lookups
 from deixis.workflow.features.citation_map import citation_map_run
 from deixis.workflow.features.lineage.lineage_edges import normalize_openalex_id
 
@@ -325,8 +326,14 @@ def _plan_requests(store: Any, run: dict[str, Any], plan: dict[str, Any]) -> dic
     """The round's requests, frozen before any is sent. Backward: the seeds' lists merged in seed order, an id the
     research already holds (or one naming two local works) is not asked for but its link is written now; the rest in
     batches of 100, at most `BACKWARD_REQUESTS`. Forward: one page per seed, a second (with a key) that waits for the
-    first's cursor."""
+    first's cursor.
+
+    A question whose searches are bounded to certain years bounds the forward direction too: asking which works
+    cite a seed is a search of the literature, so it comes back inside the same span. The backward direction asks
+    for the records of named references, which is not a date search, and carries no bound."""
     rid, target = run["research_id"], run["target"]
+    years = fast_path.scope_years(store, rid, run["scope_revision"])
+    bound = date_scope.openalex_filter(years)
     lists_step = store.existing_step(run["id"], "snowball:seed_list:0")
     answered = ((lists_step or {}).get("output") or {}).get("lists", {}) if lists_step and lists_step["status"] == "succeeded" else {}
     seeds, unread = [], []
@@ -360,7 +367,8 @@ def _plan_requests(store: Any, run: dict[str, Any], plan: dict[str, Any]) -> dic
         batches = [asked[i:i + PAGE_SIZE] for i in range(0, len(asked), PAGE_SIZE)][:BACKWARD_REQUESTS]
         for batch in batches:
             specs.append({"direction": "backward", "batch": batch,
-                          "links": sorted((seed, ref) for ref in batch for seed in links[ref])})
+                          "links": sorted((seed, ref) for ref in batch for seed in links[ref]),
+                          **({"date_bound": "not_a_date_search"} if years else {})})
         not_requested = len(asked) - sum(map(len, batches))
     else:
         not_requested = 0
@@ -371,7 +379,8 @@ def _plan_requests(store: Any, run: dict[str, Any], plan: dict[str, Any]) -> dic
                 if sum(s["direction"] == "forward" for s in specs) >= FORWARD_REQUESTS:
                     break
                 specs.append({"direction": "forward", "cites": seed["openalex_id"], "page": page,
-                              "seed": seed["source_version_id"]})
+                              "seed": seed["source_version_id"],
+                              **({"works_filter": bound, "date_bound": "applied"} if bound else {})})
     for i, spec in enumerate(specs):
         spec["index"] = i
         spec["key"] = _key(i)
@@ -447,7 +456,9 @@ async def _chain_request(flow: Any, run: dict[str, Any], spec: dict[str, Any]) -
     key = CONNECTORS["openalex"].api_key()
     if spec["direction"] == "forward":
         dispatched = await facade.dispatch_citing("openalex", flow.deps.http, spec["cites"], cursor, PAGE_SIZE, key,
-                                                  flow.deps.settings.contact_email, RATE_LIMIT_RETRIES, sort=SORT)
+                                                  flow.deps.settings.contact_email, RATE_LIMIT_RETRIES, sort=SORT,
+                                                  **({"works_filter": spec["works_filter"]}
+                                                     if spec.get("works_filter") else {}))
     else:
         dispatched = await facade.dispatch_lookup("openalex", "id_lookup", flow.deps.http, tuple(spec["batch"]), key,
                                                   flow.deps.settings.contact_email, RATE_LIMIT_RETRIES)

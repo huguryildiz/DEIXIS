@@ -162,7 +162,7 @@ def test_semantic_adapter_abstract_headers_and_legacy_revision(monkeypatch):
                 endpoint='semantic', cursor='*', reference_count=True, references=True)
     result = asyncio.run(execute())
     assert result.outcome.records[0].abstract == 'SYNTHETIC abstract'
-    assert result.outcome.next_cursor is None and result.connector['adapter_revision'] == 3
+    assert result.outcome.next_cursor is None and result.connector['adapter_revision'] == 4
     assert requests[0].url.params['per_page'] == '50'
     assert len(requests[0].url.params['search.semantic']) == 1500  # OpenAlex's limit
     assert 'cursor' not in requests[0].url.params and 'search.title_abstract_keywords' not in requests[0].url.params

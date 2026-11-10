@@ -192,7 +192,10 @@ async def run(watches, check, callbacks, settings):
                             if unit["kind"] == "citing_works":
                                 dispatched = await facade.dispatch_citing(unit["provider_id"], http, unit["openalex_id"], cursor,
                                     unit["page_size"], key, settings.contact_email, **{k: v for k, v in options.items() if k != "cursor"},
-                                    sort="publication_date:desc", publication_date=True)
+                                    sort="publication_date:desc", publication_date=True,
+                                    # The years the research is bounded to, where it is bounded: a watch of a
+                                    # question about certain years does not report work outside them.
+                                    **({"works_filter": unit["works_filter"]} if unit.get("works_filter") else {}))
                                 outcome = dispatched.outcome
                             else:
                                 options.update(connector.sw_options, **registry.endpoint_options(unit))

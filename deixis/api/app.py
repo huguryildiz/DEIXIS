@@ -47,7 +47,7 @@ from deixis.imports import bibtex_ris
 from deixis.workflow.screen import abstract_stage
 from deixis.workflow.run import source_keys
 from deixis.workflow.run import fast_path, intent
-from deixis.workflow.search import small_batch
+from deixis.workflow.search import date_scope, small_batch
 from deixis.workflow.answer import statement_check
 from deixis.workflow.read import file_restore, text_retry
 from deixis.workflow.run import spend
@@ -346,9 +346,60 @@ class EnglishQuestion(BaseModel):
     expected_version: int
 
 
+def run_date_scope(store, research_id: str, scope: dict[str, Any], given) -> dict[str, Any] | None:
+    """The years this search run is bounded to: the ones a measurement supplied, else the ones the question states.
+
+    A question that clearly states a date condition this code cannot resolve stops here (422) and no run is
+    created: a search that quietly ignored the condition would report a scope it never applied, and the decision
+    has to be made now because the question's own semantic request and the seed match both open before anything
+    is frozen.
+
+    A second search run of the same question revision must search the same years as the first. The candidate pool
+    is read per research and scope revision, so a differently bounded run would rank records the earlier, wider
+    run admitted and report them as its own (409).
+    """
+    if given is not None:
+        try:
+            years = date_scope.given(given.from_year, given.to_year)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    else:
+        try:
+            # The run's own starting year, so "the last five years" freezes to an exact span and a resumed run
+            # searches the years it was queued with.
+            years = date_scope.read(scope["question"], int(fast_path.timestamp(store.clock)[:4]))
+        except date_scope.Unreadable as exc:
+            raise HTTPException(422, f"This question states a date condition the search cannot read"
+                                     f" ({exc.reason}): {exc.basis!r}. Name the years, as in \"since 2020\".")
+    bounds = None if years is None else (years["from_year"], years["to_year"])
+    for row in store.conn.execute(
+            "SELECT budget_json FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery'",
+            (research_id, scope["revision"])):
+        earlier = fast_path.date_scope(json.loads(row["budget_json"]))
+        if (None if earlier is None else (earlier["from_year"], earlier["to_year"])) != bounds:
+            raise HTTPException(409, "An earlier search of this question searched other years; ask the question"
+                                     " again to search a different span")
+    return years
+
+
+class DateScope(BaseModel):
+    """The years a measurement bounds a discovery run to, where the question's own words cannot carry them.
+
+    A frozen benchmark question is hashed, so its year cutoff cannot be written into its text; it arrives with the
+    run instead. A scope given here outranks one read from the question, and the run records which it used.
+    """
+    model_config = ConfigDict(extra="forbid")
+    from_year: int | None = Field(default=None, strict=True,
+                                  ge=date_scope.EARLIEST_YEAR, le=date_scope.LATEST_YEAR)
+    to_year: int | None = Field(default=None, strict=True,
+                                ge=date_scope.EARLIEST_YEAR, le=date_scope.LATEST_YEAR)
+
+
 class StartRun(BaseModel):
     kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch", "fulltext_adjudication",
                   "statement_check"]
+    # `discovery` only: the years this run searches in, for a measurement whose question cannot say them itself.
+    date_scope: DateScope | None = None
     # The question revision the person's screen showed (UI parity S23b): the run is created only while it is still
     # the current one, checked in the same transaction; another one answers 409 and creates nothing. Optional.
     expected_scope_revision: int | None = Field(default=None, strict=True, ge=1)
@@ -2133,8 +2184,11 @@ def create_app(
             # it started (SW22). A PDF collection keeps the refusal.
             if not (body.kind == "answer" and store.discovery_completed(research_id)):
                 raise HTTPException(422, "Include at least one source before generating an answer")
+        if body.date_scope is not None and body.kind != "discovery":
+            raise HTTPException(422, "A date scope is named only for a search run")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "discovery":
+            years = run_date_scope(store, research_id, scope, body.date_scope)
             # The criterion proposal before the first search and the abstract stage's two runs over the
             # works the read limit reaches are given on top of the preset, so the preset itself — which an
             # answer run reads — is what it always was (slice 06 review).
@@ -2163,6 +2217,7 @@ def create_app(
                 budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS,
                 method=settings.search_method, deep_screening=deep, completion_arm=settings.completion_arm,
                 broad_index_arm=settings.broad_index_arm, subtopic_arm=settings.subtopic_arm,
+                date_scope=years,
                 lexical_exclusion=settings.lexical_gate == "on",
                 candidate_embedding=settings.effective_candidate_embedding() == "on"),
                                                         store.research(research_id)["intent"])

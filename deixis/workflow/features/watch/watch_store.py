@@ -11,6 +11,8 @@ from deixis.providers import registry
 from deixis.providers.contract import CONTRACT_ID
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.features.watch import watch_check as policy
+from deixis.workflow.run import fast_path
+from deixis.workflow.search import date_scope
 
 TABLES = ("watches", "watch_checks", "watch_reads", "watch_seen", "watch_seen_alias", "watch_items",
           "watch_schedule_changes", "watch_gaps")
@@ -140,6 +142,11 @@ class WatchStore:
                         "not_configured" if connector.access_mode() == "not_configured" else "ready")
                 units.append(unit)
         else:
+            # A watch stays inside the years the question's own searches are bounded to: the works it brings join
+            # the same research, and the question said which years it is about.
+            years = fast_path.scope_years(self.main, research_id,
+                                          self.main.research(research_id)["current_scope_revision"])
+            bound = date_scope.openalex_filter(years)
             work_ids = sorted({self.main.source(svid)["work_id"] for svid in self.main.included_works(research_id)})
             used = set()
             for work_id in work_ids:
@@ -159,7 +166,8 @@ class WatchStore:
                         "query_text": "cites:" + identifier, "display_name": connector.display_name,
                         "page_size": policy.WATCH_PER_PAGE, "paging": "cursor", "page_gap": connector.page_gap,
                         "date_sorted": True, "contract_id": CONTRACT_ID, "adapter_revision": connector.adapter_revision,
-                        "first_cursor": "*", "status": "ready"})
+                        "first_cursor": "*", "status": "ready",
+                        **({"works_filter": bound, "date_bound": "applied"} if bound else {})})
         return units
 
     def preview(self, research_id, kind):

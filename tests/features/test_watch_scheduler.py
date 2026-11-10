@@ -275,7 +275,7 @@ def test_resumed_check_refuses_changed_adapter_before_using_stored_cursor(api, m
     with pytest.raises(Crash): turn(api)
     api.app.state.worker.recover()
     monkeypatch.setattr(WatchStore, "record_read", original)
-    monkeypatch.setitem(registry.CONNECTORS, "openalex", replace(registry.CONNECTORS["openalex"], adapter_revision=4))
+    monkeypatch.setitem(registry.CONNECTORS, "openalex", replace(registry.CONNECTORS["openalex"], adapter_revision=5))
     control(api, command, "resume"); turn(api)
     assert read(api, command)["failure_reason"] == "adapter_revision_changed"
     assert len(api.sent) == 1 and api.store.run(command["run_id"])["usage"]["provider_requests"] == 1

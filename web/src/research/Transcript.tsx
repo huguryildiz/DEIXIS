@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
-import { api, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from '../lib/api'
+import { api, type DateScope, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from '../lib/api'
 import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
 import { broadIndexReasonText, fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
 import { ConnectionIcon } from '../components/connectionIcons'
@@ -162,6 +162,12 @@ const plural = (n: number, one: string, many: string, vars: Record<string, strin
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 // A field source's share of the question's records, as the routing record read it.
 const sharePercent = (share: number) => new Intl.NumberFormat(uiLocale(), { style: 'percent', maximumFractionDigits: 0 }).format(share)
+// The span a run searched in, read as years because that is the granularity both OpenAlex routes take: one bound
+// alone is written as the open side it leaves open.
+const scopeYearsText = (scope: DateScope) =>
+  scope.from_year !== null && scope.to_year !== null ? `${scope.from_year}\u2013${scope.to_year}`
+  : scope.from_year !== null ? t('{year} onwards', { year: scope.from_year })
+  : t('up to {year}', { year: scope.to_year ?? '' })
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
 export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
@@ -665,8 +671,20 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           {run.broad_index.failed_requests > 0
             ? ` · ${t('{n} requests did not answer', { n: run.broad_index.failed_requests })}` : ''}
         </span></p>
-        if (!totals && !perSource && !arms && !notFound && !fields && !broad) return null
-        return <>{totals}{perSource}{fields}{broad}{arms}{notFound}</>
+        // The years this run is bounded to, first: the lines below it are about requests that carried this bound.
+        // A route that takes no bound is named, because what it brought was not bounded before the ranking. The
+        // counts are of planned requests; whether each was sent is on its own step.
+        const scope = run.date_scope && <p className="chat-provider-totals"><span>
+          {run.date_scope.origin === 'given'
+            ? t('Bounded to {years}', { years: scopeYearsText(run.date_scope) })
+            : t('Bounded to {years}, from “{basis}” in your question',
+                { years: scopeYearsText(run.date_scope), basis: run.date_scope.basis })}
+          {run.date_scope.planned.not_supported
+            ? ` · ${t('{n} planned requests use routes that take no year bound', { n: run.date_scope.planned.not_supported })}`
+            : ''}
+        </span></p>
+        if (!totals && !perSource && !arms && !notFound && !fields && !broad && !scope) return null
+        return <>{scope}{totals}{perSource}{fields}{broad}{arms}{notFound}</>
       }
       case 'screen': {
         const basis = tally(present(screened.map(s => s.selection.proposal_basis)))

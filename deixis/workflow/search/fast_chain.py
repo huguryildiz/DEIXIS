@@ -16,7 +16,8 @@ from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import transaction
-from deixis.workflow.search import chaining, search as fast_search, ranking, search_plan, seed_match, small_batch
+from deixis.workflow.search import (chaining, date_scope, search as fast_search, ranking, search_plan,
+                                    seed_match, small_batch)
 from deixis.workflow.run import fast_path
 
 RETRY_BACKOFF_SECONDS = 1.5  # wait before resending a request that never left, times the attempt number
@@ -49,7 +50,15 @@ def forward_pages(seeds, allowance, paged=True):
 
 
 def request_plan(seeds, policy, held, prior=()):
-    """Append-only numbering; direction allowances never restart at fallback."""
+    """Append-only numbering; direction allowances never restart at fallback.
+
+    A run that bounds its years bounds the forward direction with them: asking which works cite a seed is a search
+    of the literature, so it comes back inside the bound like every other request. The backward direction is not a
+    date search — it asks OpenAlex for the records of the references a seed itself lists, by identifier — so it
+    carries no bound and its step says so (`date_bound`), rather than reading as a request that lost one.
+    """
+    years = policy.get("date_scope")
+    bound = date_scope.openalex_filter(years)
     seen = set(held)
     seen.update(ref for spec in prior for ref in (spec.get("batch") or []))
     refs, excluded = [], []
@@ -73,12 +82,14 @@ def request_plan(seeds, policy, held, prior=()):
     for j in range(max(len(back), len(forward))):
         if j < len(back):
             specs.append({"direction": "backward", "batch": back[j], "cites": None,
-                          "links": chaining.backward_links(seeds, back[j]), "limit": len(back[j])})
+                          "links": chaining.backward_links(seeds, back[j]), "limit": len(back[j]),
+                          **({"date_bound": "not_a_date_search"} if years else {})})
         if j < len(forward):
             seed = forward[j]["seed"]
             specs.append({"direction": "forward", "batch": None, "cites": seed["openalex_id"],
                           "links": [seed["source_version_id"]], "limit": policy["forward_page_size"],
-                          "page": forward[j]["page"], "seed_index": forward[j]["seed_index"]})
+                          "page": forward[j]["page"], "seed_index": forward[j]["seed_index"],
+                          **({"works_filter": bound, "date_bound": "applied"} if bound else {})})
     for i, spec in enumerate(specs, base):
         spec["index"] = i
         spec["key"] = f"chain:fast:{i}"
@@ -421,7 +432,8 @@ class Round:
                 key = CONNECTORS["openalex"].api_key()
                 if spec["direction"] == "forward":
                     dispatched = await facade.dispatch_citing("openalex", self.flow.deps.http, spec["cites"], cursor,
-                        spec["limit"], key, self.flow.deps.settings.contact_email, retries)
+                        spec["limit"], key, self.flow.deps.settings.contact_email, retries,
+                        **({"works_filter": spec["works_filter"]} if spec.get("works_filter") else {}))
                 else:
                     dispatched = await facade.dispatch_lookup("openalex", "id_lookup", self.flow.deps.http,
                         tuple(spec["batch"]), key, self.flow.deps.settings.contact_email, retries)
@@ -460,6 +472,7 @@ class Round:
         step = self.store.existing_step(self.run["id"], spec["key"])
         self.flow._record_chain(self.run, step, spec["key"], spec["direction"], dispatched, self.forms,
             spec["links"], cites=spec["cites"], page=spec.get("page", 1) if spec["cites"] else None,
+            date_bound=spec.get("date_bound"),
             batch=spec["batch"], per_page=spec["limit"], fast_request=spec["index"],
             fast_arrival={"arrived_at": arrived, "cutoff": cutoff, "late": late,
                           "raw_returned": raw_returned, "admitted_returned": len(dispatched.outcome.records) if not late else 0},

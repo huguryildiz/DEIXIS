@@ -68,6 +68,12 @@ COMPLETION_ARMS = ("off", "conditional", "always")
 # pays for one, `off` never. The arm is frozen into the run's budget, so a run sends what it was queued with.
 BROAD_INDEX_RULE = "broad_index_v1"
 BROAD_INDEX_ARMS = ("off", "conditional", "always")
+# The one sub-topic search a depth that pays for no second index of its own may send instead: after its field
+# source has been searched, a part of the question the plan named that the records found so far still do not
+# carry is asked of the broad index on its own. `conditional` sends only where that gap is still open, `always`
+# on every question of the depth that named such a part, `off` never.
+SUBTOPIC_RULE = "subtopic_search_v1"
+SUBTOPIC_ARMS = ("off", "conditional", "always")
 # A run in one of these states will send nothing more, so whether it met its target is settled.
 TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
@@ -94,6 +100,7 @@ class Mode(NamedTuple):
     field_sources: int  # field sources this depth searches beside OpenAlex: none in Quick, one in Standard and Deep
     field_records: int  # records each of them may read, taken off the same keyword cap
     broad_index_records: int  # records the second independent index may read; none at the depths that pay for none
+    subtopic_records: int  # records the one sub-topic search may read; none where a depth searches that index anyway
 
 
 # The stage seconds are the delivery-time targets split across the stages: the four pre-answer stages sum to the
@@ -114,7 +121,7 @@ MODES = {
                   rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0,
                   completion_records=50, snippet_requests=0,
                   # Quick binds its first list to no other source: it searches OpenAlex alone.
-                  field_sources=0, field_records=0, broad_index_records=0),
+                  field_sources=0, field_records=0, broad_index_records=0, subtopic_records=0),
     "standard": Mode((8, 12, 17, 33, 50), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
                      backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
                      rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3,
@@ -122,8 +129,9 @@ MODES = {
                      # The one field source the question's own field distribution points at. The records are a pilot
                      # setting: nothing has measured what a field source adds for what it takes off OpenAlex.
                      field_sources=1, field_records=250,
-                     # Standard's own conditional sub-topic search of the second index is not built yet.
-                     broad_index_records=0),
+                     # Standard pays for no second index of its own; what it pays for is the one sub-topic search
+                     # of that index, and only where its field source left the sub-topic unmet.
+                     broad_index_records=0, subtopic_records=25),
     "detailed": Mode((18, 36, 48, 108, 90), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
                      backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
                      # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
@@ -132,7 +140,9 @@ MODES = {
                      # Deep searches the same one field source and pays for a second independent index beside it,
                      # whose records come off the same keyword cap. The number is a pilot setting: what that index
                      # adds to the first list is not measured.
-                     field_sources=1, field_records=250, broad_index_records=100),
+                     # Deep searches that index on its own, so it sends no sub-topic search of it: one query per
+                     # source stands.
+                     field_sources=1, field_records=250, broad_index_records=100, subtopic_records=0),
 }
 
 
@@ -166,7 +176,8 @@ def elapsed(start: str, end: str) -> int:
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
                   method: str = "legacy", deep_screening: bool = False,
                   lexical_exclusion: bool = True, candidate_embedding: bool = True,
-                  completion_arm: str = "off", broad_index_arm: str = "off") -> dict[str, Any]:
+                  completion_arm: str = "off", broad_index_arm: str = "off",
+                  subtopic_arm: str = "off") -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -191,13 +202,16 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     themselves, the records the arm may read and how many snippet queries the depth may send.
 
     `broad_index_arm` is the same shape for the second independent index (`BROAD_INDEX_ARMS`): `off` writes no
-    key, which is the policy frozen before the rule, and the other two name the arm and the records."""
+    key, which is the policy frozen before the rule, and the other two name the arm and the records.
+    `subtopic_arm` is the same shape again for the one sub-topic search of that index (`SUBTOPIC_ARMS`)."""
     if method not in SEARCH_METHODS:
         raise ValueError(f"unknown search method {method!r}")
     if completion_arm not in COMPLETION_ARMS:
         raise ValueError(f"unknown completion arm {completion_arm!r}")
     if broad_index_arm not in BROAD_INDEX_ARMS:
         raise ValueError(f"unknown broad index arm {broad_index_arm!r}")
+    if subtopic_arm not in SUBTOPIC_ARMS:
+        raise ValueError(f"unknown sub-topic search arm {subtopic_arm!r}")
     mode = MODES[effort]
     bases = mode.stage_seconds
     policy = {
@@ -253,6 +267,13 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # no block, which is byte for byte the policy frozen before the rule: a run queued then sends none either.
         policy["broad_index"] = {"rule": BROAD_INDEX_RULE, "arm": broad_index_arm,
                                  "records": mode.broad_index_records}
+    if subtopic_arm != "off":
+        # These records come off no cap: whether the request is sent can only be read after the field source's
+        # last page, which is after the keyword loop that would spend them has ended, so records taken off that
+        # loop's cap would be lost on every question where nothing is sent and the arms would read different
+        # keyword totals. A run that sends it reads these records on top of the keyword cap. An `off` policy
+        # names no key, which is the policy frozen before the rule.
+        policy["subtopic_search"] = {"rule": SUBTOPIC_RULE, "arm": subtopic_arm, "records": mode.subtopic_records}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
     if not candidate_embedding:
@@ -339,6 +360,12 @@ def broad_index(budget: dict[str, Any]) -> dict[str, Any] | None:
     """The second independent index's arm this run froze, or None for a run of the `off` arm and for every run
     queued before the rule."""
     return (budget.get("fast_path") or {}).get("broad_index")
+
+
+def subtopic_search(budget: dict[str, Any]) -> dict[str, Any] | None:
+    """The sub-topic search's arm this run froze, or None for a run of the `off` arm and for every run queued
+    before the rule."""
+    return (budget.get("fast_path") or {}).get("subtopic_search")
 
 
 def candidate_embedding_on(budget: dict[str, Any]) -> bool:

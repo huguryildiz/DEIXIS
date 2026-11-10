@@ -262,12 +262,14 @@ export type FieldSearchRow = {
   headings: string[] | null
 }
 export type FieldSearch = { rule: string | null; sources: number | null; records: number | null; rows: FieldSearchRow[] }
-// The second independent index of a run: the index a depth pays for beside the field source the question's own
-// distribution points at. `arm` is which rule the run froze (`conditional` searches it only where the run plans
-// no independent field source of its own). `records` is what the plan allowed it, `records_found` what its
-// replies brought. state: `not_sent` with `reason` where the plan sent nothing.
+// What a run did with the broad index: searched it as an index of its own beside the field source the question's
+// field distribution points at (`role` second_index), or sent its one sub-topic search (`role` subtopic, whose
+// `subtopic` names the part of the question it asked about). A depth plans one or the other, never both. `arm` is
+// which rule the run froze, `records` what the plan allowed it, `records_found` what its replies brought.
+// state: `not_sent` with `reason` where nothing was sent.
 export type BroadIndex = {
   rule: string | null; arm: string | null; records: number | null; provider_id: string
+  role: 'second_index' | 'subtopic'; subtopic: string | null
   state: 'searched' | 'planned' | 'request_failed' | 'not_sent'
   records_found: number | null; failed_requests: number; reason: string | null
 }

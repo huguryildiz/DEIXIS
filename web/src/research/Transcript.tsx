@@ -655,8 +655,11 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         const broad = run.broad_index && <p className="chat-provider-totals"><span>
           <ConnectionIcon id={run.broad_index.provider_id} />{providerName(run.broad_index.provider_id)}{' '}
           {run.broad_index.state === 'searched'
-            ? t('searched as a second index, {records} records',
-                { records: (run.broad_index.records_found ?? 0).toLocaleString(uiLocale()) })
+            ? (run.broad_index.role === 'subtopic'
+              ? t('searched for the part “{subtopic}”, {records} records',
+                  { subtopic: run.broad_index.subtopic ?? '', records: (run.broad_index.records_found ?? 0).toLocaleString(uiLocale()) })
+              : t('searched as a second index, {records} records',
+                  { records: (run.broad_index.records_found ?? 0).toLocaleString(uiLocale()) }))
             : run.broad_index.state === 'planned' ? t('planned, no reply recorded')
             : broadIndexReasonText(run.broad_index.reason)}
           {run.broad_index.failed_requests > 0

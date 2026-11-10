@@ -77,6 +77,8 @@ class Settings:
     completion_arm: str = "off"
     # Which second-index arm a new run freezes (`fast_path.BROAD_INDEX_ARMS`).
     broad_index_arm: str = "off"
+    # Which sub-topic-search arm a new run freezes (`fast_path.SUBTOPIC_ARMS`).
+    subtopic_arm: str = "off"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
     # equation reader (Marker) is not installed (slice 22). `load_settings` defaults to `auto`, which turns
     # the route on (POSIX only); this dataclass stays `off` so tests that build Settings by hand request no source. With
@@ -199,6 +201,9 @@ def load_settings() -> Settings:
     broad_index_arm = os.environ.get("DEIXIS_BROAD_INDEX_ARM", "conditional")
     if broad_index_arm not in ("off", "conditional", "always"):
         raise ValueError("DEIXIS_BROAD_INDEX_ARM must be off, conditional or always")
+    subtopic_arm = os.environ.get("DEIXIS_SUBTOPIC_ARM", "conditional")
+    if subtopic_arm not in ("off", "conditional", "always"):
+        raise ValueError("DEIXIS_SUBTOPIC_ARM must be off, conditional or always")
     benchmark_list_barrier = os.environ.get("DEIXIS_BENCHMARK_LIST_BARRIER", "off")
     if benchmark_list_barrier not in ("on", "off"):
         raise ValueError("DEIXIS_BENCHMARK_LIST_BARRIER must be on or off")
@@ -219,6 +224,7 @@ def load_settings() -> Settings:
         search_method=search_method,
         completion_arm=completion_arm,
         broad_index_arm=broad_index_arm,
+        subtopic_arm=subtopic_arm,
         arxiv_source=arxiv_source,
         benchmark_list_barrier=benchmark_list_barrier == "on",
         lexical_gate=lexical_gate,

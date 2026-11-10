@@ -197,6 +197,13 @@ const broadIndexReasons: Record<string, string> = {
   depth_pays_for_no_broad_index: 'this depth searches no second index',
   independent_field_source_planned: 'this research already searched an index of its own',
   entitlement_missing: 'this network has no access to its records',
+  depth_pays_for_no_subtopic_search: 'this depth sends no sub-topic search',
+  broad_index_planned: 'it was searched as an index of its own instead',
+  no_field_source_planned: 'no field source was searched to leave a part of the question open',
+  no_subtopic_named: 'the search plan named no part of the question to ask about',
+  subtopic_not_in_question: 'no part the plan named is one your question states',
+  gap_already_met: 'the records already carried that part of the question',
+  field_source_did_not_answer: 'the field source brought no page to read that part against',
 }
 export const broadIndexReasonText = (reason: string | null) =>
   broadIndexReasons[reason ?? ''] ? t(broadIndexReasons[reason ?? '']) : fieldSourceReasonText(reason)

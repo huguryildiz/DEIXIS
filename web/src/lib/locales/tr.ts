@@ -6150,6 +6150,19 @@ export const tr: Record<string, string> = {
   'fields hold {share} of the question’s records': 'alanları sorunun kayıtlarının {share} kadarını tutuyor',
   'also searched as the subject headings {headings}': 'konu başlıklarıyla da arandı: {headings}',
   'searched as a second index, {records} records': 'kendi başına ikinci indeks olarak arandı, {records} kayıt',
+  'searched for the part “{subtopic}”, {records} records': '“{subtopic}” parçası için arandı, {records} kayıt',
+  'this depth sends no sub-topic search': 'bu derinlik alt başlık araması göndermiyor',
+  'it was searched as an index of its own instead': 'onun yerine kendi başına indeks olarak arandı',
+  'no field source was searched to leave a part of the question open':
+    'sorunun bir parçasını açık bırakacak bir alan kaynağı aranmadı',
+  'the search plan named no part of the question to ask about':
+    'arama planı sorulacak bir soru parçası adlandırmadı',
+  'no part the plan named is one your question states':
+    'planın adlandırdığı hiçbir parça sorunuzun söylediği bir parça değil',
+  'the records already carried that part of the question':
+    'kayıtlar sorunun o parçasını zaten taşıyordu',
+  'the field source brought no page to read that part against':
+    'alan kaynağı, bu bölümü karşılaştıracak hiçbir sayfa getirmedi',
   'this depth searches no second index': 'bu derinlik ikinci bir indeks aramıyor',
   'this research already searched an index of its own': 'bu araştırma kendine ait bir indeksi zaten aradı',
   'this network has no access to its records': 'bu ağın kayıtlarına erişimi yok',

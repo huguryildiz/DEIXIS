@@ -125,6 +125,13 @@ def sent_plan(body):
         spec = plan["broad"]
         sent.append(dict(compiled[spec["index"]], key=f"search:{spec['index']}", arm="broad_index",
                          watchable=False, compiled_index=spec["index"]))
+    # The one sub-topic search of that index, where the plan froze one: a planned request that goes out only if
+    # its own condition still holds, so it is listed here (a cancelled step reads as `not_sent`) and no watch
+    # follows it either.
+    if plan.get("subtopic"):
+        spec = plan["subtopic"]
+        sent.append(dict(compiled[spec["index"]], key=f"search:{spec['index']}", arm="subtopic",
+                         watchable=False, compiled_index=spec["index"]))
     if plan.get("s2_bulk"):
         sent.append(dict(plan["s2_bulk"], key="search:fast:s2_bulk", arm="s2_bulk", watchable=True,
                          compiled_index=plan["s2_bulk_index"]))
@@ -324,6 +331,72 @@ def broad_plan(run, scope, queries, excluded, field_specs):
              "request_index": 0, "arm": rule["arm"]}, told)
 
 
+def subtopic_plan(run, scope, queries, vocabulary, excluded, broad_spec, field_specs):
+    """The one sub-topic search this depth sends of the broad index, and why it sends none.
+
+    The design gives a depth that pays for no second index of its own one request instead: after its field source
+    has been searched, a part of the question the plan named that the records found so far still do not carry is
+    asked of that index on its own. Whether the gap is still open is read in the search stage, after the field
+    source's last page; this plans the request and reserves its records.
+
+    Three things must hold before a paid request is planned at all, and each is recorded when it does not.
+    The depth must really search a field source, since the design's condition is what is still unmet **after**
+    that source. The plan must have named the sub-topic — read from the plan's own answer, so a concept the
+    compiler could not fit is not reported as a concept nobody named. And the sub-topic must be one the question
+    itself names (`search_plan.question_subtopic`): the plan's concepts are a model's reading of the first page
+    of results, and no money is spent on a sub-problem only the model inferred.
+
+    The query is not written here: `search_plan.focused_queries` already renders a named concept beside the main
+    query's terms for every searchable provider, this index included, so the request carries a compiled query like
+    any other.
+
+    Returns the spec and the provider, every compiled query this arm owns and why nothing is sent.
+    """
+    rule = fast_path.subtopic_search(run["budget"])
+    if not rule:
+        # Queued before the rule, or with the `off` arm: nothing planned and nothing to report.
+        return None, None
+    in_scope = [p for p in broad_index_providers() if p in scope["providers"]]
+    provider = next(iter(in_scope or broad_index_providers()), None)
+    if provider is None:
+        return None, None
+    # Every focused query compiled for that index: this depth sends at most one sub-topic search of it, so they
+    # are all this arm's to report and none of them is a field source that lost its place.
+    owned = [i for i, query in enumerate(queries)
+             if query["provider_id"] == provider and query.get("role") == "focused"]
+    told = {"provider_id": provider, "indexes": owned}
+    if not in_scope:
+        return None, told | {"reason": "not_in_scope"}
+    if broad_spec is not None:
+        # This depth already searches that index on its own; one query per source stands. Read before the depth's
+        # own records, because on such a depth both hold and this is the one that says what really happened.
+        return None, told | {"reason": "broad_index_planned"}
+    if not rule["records"]:
+        return None, told | {"reason": "depth_pays_for_no_subtopic_search"}
+    if not field_specs:
+        # No field source is searched, so there is no "after the field source" for the condition to be read at.
+        return None, told | {"reason": "no_field_source_planned"}
+    if provider in excluded:
+        return None, told | {"reason": user_plan.EXCLUDED}
+    if CONNECTORS[provider].access_mode() == "not_configured":
+        return None, told | {"reason": "not_configured"}
+    named = (search_plan.plan_answer(vocabulary).get("focused") or []) if vocabulary else []
+    if not named:
+        return None, told | {"reason": "no_subtopic_named"}
+    terms = [entry["term"] for entry in named
+             if search_plan.question_subtopic(scope["question"], vocabulary, entry["term"])]
+    if not terms:
+        # Every concept the plan named is the model's own reading, not a sub-topic the question states.
+        return None, told | {"reason": "subtopic_not_in_question"}
+    index = next((i for i in owned if queries[i]["focused"]["term"] in terms), None)
+    if index is None:
+        # The depth's Boolean plan budget or this provider's own rules left that concept without a query;
+        # `focused_record` says which of the two.
+        return None, told | {"reason": "query_not_compiled"}
+    return ({"index": index, "query": queries[index], "records": rule["records"], "request_index": 0,
+             "arm": rule["arm"], "focused": dict(queries[index]["focused"])}, told)
+
+
 def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     """The frozen search plan. With `vocabulary` (every discovery run since `block_terms_v1`) it also freezes `block_semantic`:
     under `block_terms_v1` the block terms' semantic request, since the 6 Nov rules the record that it is off (`BLOCK_SEMANTIC_OFF`). A plan
@@ -361,10 +434,17 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     # arm's own condition is that this run plans none of its own. Its records come off the same keyword cap.
     broad_spec, broad_told = broad_plan(run, scope, queries, excluded, field_specs)
     broad_records = broad_spec["records"] if broad_spec else 0
-    # The one query the broad arm owns is reported on that arm, with its own reason: the field plan's list of what
-    # was not sent does not also name it as a field source that lost its place.
-    owned = broad_told["index"] if broad_told else None
-    field_dropped = [row for row in field_dropped if owned is None or row["index"] != owned]
+    # The one sub-topic search of that index, where this depth pays for no second index of its own. Decided after
+    # the broad plan, because its own condition is that there is none. Its records are its own and come off no
+    # cap: whether it is sent is decided after the keyword loop has ended, so records taken off that loop's cap
+    # would be lost on every question where nothing is sent, and the arms could not be compared on one total.
+    subtopic_spec, subtopic_told = subtopic_plan(run, scope, queries, vocabulary, excluded, broad_spec,
+                                                field_specs)
+    # The queries those two arms own are reported on their own arms, with their own reasons: the field plan's list
+    # of what was not sent does not also name them as field sources that lost their place.
+    owned = {broad_told["index"]} if broad_told and broad_told["index"] is not None else set()
+    owned |= set(subtopic_told["indexes"]) if subtopic_told else set()
+    field_dropped = [row for row in field_dropped if row["index"] not in owned]
     return {"version": 1, "semantic": semantic_spec(scope, policy, seed_context),
             **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
             **({"completion": {"rule": arm["rule"], "arm": arm["arm"], "records": reserved,
@@ -391,6 +471,11 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
             **({"broad": broad_spec} if broad_spec else {}),
             **({"broad_not_sent": {"provider_id": broad_told["provider_id"], "reason": broad_told["reason"]}}
                if broad_told and "reason" in broad_told else {}),
+            # The one sub-topic search of that index, and why none. Whether its gap was still open is on its own
+            # step, not here: the plan freezes the request, the stage reads the condition.
+            **({"subtopic": subtopic_spec} if subtopic_spec else {}),
+            **({"subtopic_not_sent": {"provider_id": subtopic_told["provider_id"], "reason": subtopic_told["reason"]}}
+               if subtopic_told and "reason" in subtopic_told else {}),
             "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
             "s2_reserved": s2_records,
@@ -453,6 +538,7 @@ def plan_words(vocabulary, plan):
     semantic request it sends, so a word left out of every keyword query is not shown as never sent."""
     sent = ([spec["query"] for spec in plan["keywords"]] + [spec["query"] for spec in plan.get("field") or []]
             + ([plan["broad"]["query"]] if plan.get("broad") else [])
+            + ([plan["subtopic"]["query"]] if plan.get("subtopic") else [])
             + ([plan["s2_bulk"]] if plan.get("s2_bulk") else []))
     semantic = (plan["block_semantic"].get("query_text") or "") if "block_semantic" in plan else None
     carried = [_carried(vocabulary, query) for query in sent]
@@ -958,6 +1044,72 @@ async def execute(flow, run, scope, plan, retry_failed):
     # The main Boolean query's own pages: the plan the model wrote, or the person's saved one. A record only
     # another query of the round found leaves the main query's gap open.
     main_indexes = search_plan.main_plan_indexes(specs)
+
+    async def finish_subtopic(forced):
+        """The one sub-topic search of the broad index, settled at every ordinary end of the keyword loop.
+
+        Its condition is the design's own: the sub-topic is still unmet **after** the field source was searched.
+        So the field walk is waited for first — until its last page is in, what it found is not known — and the
+        gap is then read over the main query's pages and the field source's together. The `always` arm sends
+        whatever the gate read, which is what makes the two arms comparable. The reading is recorded either way,
+        so the decision not to send can be read back instead of guessed at.
+
+        `forced` is the stage's own reason when the loop ended before the request could be considered. The keyword
+        record cap is not one of them: this request's records are its own reservation, so a keyword arm that spent
+        its cap takes nothing from it and only the stage's own time can hold it back.
+        """
+        spec = plan.get("subtopic")
+        if spec is None:
+            return
+        forced = forced if forced == "deadline" else None
+        key = f"search:{spec['index']}"
+        step = store.existing_step(run_id, key)
+        if step is not None and step["status"] != "pending":
+            # A decision already recorded stays recorded, so a replayed run reads its own back instead of deciding
+            # again. A request that failed goes out again only where the person asked for the failed searches to be
+            # retried, which is the same condition `page_sender` reads.
+            if not (retry_failed and step["status"] in ("failed", "outcome_unknown")):
+                return
+        for task in field_tasks:
+            if not task.done():
+                await task
+        provider = spec["query"]["provider_id"]
+        read = main_indexes + [s["index"] for s in plan.get("field") or []]
+        # Whether the field source answered at all. Its records are half of what the condition is read over, so a
+        # source that never answered leaves the condition untested: the gap would look open because nothing came
+        # back, and a paid request would go out on that. A page that answered with no record did answer, and a
+        # later page that failed does not take back what the earlier ones brought; both are counted and recorded.
+        pages = store.conn.execute(
+            "SELECT status FROM search_runs WHERE run_id = ? AND request_class = ?",
+            (run_id, FIELD_CLASS)).fetchall()
+        answered = sum(1 for page in pages if page["status"] in ("completed", "zero_results"))
+        covered = search_plan.pages_cover(store, run, spec["focused"]["term"], read)
+        # Read before the gap, although either reason holds the request: a source that never answered leaves the
+        # condition untested, and a gap the main query alone closed would hide that in the record.
+        reason = forced or (None if answered else "field_source_did_not_answer")
+        if reason is None and covered and spec["arm"] != completion.ALWAYS:
+            reason = search_plan.GAP_ALREADY_MET
+        if reason is None and fast_path.past_deadline(store, run, "search"):
+            reason = "deadline"
+        record = {"arm": spec["arm"], "focused": spec["focused"],
+                  # What the gate read and over which queries' pages, so the measurement can say whether the gate
+                  # or the source kept the request from going out, and how much of the field source it read.
+                  "gate": {"covered": covered, "query_indexes": read, "held": reason is not None,
+                           "field_pages_answered": answered, "field_pages_failed": len(pages) - answered}}
+        statuses = ("pending", "failed", "outcome_unknown") if retry_failed else ("pending",)
+        if reason is not None:
+            cancel_step(store, run_id, key, f"provider_search:{provider}", reason, statuses, record)
+            return
+        result, _ = await broad_send(spec["query"], key, limit=spec["records"], klass=BROAD_CLASS,
+                                     index=spec["request_index"], terminal="single_page")
+        if result is None:
+            cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline", statuses, record)
+            return
+        store.set_step_output(store.existing_step(run_id, key)["id"], result | record)
+        consumer = flow._fast_consumers.get(run_id)
+        if consumer:
+            consumer.notify()
+
     slots = 0
     try:
         # Each page is recorded when its own reply arrives, whatever another arm is still waiting for. Which record
@@ -981,13 +1133,14 @@ async def execute(flow, run, scope, plan, retry_failed):
                 if reason and not written:
                     close_queries(flow, run, specs, reason)
                     await resolve_completion(reason)
+                    await finish_subtopic(reason)
                     return shared["failure"]
                 if focused and state["number"] == 0 and not written:
                     # The recorded condition, read once and only for a query no page of which has been sent: a
                     # concept the main query's own records already carry is no gap, so the depth's plan is not spent
                     # on it. More terms in the plan never send a query by themselves, and a replayed run reads its
                     # own first page back instead of deciding again.
-                    covered = search_plan.main_query_covers(store, run, spec["query"]["focused"]["term"], main_indexes)
+                    covered = search_plan.pages_cover(store, run, spec["query"]["focused"]["term"], main_indexes)
                     # The completion arm's snippet request reads the same gate: a part of the question the main
                     # query's own records already carry is no gap, for either query.
                     await snippet_for(spec["index"], covered)
@@ -1009,6 +1162,7 @@ async def execute(flow, run, scope, plan, retry_failed):
                     flow._checkpoint(run_id, run["scope_revision"])
                     close_queries(flow, run, specs, "deadline")
                     await resolve_completion("deadline")
+                    await finish_subtopic("deadline")
                     return shared["failure"]
                 slots += reserved
                 consumer = flow._fast_consumers.get(run_id)
@@ -1026,6 +1180,7 @@ async def execute(flow, run, scope, plan, retry_failed):
         elif fast_path.past_deadline(store, run, "search"):
             close_queries(flow, run, specs, "deadline")
         await resolve_completion(None)
+        await finish_subtopic(None)
     finally:
         if shared["s2_task"] and not shared["s2_task"].done():
             await shared["s2_task"]

@@ -155,12 +155,12 @@ def test_a_concept_the_main_querys_own_records_carry_is_no_gap():
         search(store, rid, run, "search:0:page:1", [record("W3")])
         run = dict(run) | {"research_id": rid, "scope_revision": 1}
         # The mock's titles and abstracts hold the record's own identity, so that word is carried and any other is not.
-        assert search_plan.main_query_covers(store, run, "SYNTHETIC W2", [0]) is True
-        assert search_plan.main_query_covers(store, run, "SYNTHETIC W3", [0]) is True  # a later page counts too
-        assert search_plan.main_query_covers(store, run, "underwater acoustic", [0]) is False
+        assert search_plan.pages_cover(store, run, "SYNTHETIC W2", [0]) is True
+        assert search_plan.pages_cover(store, run, "SYNTHETIC W3", [0]) is True  # a later page counts too
+        assert search_plan.pages_cover(store, run, "underwater acoustic", [0]) is False
         # A main query that found nothing covers nothing, so the focused query goes out.
-        assert search_plan.main_query_covers(store, run, "SYNTHETIC W1", []) is False
-        assert search_plan.main_query_covers(store, run, "SYNTHETIC W1", [7]) is False
+        assert search_plan.pages_cover(store, run, "SYNTHETIC W1", []) is False
+        assert search_plan.pages_cover(store, run, "SYNTHETIC W1", [7]) is False
 
 
 # ---- a run end to end ---------------------------------------------------------------------------------------
@@ -237,9 +237,9 @@ def test_a_concept_is_carried_only_when_it_stands_as_its_own_words():
         conn, store, rid, run = library(directory)
         search(store, rid, run, "search:0", [record("routing")])
         run = dict(run) | {"research_id": rid, "scope_revision": 1}
-        assert search_plan.main_query_covers(store, run, "routing", [0]) is True
+        assert search_plan.pages_cover(store, run, "routing", [0]) is True
         # "out" stands inside "routing" and nowhere on its own, so the gap is not closed by it.
-        assert search_plan.main_query_covers(store, run, "out", [0]) is False
+        assert search_plan.pages_cover(store, run, "out", [0]) is False
 
 
 def test_two_focused_entries_naming_one_concept_are_refused():

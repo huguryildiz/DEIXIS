@@ -1028,7 +1028,8 @@ class ResearchFlow:
         # asks for a concept the plan named beside either of them. The depth's Boolean plan budget says how many
         # there may be; the search stage sends one only when the main query's own records do not carry its concept.
         allowance = search_plan_rules.focused_allowance(run["budget"], queries)
-        queries = search_plan_rules.with_focused(built, queries, _planned_providers(scope), run["budget"])
+        queries = search_plan_rules.with_focused(built, queries, _planned_providers(scope), run["budget"],
+                                                 broad=True)
         focused = [query for query in queries if query.get("role") == "focused"]
         # diagnosis only: the model's terms that share no word with the question and some word with the seeds.
         seeded = {"seed_terms": search_query_rules.seed_terms(built["terms"], [scope["question"]] + [
@@ -1682,7 +1683,7 @@ class ResearchFlow:
             return search_query_rules.with_authors_compiled(vocabulary, compiled), compiled
         compiled = search_plan_rules.with_focused(
             vocabulary, search_query_rules.compile_queries(vocabulary, providers, limit, broad=True),
-            providers, budget)
+            providers, budget, broad=True)
         return search_query_rules.with_compiled(vocabulary, compiled), compiled
 
     def _routing_step_output(self, run_id: str) -> dict[str, Any] | None:

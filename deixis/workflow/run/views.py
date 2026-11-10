@@ -215,21 +215,40 @@ def field_search_view(store: Store, run: dict[str, Any], body: dict[str, Any] | 
 
 
 def broad_index_view(store: Store, run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
-    """The second independent index of this run: the one the plan searched, or why it searched none.
+    """What this run did with the broad index: searched it as an index of its own, sent its one sub-topic search,
+    or neither, with the reason the plan recorded.
 
-    It is reported apart from the field sources because it is chosen by nothing the question says: a field source
-    is chosen by the share of the question's records its fields hold, and this one by the depth's own budget and
-    the arm the run froze. `state` is `searched` (a reply came back, a search that found nothing included),
-    `planned` (the plan held the request and nothing was recorded for it), `request_failed` (its reply was recorded
-    with another outcome) or `not_sent`, whose `reason` the plan recorded. A run whose plan knows nothing of the
-    rule has nothing to report.
+    It is reported apart from the field sources because it is chosen by nothing the question's field distribution
+    says: a field source is chosen by the share of the question's records its fields hold, and this one by the
+    depth's own budget and the arm the run froze. `role` says which of the two the depth plans — a depth plans one
+    or the other, never both — and `subtopic` names the part of the question a sub-topic search asks about.
+    `state` is `searched` (a reply came back, a search that found nothing included), `planned` (the plan held the
+    request and nothing was recorded for it), `request_failed` (its reply was recorded with another outcome) or
+    `not_sent`, whose `reason` the plan or the stage recorded. A run whose plan knows neither rule has nothing to
+    report.
     """
     plan = (body or {}).get("fast_path_search") or {}
-    spec, not_sent = plan.get("broad"), plan.get("broad_not_sent")
-    if spec is None and not not_sent:
+    broad, broad_not_sent = plan.get("broad"), plan.get("broad_not_sent")
+    subtopic, subtopic_not_sent = plan.get("subtopic"), plan.get("subtopic_not_sent")
+    policy = run["budget"].get("fast_path") or {}
+    # The role this depth really plans: the request it froze, or, where it froze neither, the arm whose records it
+    # allows at all. Every depth that knows the rules records the other arm as one it pays for none of, so the
+    # presence of that record is no reason to report it as this depth's own work.
+    if broad or subtopic:
+        role = "second_index" if broad else "subtopic"
+    elif (policy.get("broad_index") or {}).get("records"):
+        role = "second_index"
+    elif (policy.get("subtopic_search") or {}).get("records"):
+        role = "subtopic"
+    else:
+        role = "second_index" if broad_not_sent else "subtopic" if subtopic_not_sent else None
+    if role is None or not (broad or broad_not_sent if role == "second_index" else subtopic or subtopic_not_sent):
         return None
-    rule = ((run["budget"].get("fast_path") or {}).get("broad_index")) or {}
-    base = {"rule": rule.get("rule"), "arm": rule.get("arm"), "records": rule.get("records")}
+    spec = broad if role == "second_index" else subtopic
+    not_sent = broad_not_sent if role == "second_index" else subtopic_not_sent
+    rule = policy.get("broad_index" if role == "second_index" else "subtopic_search") or {}
+    base = {"rule": rule.get("rule"), "arm": rule.get("arm"), "records": rule.get("records"), "role": role,
+            "subtopic": (spec or {}).get("focused", {}).get("term") if role == "subtopic" else None}
     if spec is None:
         return base | {"provider_id": not_sent["provider_id"], "state": "not_sent", "records_found": None,
                        "failed_requests": 0, "reason": not_sent["reason"]}
@@ -243,6 +262,14 @@ def broad_index_view(store: Store, run: dict[str, Any], body: dict[str, Any] | N
         found += row["result_count"] if replied else 0
         failed += 0 if replied else 1
         status = row["status"]
+    if status is None:
+        # The stage can hold a planned request back on its own condition — a sub-topic the records already carry,
+        # the stage's deadline — and that reason is on the step, not in the plan.
+        step = store.existing_step(run["id"], f"search:{spec['index']}")
+        held = (step or {}).get("error_code") if step and step["status"] == "cancelled" else None
+        if held:
+            return base | {"provider_id": provider, "state": "not_sent", "records_found": None,
+                           "failed_requests": 0, "reason": held}
     state = "planned" if status is None else "searched" if answered else "request_failed"
     return base | {"provider_id": provider, "state": state,
                    "records_found": found if status is not None else None,

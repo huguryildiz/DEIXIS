@@ -192,13 +192,17 @@ def main_terms(vocabulary: dict[str, Any]) -> list[str]:
 
 
 def focused_queries(answer: dict[str, Any], vocabulary: dict[str, Any], providers: list[str],
-                    allowance: int) -> list[dict[str, Any]]:
+                    allowance: int, *, broad: bool = False) -> list[dict[str, Any]]:
     """One query per focused concept the plan named, inside the depth's allowance.
 
     The query has two blocks: the concept alone, and the main query's terms together. So the main query asks for both
     of its concepts at once and this one asks for the concept beside either of them — the sub-problem the main query's
     AND leaves out. The third concept is searched here rather than as a third block, which no provider's syntax
     writes (`query_rules.RENDERED_BLOCKS`).
+
+    `broad` also renders the concept for a connector searched only as a depth's second index, in that connector's
+    own syntax and by this same compiler: a depth whose own sub-topic search goes there needs the query, and
+    nothing writes a second query text for it.
 
     Every returned query says which concept it carries, the gap the plan wrote for it and the terms the provider's
     limits left out. A concept beyond the allowance, and one no provider can fit, are left out and named by
@@ -214,7 +218,7 @@ def focused_queries(answer: dict[str, Any], vocabulary: dict[str, Any], provider
     queries = []
     for entry in entries:
         blocks = [[entry["term"]], terms]
-        for provider in query_compiler._searchable(list(providers)):
+        for provider in query_compiler._searchable(list(providers), broad=broad):
             extra = CONNECTORS[provider].sw_query
             fitted = query_compiler.fit_block_counts(provider, blocks, extra.get("endpoint"))
             if fitted is None:
@@ -253,18 +257,41 @@ def focused_record(answer: dict[str, Any], queries: list[dict[str, Any]], allowa
     return {"rule": FOCUSED_RULE, "allowance": allowance, "concepts": concepts}
 
 
-def main_query_covers(store: Any, run: dict[str, Any], term: str, indexes: list[int]) -> bool:
-    """Whether a record a main Boolean query already found carries this concept in its own text.
+def question_subtopic(question: str, vocabulary: dict[str, Any], term: str) -> bool:
+    """Whether this concept is a sub-topic the question itself names.
 
-    The recorded condition the focused query waits on: a concept the main query's own results already carry is no
-    gap, so the second query is not sent and the step says why. Only the title, the abstract and the provider's index
-    keywords are read — the same text the plan was written from — and the concept must stand there as its own words,
-    not inside a longer one. A main query that found nothing covers nothing, so the focused query goes out: the gap
-    is certainly unmet.
+    The plan's concepts are written by a model reading the first page of results, so a concept can be one the
+    model inferred rather than one the person asked about, and the plan's `gap` sentence beside it is model prose
+    that no rule reads. A request that costs money is not sent on an inferred sub-topic, so the link back to the
+    question is checked in code: the concept stands in the person's own sentence as its own words, or it is one of
+    the words that sentence was read for (`question_vocabulary`, or the vocabulary itself where it is the
+    question's own).
+    """
+    from deixis.workflow.search import search_query
 
-    `indexes` are the main query's own pages. A record another query of the round alone found does not close the
-    gap in the main query's results, and a work this concept is merely mentioned in is still counted as carrying it: the check
-    reads words, not what a paper is about. That limit is recorded.
+    wanted = term.strip().casefold()
+    if not wanted:
+        return False
+    if re.search(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)", (question or "").casefold()):
+        return True
+    own = search_query.question_vocabulary(vocabulary) or vocabulary
+    return any(wanted in ((entry.get("phrase") or "").casefold(), (entry.get("root") or "").casefold())
+               for entry in own.get("terms") or [])
+
+
+def pages_cover(store: Any, run: dict[str, Any], term: str, indexes: list[int]) -> bool:
+    """Whether a record the pages of these queries already found carries this concept in its own text.
+
+    The recorded condition a second query waits on: a concept the records already carry is no gap, so the query is
+    not sent and the step says why. Only the title, the abstract and the provider's index keywords are read — the
+    same text the plan was written from — and the concept must stand there as its own words, not inside a longer
+    one. Queries that found nothing cover nothing, so the second query goes out: the gap is certainly unmet.
+
+    The caller says which queries' pages count, because that is what each condition means: the focused query reads
+    the main Boolean query's own pages, and a depth's sub-topic search reads the main query's and the field
+    source's together, since its own condition is that the sub-topic is still unmet after the field source was
+    searched. A record no named query found does not close the gap, and a work this concept is merely mentioned in
+    is still counted as carrying it: the check reads words, not what a paper is about. That limit is recorded.
     """
     if not indexes:
         return False
@@ -293,7 +320,7 @@ def plan_answer(vocabulary: dict[str, Any]) -> dict[str, Any]:
 
 
 def with_focused(vocabulary: dict[str, Any], queries: list[dict[str, Any]], providers: list[str],
-                 budget: dict[str, Any]) -> list[dict[str, Any]]:
+                 budget: dict[str, Any], *, broad: bool = False) -> list[dict[str, Any]]:
     """`queries` with the focused queries of the plan that wrote this vocabulary, after the main round.
 
     Every place that compiles the first round calls this, so a recompile for other providers (`source_routing`)
@@ -303,7 +330,7 @@ def with_focused(vocabulary: dict[str, Any], queries: list[dict[str, Any]], prov
     allowance = focused_allowance(budget, queries)
     if not allowance:
         return queries
-    return queries + focused_queries(plan_answer(vocabulary), vocabulary, providers, allowance)
+    return queries + focused_queries(plan_answer(vocabulary), vocabulary, providers, allowance, broad=broad)
 
 
 def main_plan_indexes(specs: list[dict[str, Any]]) -> list[int]:

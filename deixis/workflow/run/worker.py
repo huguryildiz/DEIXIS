@@ -101,6 +101,14 @@ class Worker:
                     (now(), run["id"]),
                 )
                 self.store._event(run["research_id"], "run_paused", {"status": "paused", "pause_reason": "backend_restarted"}, run["id"])
+        # Outside that write, and in its own try: a follow-up chain whose search ended just before the process
+        # stopped still owes the person's report request, and no later run of that research need ever end to wake it.
+        # A chain whose runs this start has just paused is passed over and waits for the person to resume them.
+        try:
+            from deixis.workflow.answer import followup_revision
+            followup_revision.chain_ends_all(self.store)
+        except Exception:  # noqa: BLE001 - the backend must start whatever one research holds
+            log.exception("ending the follow-up chains at start failed")
         return {"runs": len(runs), "steps": steps, "model_sessions": sessions}
 
     def wake(self) -> None:
@@ -234,6 +242,14 @@ class Worker:
             table_rows.advance(self.store, rid)
         except Exception:  # noqa: BLE001 - the next run must not be held up by it
             log.exception("queueing a person's reading after run %s failed", run_id)
+        # Its own try, and read from what the research holds: a follow-up chain whose search ended without a second
+        # answer still owes the person's report request, and neither another hook's failure nor a run that happened
+        # to be active when the search ended may drop it.
+        try:
+            from deixis.workflow.answer import followup_revision
+            followup_revision.chain_ends(self.store, self.store.run(run_id)["research_id"])
+        except Exception:  # noqa: BLE001 - the next run must not be held up by it
+            log.exception("ending the follow-up chains of run %s failed", run_id)
 
     async def stop(self) -> None:
         self._stop.set()

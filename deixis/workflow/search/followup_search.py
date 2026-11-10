@@ -47,6 +47,10 @@ MAX_KEYWORD_QUERIES = 6
 MAX_INCLUDED_TITLES = 80
 MAX_SEARCHED_QUERIES = 12
 OFFERED_STATUSES = ("answered", "partly_answered", "not_answered", "no_passages")
+# A turn whose own answer could not be cited is published too, and the person who asked for a search with the
+# question asked for it before any of that: their request is not theirs to lose to the first call's failure. The
+# button on the screen keeps the stricter rule, because it is offered beside an answer the person can read.
+ASKED_STATUSES = OFFERED_STATUSES + ("unverified_draft",)
 ACTIVE = ("queued", "running", "pause_requested")
 CONTEXT_KEY = "followup_search:context"
 QUERY_KEY = "followup_search:query"
@@ -97,15 +101,23 @@ def _discovery(store: Any, rid: str, revision: int) -> tuple[dict[str, Any], dic
     return None
 
 
-def offer(store: Any, turn: dict[str, Any]) -> dict[str, Any]:
-    """Whether the turn offers a search now, and if not why: the rules `request` applies, read without writing."""
+def offer(store: Any, turn: dict[str, Any], asked_with_question: bool = False) -> dict[str, Any]:
+    """Whether the turn offers a search now, and if not why: the rules `request` applies, read without writing.
+
+    `asked_with_question` is the person's own request, carried by the question itself (`followup_turns.search_requested`)
+    rather than by a button next to the answer; it allows the one status the screen's offer does not (`ASKED_STATUSES`).
+    """
     rid = turn["research_id"]
     research = store.research(rid)
     runs = turn_runs(store, turn["id"])
     reason = None
     if turn["scope_revision"] != research["current_scope_revision"]:
         reason = "not_current_revision"
-    elif turn["status"] not in OFFERED_STATUSES:
+    elif turn["revises_turn_id"] is not None:
+        # This turn is itself the answer the first search made possible. A search of its own would have nowhere to
+        # put its answer: a question is answered again once (`followup_turns_one_revision_deep`).
+        reason = "answers_again"
+    elif turn["status"] not in (ASKED_STATUSES if asked_with_question else OFFERED_STATUSES):
         reason = "turn_not_published"
     elif any(r["status"] in ACTIVE + ("paused", "completed") for r in runs):
         reason = "searched"
@@ -113,6 +125,8 @@ def offer(store: Any, turn: dict[str, Any]) -> dict[str, Any]:
         reason = "attempts_used"
     elif _discovery(store, rid, turn["scope_revision"]) is None:
         reason = "no_completed_discovery"
+    elif not _eligible(store.scope(rid, turn["scope_revision"])):
+        reason = "no_search_provider"
     return {"offered": reason is None, "not_offered_reason": reason, "attempt": len(runs) + 1}
 
 
@@ -137,7 +151,8 @@ def budget(providers: list[str]) -> dict[str, Any]:
                                 "records_per_request": RECORDS_PER_REQUEST}}, transport
 
 
-def request(store: Any, rid: str, turn_id: str, expected_scope_revision: int, idempotency_key: str | None) -> dict[str, Any]:
+def request(store: Any, rid: str, turn_id: str, expected_scope_revision: int, idempotency_key: str | None,
+            asked_with_question: bool = False) -> dict[str, Any]:
     """Queue the turn's follow-up search. A stored run under the same key comes back first, whatever happened to it
     since; then, in one transaction, the turn must offer a search (`offer`) and no run of the research may be active."""
     from deixis.workflow.run.store import ACTIVE_RUN_STATUSES, NotFound
@@ -160,7 +175,7 @@ def request(store: Any, rid: str, turn_id: str, expected_scope_revision: int, id
             (rid, *ACTIVE_RUN_STATUSES)).fetchone()
         if active:
             raise RevisionConflict(f"run {active['id']} is still active")
-        offered = offer(store, turn)
+        offered = offer(store, turn, asked_with_question)
         if not offered["offered"]:
             raise SearchRefused(offered["not_offered_reason"], "This follow-up cannot start a search now")
         discovery, approved = _discovery(store, rid, turn["scope_revision"])

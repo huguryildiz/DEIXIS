@@ -519,6 +519,10 @@ class Store:
                 (research_id,))
             self.conn.execute("DELETE FROM followup_turn_attachments WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM followup_turn_links WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
+            # A turn that answers another turn again names it, so those rows go first; one level deep is enforced
+            # on insert (`followup_turns_one_revision_deep`), so these two statements cover every turn.
+            self.conn.execute("DELETE FROM followup_turns WHERE research_id = ? AND revises_turn_id IS NOT NULL",
+                              (research_id,))
             self.conn.execute("DELETE FROM followup_turns WHERE research_id = ?", (research_id,))
             # Statement checks (reverse citation search) point at runs and steps deleted below; their items go with them.
             self.conn.execute("DELETE FROM statement_checks WHERE research_id = ?", (research_id,))

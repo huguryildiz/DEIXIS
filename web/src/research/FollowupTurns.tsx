@@ -40,14 +40,16 @@ function ScannedScope({ turn }: { turn: FollowupTurn }) {
   // between the two, and the wider number would claim a search the turn did not make.
   const shown = scope.works_given ?? 0
   const parts = [shown === 0 ? t('Read no passage from the {all} works in this research', { all: scope.research_works })
-    : t(shown === 1 ? 'Read passages from {n} of the {all} works in this research'
-      : 'Read passages from {n} of the {all} works in this research', { n: shown, all: scope.research_works })]
+    : t('Read passages from {n} works, of the {all} this research holds', { n: shown, all: scope.research_works })]
   if (scope.works_given_full_text || scope.works_given_abstract_only) {
     parts.push(t('{full} read in full, {abstract} on the abstract only',
       { full: scope.works_given_full_text, abstract: scope.works_given_abstract_only }))
   }
   // What the pool held beyond them: in reach, but not shown to the model this turn.
   if (scope.works > shown) parts.push(t('{n} more were in this research but not read this turn', { n: scope.works - shown }))
+  // Works the turn's own search found. They are records of this research, so the count above holds them; what they
+  // are not is included, which is the person's own decision and what the research's own answer goes by.
+  if (scope.works_found_by_search > 0) parts.push(t('{n} of them came from this turn’s search and are not included', { n: scope.works_found_by_search }))
   const fetched = scope.fulltext
   return <p className="followup-note followup-scope">
     {parts.join(' · ')}
@@ -235,7 +237,18 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
           : item.bindings.map(binding => `${sourceName(binding.source_version_id)}${binding.version_label ? ` · ${binding.version_label}` : ''}`).join(' · ')}
           {item.bindings.length > 0 && !item.bindings.some(binding => binding.given) && ` · ${t('this answer was not given its passages')}`}</span>
       </blockquote>)}
-      <b><MessageSquare size={16} aria-hidden />{t('Question')}</b> <span>{asked.text}</span></div>
+      <b><MessageSquare size={16} aria-hidden />{t(turn.answers_again ? 'The same question, over the works the search found' : 'Question')}</b> <span>{asked.text}</span></div>
+    {/* The second answer of one question: a turn of its own, so the first answer and its citations stay as they
+        were. The works it read anew are not included in this research; the person decides that in Sources. */}
+    {turn.answers_again && <p className="followup-note">{t(turn.answers_again.works === 1
+      ? 'Answered again after the search, which put {n} work you have not included within reach of this answer; including it is still your choice.'
+      : 'Answered again after the search, which put {n} works you have not included within reach of this answer; including them is still your choice.',
+      { n: turn.answers_again.works })}</p>}
+    {/* Said only while it is still true: once a search run exists its own card says where it stands, and a turn
+        whose search was refused says nothing it cannot back up. */}
+    {turn.search_requested && !turn.answered_again && turn.status !== 'pending' && turn.search.runs.length === 0
+      && turn.search.offered
+      && <p className="followup-note">{t('You asked for new works with this question: the search runs after this answer.')}</p>}
     <ol className="followup-steps">{steps(turn).map(line => <StepLine key={line.text} state={line.state} icon={line.icon}>{line.text}</StepLine>)}</ol>
     {turn.stale_scope && <p className="followup-note">{t('Asked under revision {n} of the question.', { n: turn.scope_revision })}</p>}
     {turn.status === 'pending' && !live && <div className={`chat-note notice followup-notice ${turn.run.status === 'paused' ? (userPaused ? 'is-warning' : 'is-error') : turn.run.status === 'failed' ? 'is-error' : 'is-neutral'}`}>
@@ -257,7 +270,9 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
       </div>
     </div>}
     {turn.status === 'no_passages' && <div className="chat-note notice followup-notice is-warning"><TriangleAlert size={16} aria-hidden />
-      <div className="notice-body"><p>{t('This research held no passage to give, so no model was asked and no search was run.')}</p>
+      <div className="notice-body"><p>{t(turn.search_requested
+        ? 'This research held no passage to give, so no model was asked; the search you asked for runs next.'
+        : 'This research held no passage to give, so no model was asked and no search was run.')}</p>
         <ScannedScope turn={turn} /></div>
     </div>}
     {turn.status === 'unverified_draft' && <div className="chat-note notice followup-notice is-error"><TriangleAlert size={16} aria-hidden />

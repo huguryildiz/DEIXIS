@@ -1,9 +1,9 @@
--- The whole library schema at version 27. A new library is made from this file in one transaction and
--- records versions 1 to 27; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 28. A new library is made from this file in one transaction and
+-- records versions 1 to 28; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 27
+-- deixis:schema-version 28
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -1227,7 +1227,7 @@ CREATE TABLE followup_turns (
   selection_revision INTEGER,
   user_signature TEXT,
   created_at TEXT NOT NULL,
-  published_at TEXT, work_groups_json TEXT, scanned_scope_json TEXT,
+  published_at TEXT, work_groups_json TEXT, scanned_scope_json TEXT, search_requested INTEGER NOT NULL DEFAULT 0, revises_turn_id TEXT REFERENCES followup_turns(id),
   CHECK ((status = 'pending') = (published_at IS NULL)),
   CHECK (status = 'pending' OR (selection_revision IS NOT NULL AND user_signature IS NOT NULL)),
   CHECK (status IN ('pending', 'no_passages') OR step_input_id IS NOT NULL)
@@ -2577,3 +2577,19 @@ CREATE INDEX fulltext_searches_research ON fulltext_searches(research_id, positi
 -- (the run stopped, the question changed, the record left) spent nothing, so the work may be reserved again.
 CREATE UNIQUE INDEX fulltext_searches_one_per_work ON fulltext_searches(research_id, work_id, scope_revision)
   WHERE status != 'cancelled';
+
+-- A turn that answers another turn again is never itself answered again: one level, which is also what
+-- lets a research purge delete the turns naming another turn before the turns they name.
+CREATE TRIGGER followup_turns_one_revision_deep BEFORE INSERT ON followup_turns
+WHEN NEW.revises_turn_id IS NOT NULL AND (NEW.revises_turn_id = NEW.id
+ OR EXISTS (SELECT 1 FROM followup_turns t WHERE t.id = NEW.revises_turn_id AND t.revises_turn_id IS NOT NULL))
+BEGIN SELECT RAISE(ABORT, 'a follow-up turn is answered again once, by a turn that is not itself an answer again'); END;
+
+-- A turn names the turn it answers again when it is written and never after: the two-step purge and the one-level
+-- rule both read this column, and a question is answered again once.
+CREATE TRIGGER followup_turns_revision_fixed BEFORE UPDATE ON followup_turns
+WHEN NEW.revises_turn_id IS NOT OLD.revises_turn_id
+BEGIN SELECT RAISE(ABORT, 'the turn a follow-up answers again is named once and never changed'); END;
+
+CREATE UNIQUE INDEX followup_turns_one_revision ON followup_turns(revises_turn_id)
+  WHERE revises_turn_id IS NOT NULL;

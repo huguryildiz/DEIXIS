@@ -2,8 +2,10 @@
 
 A question is answered by one `followup_answer` run from passages this research already holds; no search is started.
 Pause, resume and cancel are the run controls every run has (`/api/runs/{run_id}/{action}`), and the research's
-one-active-run rule answers 409. "Search for new works" is the turn's own `followup_search` run, started only by
-the person's click (`POST .../{turn_id}/search`); it opens no question revision.
+one-active-run rule answers 409. "Search for new works" is the turn's own `followup_search` run: the person
+either asks for it with the question (`search` in the body, which runs it after the answer and answers the question
+again over what it found) or starts it afterwards themselves (`POST .../{turn_id}/search`). Neither opens a
+question revision.
 """
 
 from fastapi import Header, HTTPException, Request
@@ -30,6 +32,9 @@ class Ask(BaseModel):
     question: str = Field(min_length=1, max_length=followup.MAX_QUESTION_CHARS)
     expected_scope_revision: int = Field(ge=1, strict=True)  # the question revision the person is looking at
     attachments: list[Attachment] = Field(default_factory=list, max_length=followup_attachments.MAX_ATTACHMENTS)
+    # The person asked for works this research does not hold. The turn is answered from what it holds first; the
+    # search runs next, and what it finds is answered in a turn of its own (`followup_revision`).
+    search: bool = False
 
 
 class Search(BaseModel):
@@ -47,7 +52,7 @@ def register_followup_turns_routes(app):
         try:
             row = followup.request_turn(store, research_id, body.question, body.expected_scope_revision,
                                         idempotency_key,
-                                        [item.model_dump() for item in body.attachments])
+                                        [item.model_dump() for item in body.attachments], body.search)
         except followup.FollowupRefused as exc:
             raise HTTPException(422, str(exc)) from exc
         request.app.state.worker.wake()

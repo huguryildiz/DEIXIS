@@ -690,11 +690,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // starts. One request at a time; the turn the server returns is shown at once and the list is read again on its events.
   // The question revision on screen goes with it, so a newer revision saved elsewhere answers 409 instead of asking under it.
   const anyActive = view.runs.some(r => ACTIVE.has(r.status))
-  const askFollowup = async (question: string, idempotencyKey: string, attachments: FollowupAsk[] = []) => {
+  const askFollowup = async (question: string, idempotencyKey: string, attachments: FollowupAsk[] = [], search = false) => {
     if (asking) return false
     setAsking(true)
     try {
-      followups.accept(await followupApi.ask(id, question, view.research.current_scope_revision, idempotencyKey, attachments))
+      followups.accept(await followupApi.ask(id, question, view.research.current_scope_revision, idempotencyKey,
+                                             attachments, search))
       onChanged()
       return true
     } catch (e) {
@@ -976,6 +977,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onSearch: turnId => { void searchFollowup(turnId) },
           onShowCandidates: opener => { setSourceFocus(null); setSourceFilter('passed'); openPanel('sources', { opener }) } }} />)}</div>}
       <FollowupComposer disabledReason={anyActive ? t('Wait for the current run to finish before asking a follow-up.') : null} sending={asking}
+        searchDisabledReason={view.scope.search_providers_eligible.length === 0
+          ? t('Searching for new works needs a scholarly source this research can reach.') : null}
         depthIcon={EffortIcon} depthLabel={t(effortLabels[view.scope.effort])} fill={followupFill} quote={followupQuote} onSend={askFollowup}
         onAddPdfs={opener => openPanel('pdfs', { opener })} />
       <AddToChat root={threadCol} disabled={Boolean(phone && panel)} onAdd={pick => setFollowupQuote(previous => ({ ...pick, request: (previous?.request ?? 0) + 1 }))} />

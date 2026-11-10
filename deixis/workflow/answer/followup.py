@@ -31,7 +31,7 @@ from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.answer import answer as fast_answer, followup_attachments as attachments_mod, late_revision
-from deixis.workflow.answer import followup_fulltext, followup_scope
+from deixis.workflow.answer import followup_fulltext, followup_revision, followup_scope
 from deixis.workflow.search import followup_search, small_batch
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
@@ -74,7 +74,8 @@ def _clean(question: str) -> str:
 
 
 def request_turn(store: Any, research_id: str, question: str, expected_scope_revision: int,
-                 idempotency_key: str | None, attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                 idempotency_key: str | None, attachments: list[dict[str, Any]] | None = None,
+                 search: bool = False) -> dict[str, Any]:
     """Queue one follow-up: the turn row, its selections and its run in one transaction. The research's one-active-run
     rule holds. The selections are resolved inside that transaction, so a cell revision or a source choice that
     changes between the read and the write cannot bind the wrong version."""
@@ -98,7 +99,8 @@ def request_turn(store: Any, research_id: str, question: str, expected_scope_rev
                 same = turn is not None and attachments_mod.signature(resolved) == [
                     (row["kind"], row["ref_id"], row["selected_text"])
                     for row in attachments_mod.stored(store, turn["id"])]
-                if replayed["kind"] != TASK or turn is None or turn["question"] != text or not same:
+                if (replayed["kind"] != TASK or turn is None or turn["question"] != text or not same
+                        or bool(turn["search_requested"]) != bool(search)):
                     raise RevisionConflict("This idempotency key was used for another request")
                 return dict(turn)
         check_expected_version(expected_scope_revision, research["current_scope_revision"])
@@ -112,9 +114,9 @@ def request_turn(store: Any, research_id: str, question: str, expected_scope_rev
                   "followup_fulltext": followup_fulltext.budget()}
         run = store.create_run(research_id, TASK, budget, key, target={"turn_id": turn_id, "question": text})
         store.conn.execute(
-            "INSERT INTO followup_turns (id, research_id, scope_revision, question, run_id, status, created_at)"
-            " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-            (turn_id, research_id, run["scope_revision"], text, run["id"], now()))
+            "INSERT INTO followup_turns (id, research_id, scope_revision, question, run_id, status, created_at,"
+            " search_requested) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+            (turn_id, research_id, run["scope_revision"], text, run["id"], now(), int(bool(search))))
         for ordinal, item in enumerate(resolved, start=1):
             attachment_id = new_id("fua")
             store.conn.execute(
@@ -169,13 +171,16 @@ def _current(store: Any, research_id: str) -> dict[str, list[str]]:
 
 
 def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None,
-         fetched: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+         fetched: dict[str, dict[str, Any]] | None = None,
+         found: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """The passages this research holds for a follow-up, by source in order (see the module text), frozen with the
     selection state it was read under: what `changed` compares at the send, at a resume and at publication. `flow`
     checks that a full text read after the answer was read on the file still in use; without it none is added.
     `fetched` names, per work, the version and the file this turn's own attempt read (`followup_fulltext`), whose
     pages the pool then gives: the frozen answer input holds those works on their abstract route, so without this
-    the file the person waited for would sit unread."""
+    the file the person waited for would sit unread. `found` names the works this turn's own search found
+    (`followup_revision`), whose passages this one answer reads although nobody has included them in the research:
+    they are listed in the frozen pool as `found_versions`, so what the answer stands on can be read apart."""
     current = _current(store, research_id)
     sources: dict[str, list[str]] = {}
     chosen: dict[str, str] = {}  # work -> the one version `sources` holds for it (R2.9)
@@ -189,6 +194,49 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None,
         if kept:
             chosen[work_id] = svid
             sources.setdefault(svid, []).extend(kept)
+
+    def give_found() -> list[str]:
+        # The works this turn's own search found. Not included in the research by this: the records are pending
+        # search records, and this one answer reads their abstracts. Counted as found only where the pool gained
+        # the version, so a work the pool already gave under any version is not reported as new evidence.
+        held = dict(chosen)
+        for item in found or ():
+            give(item["work_id"], item["source_version_id"], item["passage_ids"])
+        return [item["source_version_id"] for item in found or ()
+                if chosen.get(item["work_id"]) == item["source_version_id"]
+                and held.get(item["work_id"]) != item["source_version_id"]]
+
+    def give_fetched() -> None:
+        # The file this turn fetched itself, for the works the pool gives. Nothing is ever taken out of the pool
+        # here, only added, and three rules bound what may be added. The person's own choice is read first, so a
+        # work whose file they marked wrong keeps giving its abstract alone (their version selection outranks a
+        # queue decision, as everywhere in this pool). The pages are the ones of the file the routes read, by its
+        # own extraction, so a file replaced since the fetch adds nothing. And the version has to be the one the
+        # pool already gives for that work: where the routes read another version, its pages wait for the next
+        # question rather than taking a version's place inside a frozen pool, because a swap would drop the
+        # passages the person's own selection points at (`followup_fulltext.OTHER_VERSION`).
+        if not fetched:
+            return
+        pools = fast_answer.current_pools(store, research_id)
+        selections, humans = _person_states(store, research_id)
+        heads = store.work_heads(research_id)
+        for work_id, read in fetched.items():
+            svid, asset_id = read["source_version_id"], read["asset_id"]
+            if chosen.get(work_id) != svid or svid not in pools:
+                continue
+            state = selections.get(heads.get(work_id, svid)) or humans.get(work_id)
+            if state in ("excluded", "pending", "pdf_wrong"):
+                continue
+            give(work_id, svid, [p["id"] for p in pools[svid]
+                                 if p["kind"] == "abstract" or p["asset_id"] == asset_id])
+
+    def close() -> dict[str, Any]:
+        """The pool's last two additions, in this order for both bases: the works this turn's own search found, and
+        then the file it fetched — so a full text fetched for a found work reaches this answer instead of sitting
+        unread behind its abstract."""
+        found_versions = give_found()
+        give_fetched()
+        return {"found_versions": found_versions, "sources": sources}
 
     base = {"selection_revision": store.selection_revision(research_id),
             "user_signature": small_batch.user_signature(store, research_id)}
@@ -259,29 +307,14 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None,
                 svid = row["source_version_id"]
                 ids = row["abstract_ids"] + (row["fulltext_ids"] if row["route"] == "fulltext" else [])
                 give(row["work_id"], svid, [pid for pid in ids if pid in set(current.get(svid, []))])
-        # The file this turn fetched itself, for the works the pool gives. Nothing is ever taken out of the pool
-        # here, only added, and three rules bound what may be added. The person's own choice is read first, so a
-        # work whose file they marked wrong keeps giving its abstract alone (their version selection outranks a
-        # queue decision, as everywhere in this pool). The pages are the ones of the file the routes read, by its
-        # own extraction, so a file replaced since the fetch adds nothing. And the version has to be the one the
-        # pool already gives for that work: where the routes read another version, its pages wait for the next
-        # question rather than taking a version's place inside a frozen pool, because a swap would drop the
-        # passages the person's own selection points at (`followup_fulltext.OTHER_VERSION`).
-        if fetched:
-            pools = fast_answer.current_pools(store, research_id)
-            for work_id, read in fetched.items():
-                svid, asset_id = read["source_version_id"], read["asset_id"]
-                if chosen.get(work_id) != svid or svid not in pools:
-                    continue
-                state = selections.get(heads.get(work_id, svid)) or humans.get(work_id)
-                if state in ("excluded", "pending", "pdf_wrong"):
-                    continue
-                give(work_id, svid, [p["id"] for p in pools[svid]
-                                     if p["kind"] == "abstract" or p["asset_id"] == asset_id])
         return _with_reserve(store, research_id, current, base | {
-            "basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources})
+            "basis": "answer_input", "answer_run_id": frozen["run_id"], **close()})
+    held = _included(store, research_id, current)
+    for svid, work_id in store.work_ids(list(held)).items():
+        sources[svid] = list(held[svid])
+        chosen[work_id] = svid
     return _with_reserve(store, research_id, current, base | {
-        "basis": "included_works", "answer_run_id": None, "sources": _included(store, research_id, current)})
+        "basis": "included_works", "answer_run_id": None, **close()})
 
 
 def _included(store: Any, research_id: str, current: dict[str, list[str]]) -> dict[str, list[str]]:
@@ -678,7 +711,10 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     # the pool the call reads. The pool is read twice for that: once unfrozen, to see which works are held on their
     # abstract alone, and then frozen after the attempt. Both reads are the same pure function over stored rows —
     # no model and no provider — and the frozen one is the only one anything later compares against.
-    provisional = pool(store, run["research_id"], turn["scope_revision"], flow)
+    # A turn that answers its question again reads the works its own search found as well (`followup_revision`);
+    # for every other turn this is empty and the pool is the research's own evidence, as before.
+    found = followup_revision.found_for(store, run)
+    provisional = pool(store, run["research_id"], turn["scope_revision"], flow, found=found)
     # The reserve is read too: a work the person included after the answer's cutoff is in the pool's reserve, and a
     # selection of theirs may point straight at it. The sources come first, so the pool's own order still decides.
     await followup_fulltext.advance(
@@ -687,7 +723,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     fetched = followup_fulltext.fetched_reads(flow, run_id)
     flow._checkpoint(run_id, run["scope_revision"])
     frozen_pool = _code_step(flow, run, POOL_KEY, "code:followup_pool",
-                             lambda: pool(store, run["research_id"], turn["scope_revision"], flow, fetched))
+                             lambda: pool(store, run["research_id"], turn["scope_revision"], flow, fetched, found))
     _guard(flow, run, frozen_pool)  # a resumed run: the person's choices or the files may have changed meanwhile
     considered = sum(len(v) for v in frozen_pool["sources"].values())
     if not considered:
@@ -978,18 +1014,62 @@ def report_run_key(turn_id: str) -> str:
     return f"{REPORT_CHANGE_KEY}:{turn_id}"
 
 
+def _chain(store: Any, root_turn_id: str) -> list[dict[str, Any]]:
+    """The turns of one question: the turn the person asked, then the turn that answers it again, in that order."""
+    return [dict(row) for row in store.conn.execute(
+        "SELECT * FROM followup_turns WHERE id = ? OR revises_turn_id = ? ORDER BY created_at, rowid",
+        (root_turn_id, root_turn_id))]
+
+
 def after_turn(store: Any, run: dict[str, Any]) -> None:
-    """Queue a new report version when the turn's valid answer says the person asked for the report to change.
+    """What follows a published turn, in the turn's own completion write: its search, then its report request.
+
+    One active run per research, so the chain is a queue of one: the answer the person asked for is published first,
+    the search they asked for with it runs next, and the report request they made waits until the end of the chain
+    and is queued once (`report_run_key` on the chain's first turn). A turn that asked for no search goes straight
+    to the report request, as it always did.
+    """
+    turn = turn_for_run(store, run["id"])
+    if turn is None:
+        return
+    if _search_after(store, run, turn):
+        return
+    _report_after(store, run, turn)
+
+
+def _search_after(store: Any, run: dict[str, Any], turn: dict[str, Any]) -> bool:
+    """Queue the search the person asked for with this question; whether it was queued.
+
+    Only the turn they asked, never the turn that answers it again: a chain searches once. The refusals are the
+    search route's own (`followup_search.request`), and a refusal is recorded and leaves the first answer standing.
+    """
+    if not turn["search_requested"] or turn["revises_turn_id"] is not None:
+        return False
+    try:
+        followup_search.request(store, run["research_id"], turn["id"], turn["scope_revision"], "turn",
+                                asked_with_question=True)
+        return True
+    except (followup_search.SearchRefused, RevisionConflict) as exc:
+        reason = getattr(exc, "code", None) or "run_active"
+        store._event(run["research_id"], "followup_search_not_started",
+                     {"turn_id": turn["id"], "reason": reason}, run["id"])
+        return False
+
+
+def _report_after(store: Any, run: dict[str, Any], turn: dict[str, Any]) -> None:
+    """Queue a new report version when a turn of this chain says the person asked for the report to change.
 
     The new answer is an answer the person started (no `trigger`), so it opens the next report version; the turn's own
     words go to it as `user_steering`. It is not started for an earlier question revision, without an included work
     before a search finished (the rule the answer route applies), or while another run is active: the turn then says
-    the report did not change and the person starts a new answer themselves."""
-    turn = turn_for_run(store, run["id"])
-    if turn is None or turn["status"] not in PUBLISHED or not turn["draft_json"]:
+    the report did not change and the person starts a new answer themselves. The chain's turns share one key, so the
+    request the first answer carried is honoured once, after the search and the answer it made possible."""
+    root = turn["revises_turn_id"] or turn["id"]
+    asking = next((row for row in _chain(store, root) if row["status"] in PUBLISHED and row["draft_json"]
+                   and json.loads(row["draft_json"]).get("report_change_requested") is True), None)
+    if asking is None:
         return
-    if json.loads(turn["draft_json"]).get("report_change_requested") is not True:
-        return
+    turn = asking
     rid = run["research_id"]
     reason = None
     if turn["scope_revision"] != store.research(rid)["current_scope_revision"]:
@@ -999,7 +1079,7 @@ def after_turn(store: Any, run: dict[str, Any]) -> None:
     if reason is None:
         scope = store.scope(rid)
         try:
-            store.create_run(rid, "answer", fast_answer.answer_run_budget(store, rid, scope), report_run_key(turn["id"]),
+            store.create_run(rid, "answer", fast_answer.answer_run_budget(store, rid, scope), report_run_key(root),
                              target={"report_request": {"turn_id": turn["id"], "text": turn["question"]}},
                              expected_scope_revision=turn["scope_revision"])
             return
@@ -1090,7 +1170,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     # A turn that asked for the report to change: the answer run it queued, or why none was queued.
     report_change = None
     if answer is not None and draft.get("report_change_requested") is True:
-        queued = store.conn.execute("SELECT id, status FROM runs WHERE idempotency_key = ?", (report_run_key(row["id"]),)).fetchone()
+        queued = store.conn.execute("SELECT id, status FROM runs WHERE idempotency_key = ?", (report_run_key(row["revises_turn_id"] or row["id"]),)).fetchone()
         skipped = None if queued else store.conn.execute(
             "SELECT payload_json FROM events WHERE run_id = ? AND type = 'report_change_not_started' ORDER BY id DESC LIMIT 1",
             (row["run_id"],)).fetchone()
@@ -1115,7 +1195,13 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},
         "answer": answer, "report_change": report_change, "attachments": attached,
-        # The turn's search for new works: offered on the person's click, never started by the model's flag.
+        # The person asked for new works with this question, and the turn that answered it again over what the
+        # search found; `answered_again` is on the first turn, `answers_again` on the second.
+        "search_requested": bool(row["search_requested"]),
+        "answers_again": followup_revision.view(store, row),
+        "answered_again": next((r[0] for r in store.conn.execute(
+            "SELECT id FROM followup_turns WHERE revises_turn_id = ?", (row["id"],))), None),
+        # The turn's search for new works: asked for with the question, or started later on the person's click.
         "search": followup_search.view(store, row, (json.loads(row["draft_json"] or "{}").get("new_works_requested")
                                                      if row["status"] in PUBLISHED and row["draft_json"] else None)),
         "issues": validation["issues"] if row["status"] == "unverified_draft" and validation else [],

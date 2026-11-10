@@ -954,4 +954,26 @@ CREATE UNIQUE INDEX fulltext_searches_one_per_work ON fulltext_searches(research
 -- evidence, which is never the literature.
 ALTER TABLE followup_turns ADD COLUMN scanned_scope_json TEXT;
 """),
+    28: Step("0028_followup_search_revision.sql", False, """-- A follow-up question may ask for works this research does not hold. The turn records that the person asked
+-- (`search_requested`), and the second answer the search makes possible is a turn of its own that names the turn it
+-- answers again (`revises_turn_id`): the first answer is published and never edited, so the two answers and their
+-- evidence stay apart. One level deep, enforced here, which is also what lets a research purge delete the turns
+-- that name another turn before the turns they name.
+ALTER TABLE followup_turns ADD COLUMN search_requested INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE followup_turns ADD COLUMN revises_turn_id TEXT REFERENCES followup_turns(id);
+
+CREATE TRIGGER followup_turns_one_revision_deep BEFORE INSERT ON followup_turns
+WHEN NEW.revises_turn_id IS NOT NULL AND (NEW.revises_turn_id = NEW.id
+ OR EXISTS (SELECT 1 FROM followup_turns t WHERE t.id = NEW.revises_turn_id AND t.revises_turn_id IS NOT NULL))
+BEGIN SELECT RAISE(ABORT, 'a follow-up turn is answered again once, by a turn that is not itself an answer again'); END;
+
+-- A turn names the turn it answers again when it is written and never after: the two-step purge and the one-level
+-- rule both read this column, and a question is answered again once.
+CREATE TRIGGER followup_turns_revision_fixed BEFORE UPDATE ON followup_turns
+WHEN NEW.revises_turn_id IS NOT OLD.revises_turn_id
+BEGIN SELECT RAISE(ABORT, 'the turn a follow-up answers again is named once and never changed'); END;
+
+CREATE UNIQUE INDEX followup_turns_one_revision ON followup_turns(revises_turn_id)
+  WHERE revises_turn_id IS NOT NULL;
+"""),
 }

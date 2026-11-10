@@ -142,7 +142,7 @@ export type Scope = {
   // Eligible PDFs left out because of the five-PDF limit, and chosen ones the backend could not use.
   seed_not_selected: { source_version_id: string; title: string; score: number }[]
   seed_skipped: { source_version_id: string; reason: 'not_a_source' | 'not_added_by_user' | 'no_pdf' | 'no_readable_text' }[]
-  providers: string[]; search_providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
+  providers: string[]; search_providers: string[]; search_providers_eligible: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
   // null literature model: the research model runs the search steps (researches created before model roles).
   literature_model: string | null; literature_reasoning_effort: string | null
   review_mode: ReviewMode; review_model: string | null; review_reasoning_effort: string | null
@@ -2157,6 +2157,10 @@ export type FollowupTurn = {
   created_at: string; published_at: string | null
   stale_scope: boolean  // asked under an earlier revision of the research question
   stale_selection: boolean  // published, and the person's source selection changed since
+  search_requested: boolean  // the person asked for works this research does not hold with this question
+  // The turn that answered this question again over what the search found, and, on that turn, the turn it answers.
+  answered_again: string | null
+  answers_again: { revises_turn_id: string; works: number } | null
   passages_considered: number | null  // stored passages of this research the selection ranked
   passages_given: number | null  // passages sent to the model (its allowlist)
   // Where this turn looked, counted when it was published: the works it weighed and at what depth, the three
@@ -2165,6 +2169,7 @@ export type FollowupTurn = {
     basis: string | null; research_works: number; works: number; works_full_text: number; works_abstract_only: number
     // The works the model was given a passage of, which the passage limit narrows from the pool's own counts.
     works_given: number; works_given_full_text: number; works_given_abstract_only: number
+    works_found_by_search: number  // of the pool's works, the ones this turn's own search found
     pool_held: number; ranked_considered: number | null; given_to_model: number
     fulltext: { works: number; seconds: number; gap: number; settled: number; tried: number; past_limit: number
       deadline: number; other_version: number } | null
@@ -2220,7 +2225,7 @@ export type FollowupSearchRun = {
     not_screened: { work_id: string; reason: string }[] }
 }
 export type FollowupSearch = { emphasis: 'suggested' | 'quiet'; offered: boolean; attempt: number
-  not_offered_reason: 'not_current_revision' | 'turn_not_published' | 'searched' | 'attempts_used' | 'no_completed_discovery' | null
+  not_offered_reason: 'not_current_revision' | 'answers_again' | 'turn_not_published' | 'searched' | 'attempts_used' | 'no_completed_discovery' | null
   runs: FollowupSearchRun[] }
 
 export const followupApi = {
@@ -2229,10 +2234,12 @@ export const followupApi = {
   get: (researchId: string, turnId: string) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}`),
   // `expectedScopeRevision` is the question revision on screen; a newer one answers 409, as an active run does.
+  // `search` asks for works this research does not hold: the turn is answered from what it holds first, the search
+  // runs next, and what it finds is answered in a turn of its own.
   ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string,
-        attachments: FollowupAsk[] = []) =>
+        attachments: FollowupAsk[] = [], search = false) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`,
-      json('POST', { question, expected_scope_revision: expectedScopeRevision, attachments },
+      json('POST', { question, expected_scope_revision: expectedScopeRevision, attachments, search },
         { 'Idempotency-Key': idempotencyKey })),
   // Starts the turn's search; a refusal answers 422 with its `code`, a newer revision or an active run 409.
   search: (researchId: string, turnId: string, expectedScopeRevision: number, idempotencyKey: string) =>

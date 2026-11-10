@@ -646,6 +646,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     scope_view["discovery_completed"] = store.discovery_completed(research_id)
     # The providers a query may go to; a verification connector in the scope is not one, nor Scopus.
     scope_view["search_providers"] = search_providers(scope["providers"])
+    # The ones a search can really send to: a provider the person connected but whose key is gone cannot be asked,
+    # and a screen that offers a search over it would promise what the run refuses (`followup_search.offer`).
+    from deixis.workflow.features.candidates import candidates_run as candidates
+    scope_view["search_providers_eligible"] = candidates.eligible_providers(scope)
 
     service_waits = {row["run_id"]: json.loads(row["payload_json"]) for row in conn.execute(
         "SELECT run_id, payload_json FROM events WHERE research_id = ? AND type = 'service_waiting' ORDER BY id",

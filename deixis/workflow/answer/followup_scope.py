@@ -1,7 +1,8 @@
 """What one follow-up turn actually looked in, counted by code and kept with the published turn.
 
-A follow-up that finds nothing has found nothing **here**: in the works this research holds, at the reading depth
-they are held at, among the passages this call was given. That is a far smaller thing than the literature, and the
+A follow-up that finds nothing has found nothing **here**: in the works this research holds (and, for a turn that
+answered again, the works its own search found), at the reading depth they are held at, among the passages this call
+was given. That is a far smaller thing than the literature, and the
 design asks for the difference to be written down rather than left to the reader. So every published turn carries
 this, whatever its outcome — the answer that found everything says where it looked too.
 
@@ -73,6 +74,9 @@ def scanned(store: Any, research_id: str, frozen_pool: dict[str, Any], selection
         # the person's own exclusions and the answer this turn reads from both narrow it.
         "research_works": research_works(store, research_id),
         "works": found["works"], "works_full_text": found["full_text"], "works_abstract_only": found["abstract"],
+        # Of those, the works this turn's own search found: read for this answer, not included in the research, so
+        # "where it looked" is wider than the research itself and says by how much.
+        "works_found_by_search": len(frozen_pool.get("found_versions") or []),
         # And the works a call of this turn was given a passage of, which is the narrower, truer answer to "where
         # did it look": the passage limit stands between the pool and the model (`read_works`).
         "works_given": shown["works"], "works_given_full_text": shown["full_text"],

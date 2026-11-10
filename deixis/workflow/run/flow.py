@@ -505,6 +505,14 @@ class ResearchFlow:
                           and self.store.run(run["target"]["answer_run_id"])["budget"].get("trigger") != "late_fulltext"):
                         report_pipeline.after_answer(self.store, self.store.run(run["target"]["answer_run_id"]))
                 return
+            if run["kind"] == "followup_search":
+                # The search the person asked for with their question has answered: the second answer of the same
+                # question, over what it found, is opened in the same write (one active run per research).
+                from deixis.workflow.answer import followup_revision
+                with transaction(self.store.conn):
+                    self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+                    followup_revision.after_search(self.store, run)
+                return
             if run["kind"] == "followup_answer":
                 # A turn that asked for the report to change opens its new version in the same write.
                 from deixis.workflow.answer import followup

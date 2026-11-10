@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Plus, X, type LucideIcon } from 'lucide-react'
+import { ArrowUp, Plus, Search, X, type LucideIcon } from 'lucide-react'
 import { useToast } from '../components/Toast'
 import { t } from '../lib/i18n'
 import type { FollowupAsk } from '../lib/api'
 
 // The sticky follow-up composer at the foot of the thread (mockup `.foot-compose` / `.mini`, R30, UI parity S22b). It asks
-// one follow-up question, answered only from the passages this research already holds; it starts no search. "+"
+// one follow-up question, answered from the passages this research already holds. "Also search for new works" asks
+// for works it does not hold: the question is answered from what is here first, the search runs next, and what it
+// finds is answered again in a turn of its own. Left off, the question starts no search. "+"
 // opens Get more full text, where PDFs are added to the research's works. A follow-up has no depth of its own: it reads at
 // most the passage limit of the research's depth, so the depth is shown as the research's, not as a choice (§2.3).
 // ⌘/Ctrl + Enter sends. Sending is locked while a request runs; the draft stays when the request fails and is cleared
@@ -21,7 +23,8 @@ const MAX_CHARS = 2000
 // The server's limits on the selections one question carries (`followup_attachments`).
 const MAX_ATTACHMENTS = 4
 
-export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon, depthLabel, fill, quote, onSend, onAddPdfs }: {
+export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon, depthLabel, fill, quote, onSend,
+                                   onAddPdfs, searchDisabledReason = null }: {
   // Why a question cannot be sent now (a run of this research is active), or null.
   disabledReason: string | null
   sending: boolean
@@ -32,11 +35,15 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
   // Text chosen with "Add to chat": each new request adds it as a chip above the box and focuses the box. The chip
   // keeps what it was selected from, so the question reaches the server bound to that source.
   quote: FollowupPick | null
-  onSend: (question: string, idempotencyKey: string, attachments: FollowupAsk[]) => Promise<boolean>
+  onSend: (question: string, idempotencyKey: string, attachments: FollowupAsk[], search: boolean) => Promise<boolean>
   onAddPdfs: (opener: HTMLElement) => void
+  // Why a search cannot be asked for with this question (no search provider is set up, say), or null.
+  searchDisabledReason?: string | null
 }) {
   const toast = useToast()
   const [draft, setDraft] = useState('')
+  // Off by default: a question is answered from what this research holds unless the person asks for more.
+  const [search, setSearch] = useState(false)
   const field = useRef<HTMLTextAreaElement>(null)
   const box = useRef<HTMLDivElement>(null)
   // One key per question text: a retry of the same text after a failed request is the same request to the server.
@@ -83,12 +90,14 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
     const sent = quotes
     if (question.length > MAX_CHARS) { toast('warning', t('The question is too long; shorten it.')); return }
     // One key per question and its selections: a retry of the same request after a failure is the same request.
-    const signature = JSON.stringify([question, sent])
+    const asked = search && !searchDisabledReason
+    const signature = JSON.stringify([question, sent, asked])
     if (key.current?.text !== signature) key.current = { text: signature, key: crypto.randomUUID() }
-    if (await onSend(question, key.current.key, sent)) {
+    if (await onSend(question, key.current.key, sent, asked)) {
       key.current = null
       setDraft(current => (current.trim() === question ? '' : current))
       setQuotes(current => current.filter(q => !sent.includes(q)))
+      setSearch(false)
     }
   }
 
@@ -104,6 +113,12 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
         onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() } }} />
       <div className="followup-composer-row">
         <button type="button" className="followup-add" aria-label={t('Add PDFs')} title={t('Add PDFs in Get more full text')} onClick={e => onAddPdfs(e.currentTarget)}><Plus size={16} aria-hidden /></button>
+        {/* The person's own ask for works this research does not hold; the answer from what it holds comes first. */}
+        <label className={`followup-search-ask${search ? ' is-on' : ''}`} title={searchDisabledReason ?? t('The question is answered from this research first; then a search for new works runs and answers it again.')}>
+          <input type="checkbox" checked={search && !searchDisabledReason} disabled={Boolean(searchDisabledReason)}
+            onChange={e => setSearch(e.target.checked)} />
+          <Search size={14} aria-hidden />{t('Also search for new works')}
+        </label>
         <span className="followup-spacer" />
         <span className="followup-depth" title={t('A follow-up reads at most the passage limit of this research’s depth.')}><DepthIcon size={15} aria-hidden /><span className="sr-only">{t('Research depth')}: </span>{depthLabel}</span>
         <button type="button" className="followup-send" aria-label={t('Send follow-up question')} title={disabledReason ?? t('Send follow-up question')}

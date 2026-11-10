@@ -12,9 +12,11 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from .common import canonical, doi, load_benchmark, matching_records, sanitize, sha
+    from .common import (canonical, doi, load_benchmark, matching_records, measurable, reference_identity,
+                         requested_records, sanitize, sha, unverified_alternates)
 except ImportError:
-    from common import canonical, doi, load_benchmark, matching_records, sanitize, sha
+    from common import (canonical, doi, load_benchmark, matching_records, measurable, reference_identity,
+                        requested_records, sanitize, sha, unverified_alternates)
 
 ROOT = Path(__file__).resolve().parents[2]
 UNMEASURABLE = 'ölçülemiyor'
@@ -47,14 +49,36 @@ def norm(text):
 
 
 def paper_match(versions, paper):
+    """Which stored versions answer this reference: the work's, the reference's own, and title-only candidates.
+
+    `matched` is the work (`matching_records`), `requested` only the versions carrying the reference's own
+    identity (`requested_records`), and `possible` the title-only candidates nobody has adjudicated. A title is
+    not a work identity, so a `possible` version is never counted as found.
+    """
     matched = [v['id'] for v in matching_records(versions, paper)]
+    requested = [v['id'] for v in requested_records(versions, paper)]
     possible = [v['id'] for v in versions if not matched and paper.get('title') and
                 norm(v['title']) == norm(paper['title'])]
-    return matched, possible
+    return matched, possible, requested
 
 
 def paper_versions(conn, paper):
     return paper_match(rows(conn, 'SELECT * FROM source_versions'), paper)[0]
+
+
+def identity_state(paper, matched, possible):
+    """What is known about this reference's identity, before any question about the search.
+
+    `resolved` the reference's identity matched a stored version; `not_found` it carries an identity and nothing
+    matched, which is a verified loss; `title_match_requires_adjudication` only its title matched, which nobody
+    has confirmed; `unresolvable` it carries no identity at all and no title matched, so this reference can be
+    counted neither as found nor as lost.
+    """
+    if matched:
+        return 'resolved'
+    if possible:
+        return 'title_match_requires_adjudication'
+    return 'not_found' if measurable(paper) else 'unresolvable'
 
 
 def seconds(start, finish):
@@ -242,8 +266,9 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
     assets = rows(conn,'SELECT * FROM source_assets WHERE retrieved_at<=?',(cutoff,))
     items = []
     for paper in bench['papers']:
-        svids, possible = paper_match(versions, paper)
+        svids, possible, asked = paper_match(versions, paper)
         ids = set(svids)
+        asked_ids = set(asked)
         works = {version_of[s]['work_id'] for s in ids}
         target_hits = [h for h in hits if h['source_version_id'] in ids]
         first_only = [c for c in candidates if c['source_version_id'] in ids and c['search_run_id'] in search_of and
@@ -259,9 +284,21 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
         delivered_rank = min((delivered_place[w] for w in works if w in delivered_place), default=None)
         items.append({'target_key':paper['key'], 'doi':paper.get('doi'), 'title':paper.get('title'),
             'label':paper.get('label'), 'stratum':paper.get('stratum','unstratified'), 'anchor':paper.get('anchor',False),
-            'identity_status':'resolved' if svids else 'title_match_requires_adjudication' if possible else 'not_found',
+            'identity_status':identity_state(paper, svids, possible),
+            'identity_source':reference_identity(paper), 'measurable':measurable(paper),
+            'unverified_alternates':unverified_alternates(paper),
             'possible_title_versions':possible, 'source_versions':[version_of[s] for s in svids],
             'found':bool(ids & pool_ids), 'search_origins':origins,
+            # "The work is in the pool" and "the version the reference asks for was read" are two measurements.
+            # A reference written with one identifier can be answered by a sibling version of the same work, and
+            # what was read may still be that sibling: the state below says which happened.
+            'requested_versions':sorted(asked_ids), 'requested_version_in_pool':bool(asked_ids & pool_ids),
+            'requested_version_depths':sorted({p.get('reading_depth') for sid in asked_ids
+                                               for p in given.get(sid, [])} - {None}),
+            'requested_version_state':'requested_version_read' if any(given.get(sid) for sid in asked_ids) else
+                'sibling_version_read' if passages else
+                'requested_version_in_pool_not_read' if asked_ids & pool_ids else
+                'sibling_version_in_pool_only' if ids & pool_ids else 'not_in_pool',
             'origins_complete':(ids & pool_ids)<= {h['source_version_id'] for h in target_hits} if ids & pool_ids else None,
             'rank':rank, 'keyword_rank':rank, 'chain_rank':chain_rank, 'delivered_rank':delivered_rank,
             'keyword_ranking_step_id':step['id'] if step else None,
@@ -294,14 +331,30 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
         group = [r for r in items if (layer=='all' or layer=='keys' and r['anchor'] or r['stratum']==layer)
                  and r['label']=='ilgili']
         counts = {name:sum(bool(r[name]) for r in group) for name in
-                  ('found','given_to_model','passage_given_to_model','cited_in')}
+                  ('found','given_to_model','passage_given_to_model','cited_in','requested_version_in_pool')}
         counts.update({f'top_{k}':sum(r['rank'] is not None and r['rank']<=k for r in group)
                       if step else None for k in (20,50)})
+        # A reference the measurement cannot identify is one nobody can call found or lost, so it is counted
+        # apart and the ratio that means something is read over the identified ones. `measurable` is a property
+        # of the reference alone, never of the search, or every verified loss would leave the denominator.
+        identified = [r for r in group if r['measurable']]
+        # `identity_unresolved` means the same here as in `replay_ranking.py` and `survey.py`: the reference
+        # carries no identity of its own. `title_match_requires_adjudication` answers a different question —
+        # only its title matched — so the two counts overlap for a reference that has both.
+        counts.update({'measurable':len(identified),
+                       'identity_unresolved':sum(not r['measurable'] for r in group),
+                       'title_match_requires_adjudication':
+                           sum(r['identity_status']=='title_match_requires_adjudication' for r in group)})
         for name, selected in (('keyword', step), ('chain', chain_step), ('delivered', delivered_step)):
             counts.update({f'{name}_top_{k}':sum(r[f'{name}_rank'] is not None and r[f'{name}_rank']<=k
                                               for r in group) if selected else None for k in (20,50)})
-        layers[layer] = {'denominator':len(group), 'counts':counts,
-                         'ratios':{k:v/len(group) if group and v is not None else None for k,v in counts.items()}}
+        layers[layer] = {'denominator':len(group), 'measurable_denominator':len(identified), 'counts':counts,
+                         'ratios':{k:v/len(group) if group and v is not None else None for k,v in counts.items()},
+                         # The same counts over the references this measurement can identify at all.
+                         'measurable_ratios':{k:sum(bool(r[k]) for r in identified)/len(identified)
+                                              if identified else None
+                                              for k in ('found','given_to_model','passage_given_to_model',
+                                                        'cited_in','requested_version_in_pool')}}
     runs = rows(conn, 'SELECT * FROM runs WHERE research_id=? AND scope_revision=? AND created_at<=?'
                 ' ORDER BY created_at, id', (rid, revision, cutoff))
     usage = [{'run_id':r['id'], 'kind':r['kind'], 'status':r['status'],

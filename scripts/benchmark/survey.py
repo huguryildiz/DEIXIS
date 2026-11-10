@@ -13,9 +13,9 @@ from typing import Callable
 from httpx import TimeoutException
 
 try:
-    from .common import canonical, doi, identity, load_benchmark, matching_records, sanitize, sha
+    from .common import canonical, doi, identity, load_benchmark, matching_records, measurable, sanitize, sha
 except ImportError:
-    from common import canonical, doi, identity, load_benchmark, matching_records, sanitize, sha
+    from common import canonical, doi, identity, load_benchmark, matching_records, measurable, sanitize, sha
 
 PROVIDERS = ('openalex', 'semantic_scholar')
 B_REQUEST_LIMIT = 10
@@ -355,13 +355,17 @@ def score_targets(report, bench):
             l.get('identity_status') in {'resolved','duplicate','version_alias'} and
             (sends is None or l.get('send_index', sends+1)<=sends)]
         found = [p for p in relevant if matching_records(counted_records, p)]
-        return {'denominator':len(relevant), 'found':[p['key'] for p in found],
+        identified = [p for p in relevant if measurable(p)]
+        return {'denominator':len(relevant), 'measurable_denominator':len(identified),
+            'found':[p['key'] for p in found],
+            'found_measurable':[p['key'] for p in found if measurable(p)],
             'keys':[p['key'] for p in found if p['anchor']],
             'by_stratum':{layer:{'denominator':sum(p['stratum']==layer for p in relevant),
                 'found':[p['key'] for p in found if p['stratum']==layer]} for layer in
                 sorted({p['stratum'] for p in bench['papers']})},
-            'identity_unresolved_targets':[p['key'] for p in relevant
-                if not p.get('doi') and not p.get('verified_work_ids')]}
+            # One rule for every report (`common.measurable`): a reference carrying no identity of its own can
+            # be counted neither as found nor as lost, so it is named here and kept out of that denominator.
+            'identity_unresolved_targets':[p['key'] for p in relevant if not measurable(p)]}
     coverage = {arm:covered(result) for arm,result in report['arms'].items()}
     gains = {name:sorted(set(coverage[left]['found'])-set(coverage[right]['found']))
              for name,left,right in [('B-A','B','A'),('C-A','C','A'),('C-B','C','B'),('N-A','N','A')]}

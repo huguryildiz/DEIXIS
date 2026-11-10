@@ -14,10 +14,10 @@ from deixis.workflow.search.expansion import queried_form, queried_terms, TASK_B
 
 try:
     from .check import connect, rows, selected_ranking
-    from .common import canonical, load_benchmark, matching_records, sha
+    from .common import canonical, load_benchmark, matching_records, measurable, sha
 except ImportError:
     from check import connect, rows, selected_ranking
-    from common import canonical, load_benchmark, matching_records, sha
+    from common import canonical, load_benchmark, matching_records, measurable, sha
 
 RULE = {
     'version': 'replay-ranking-v1', 'batch_size': 30, 'rrf_k': 60,
@@ -268,9 +268,17 @@ def evaluate(replay, pool, versions, benchmark):
             works = {v['work_id'] for v in matching_records(versions, p)}
             targets.append({'key': p['key'], 'label': p.get('label'), 'anchor': p.get('anchor', False),
                             'in_pool': bool(works & pool_works),
+                            # Whether this reference can be counted as found or lost at all, read from the
+                            # reference alone (`common.measurable`), so `check.py` and `survey.py` read the same
+                            # denominator as this report does.
+                            'measurable': measurable(p),
                             'rank': min((place[w] for w in works if w in place), default=None)})
-        arms[arm] = {'relevant_top': {str(k): sum(t['label'] == 'ilgili' and t['rank'] is not None and t['rank'] <= k
-                                                 for t in targets) for k in (20, 30, 50, 100)},
+        relevant = [t for t in targets if t['label'] == 'ilgili']
+        arms[arm] = {'relevant_top': {str(k): sum(t['rank'] is not None and t['rank'] <= k for t in relevant)
+                                      for k in (20, 30, 50, 100)},
+                     'relevant_denominator': len(relevant),
+                     'relevant_measurable_denominator': sum(t['measurable'] for t in relevant),
+                     'identity_unresolved': [t['key'] for t in relevant if not t['measurable']],
                      'targets': targets, 'keys': {t['key']: t['rank'] for t in targets if t['anchor']},
                      'pool_unranked': [t['key'] for t in targets if t['in_pool'] and t['rank'] is None],
                      'order_sha256': sha(canonical(order))}

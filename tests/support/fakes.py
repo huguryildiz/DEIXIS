@@ -301,7 +301,7 @@ def valid_response(si: dict[str, Any]) -> str:
         # SYNTHETIC: one claim quoting the first passage sent, so the anchor always locates. It says nothing about
         # whether a model would find the passages answer the question.
         first = si["passages"][0]
-        return json.dumps(envelope(si, "deixis.followup_answer.v5") | {
+        return json.dumps(envelope(si, "deixis.followup_answer.v6") | {
             "answer_language": "en", "outcome": "answered",
             "claims": [{"claim_label": "c1", "text": "It has been reported that the first passage supports this fake claim.",
                         "support_type": "source_stated", "passage_ids": [first["passage_id"]]}],
@@ -312,6 +312,9 @@ def valid_response(si: dict[str, Any]) -> str:
             "report_change_requested": "[report-change]" in si["question"]["text"],
             # SYNTHETIC: a question carrying the marker asks for works the research does not hold.
             "new_works_requested": "[new-works]" in si["question"]["text"],
+            # SYNTHETIC: a question carrying the marker moves to another setting or criterion.
+            "scope_change_requested": "[scope-change]" in si["question"]["text"],
+            "scope_change_note": "another synthetic setting" if "[scope-change]" in si["question"]["text"] else None,
             "work_classifications": [],
         })
     first = si["passages"][0]

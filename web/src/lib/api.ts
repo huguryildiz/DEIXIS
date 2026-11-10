@@ -784,6 +784,10 @@ export type ResearchView = {
     revision_withdrawal: RevisionWithdrawal; next_scope_revision: number }
   // A table/compare discovery of the current question that wrote no table, and why; null otherwise (S5a).
   intent_outcome: IntentOutcome | null
+  // Opened from a follow-up question of another research, which this one applies no scope of; null otherwise.
+  // A purged origin leaves its ids null and only the date it was opened on.
+  branched_from: { research_id: string | null; title: string | null; turn_id: string | null; question: string | null
+    created_at: string } | null
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
   // Every run of the research; `runs` lists the newest ten (UI parity S11).
   run_total?: number
@@ -2184,9 +2188,18 @@ export type FollowupTurn = {
     work_groups: FollowupWorkGroups | null
     warnings: ValidationIssue[]  // stored validation warnings (math, several sources), as the answer's `validation.warnings`
   } | null
-  // The turn asked for the report to change: the answer run it queued for the next report version, or why none was.
+  // This chain's report version: the answer run it queued, what that wrote, how many tries it took, and whether a
+  // version can be asked for now. Read for every published turn, because adding an answer to the report is the
+  // person's own action; `report_change_requested` is the model's reading of the question beside it.
   report_change: { run_id: string | null; run_status: RunStatus | null; answer_status: Answer['status'] | null; report_version: number | null
+    attempts: number; offered: boolean
+    not_offered_reason: 'turn_not_published' | 'scope_revised' | 'already_written' | 'report_change_running' | 'nothing_included' | null
     not_started: 'scope_revised' | 'nothing_included' | 'run_active' | null } | null
+  report_change_requested: boolean  // the answer said this question asks for the report itself to change
+  // A question that moved to another setting, population or criterion: the research of its own this turn can open.
+  // `suggested` when the answer said so, with its one-line note; the branch applies none of this research's scope.
+  branch: { offered: boolean; not_offered_reason: 'turn_not_published' | 'branch_opened' | null
+    emphasis: 'suggested' | 'quiet'; note: string | null; research_id: string | null }
   issues: { code: string; path: string; message: string }[]
   // The turn's search for works outside the research: offered once the turn is published under the current
   // question, `suggested` when the model said the question asks for new works. Each run's progress reads its stored steps;
@@ -2236,6 +2249,17 @@ export const followupApi = {
   // `expectedScopeRevision` is the question revision on screen; a newer one answers 409, as an active run does.
   // `search` asks for works this research does not hold: the turn is answered from what it holds first, the search
   // runs next, and what it finds is answered in a turn of its own.
+  // Add a published turn's answer to the report: the person's own action, which opens the next report version.
+  addToReport: (researchId: string, turnId: string, expectedScopeRevision: number) =>
+    request<FollowupTurn & { report_run_id: string }>(
+      `/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}/report`,
+      json('POST', { expected_scope_revision: expectedScopeRevision })),
+  // Open a research of its own for this question. Its scope settings come from this research; nothing it screened,
+  // included, read or concluded does.
+  branch: (researchId: string, turnId: string, question: string, expectedScopeRevision: number, languageHint: string | null) =>
+    request<ResearchView>(
+      `/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}/branch`,
+      json('POST', { question, expected_scope_revision: expectedScopeRevision, language_hint: languageHint })),
   ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string,
         attachments: FollowupAsk[] = [], search = false) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`,

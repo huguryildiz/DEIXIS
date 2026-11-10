@@ -18,7 +18,7 @@ CASES = {c["name"]: c for c in json.loads((FIXTURES / "fake-outputs.json").read_
 
 def test_the_followup_contract_is_registered_and_its_step_input_is_valid():
     assert contracts.SCHEMA_FILES["FollowupAnswer"] == "followup-answer.schema.json"
-    assert contracts.SCHEMA_VERSIONS["FollowupAnswer"] == "deixis.followup_answer.v5"
+    assert contracts.SCHEMA_VERSIONS["FollowupAnswer"] == "deixis.followup_answer.v6"
     assert contracts.TASK_OUTPUTS["followup_answer"] == ("FollowupAnswer",)
     Draft202012Validator.check_schema(contracts.load_schema("FollowupAnswer"))
     assert contracts.strict_compatibility_issues(contracts.model_output_schema("followup_answer")) == []
@@ -95,3 +95,15 @@ def test_work_classifications_refuse_what_cannot_be_counted_or_cited():
     # An answer with neither a claim nor a classified work is still refused.
     assert "followup_answer_without_claims" in codes([{"passage_id": "psg_SYNA2abs01", "status": "ambiguous",
                                                        "memberships": [], "note": "SYNTHETIC unclear."}])
+
+
+def test_a_note_on_what_the_question_moves_to_needs_the_judgement_it_explains():
+    """The line is read beside the offer: without the offer it would describe a move this answer did not report."""
+    si = STEP_INPUTS["K_followup_answer"]
+    draft = json.loads(json.dumps(CASES["followup_valid"]["output"]))
+    draft["scope_change_requested"] = False
+    draft["scope_change_note"] = "aerial networks"
+    assert "scope_change_note_without_request" in contracts.validate_model_output(si, draft).codes()
+    draft["scope_change_requested"] = True
+    report = contracts.validate_model_output(si, draft)
+    assert report.ok and report.result["scope_change_note"] == "aerial networks"

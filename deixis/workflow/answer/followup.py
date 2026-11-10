@@ -32,6 +32,7 @@ from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_exp
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.answer import answer as fast_answer, followup_attachments as attachments_mod, late_revision
 from deixis.workflow.answer import followup_fulltext, followup_revision, followup_scope
+from deixis.workflow.features.branch import branch_research
 from deixis.workflow.search import followup_search, small_batch
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
@@ -1088,6 +1089,121 @@ def _report_after(store: Any, run: dict[str, Any], turn: dict[str, Any]) -> None
     store._event(rid, "report_change_not_started", {"turn_id": turn["id"], "reason": reason}, run["id"])
 
 
+class ReportChangeRefused(Exception):
+    """A report version this turn cannot start now; `code` says why, and the screen says it in the person's words."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _report_runs(store: Any, root: str) -> list[dict[str, Any]]:
+    """Every report version this chain has already asked for, oldest first: the model's own request and the
+    person's later attempts share one family of keys, so one chain writes one report version at a time.
+
+    A key with no attempt in it is the first attempt: that is the key the model's flag has always used. The keys
+    are read one by one and stop at the first one no run holds, so each read is a lookup on the unique key rather
+    than a scan of every run of this library; attempts are opened in order, so there is no gap to step over.
+    """
+    base, attempts = report_run_key(root), []
+    while True:
+        key = base if not attempts else f"{base}:a{len(attempts) + 1}"
+        row = store.conn.execute("SELECT id FROM runs WHERE idempotency_key = ?", (key,)).fetchone()
+        if row is None:
+            return attempts
+        attempts.append(store.run(row["id"]))
+
+
+def _wrote_report(store: Any, run_id: str) -> dict[str, Any] | None:
+    """The report version a report-change run wrote, if it wrote one: only a valid answer opens a version."""
+    row = store.conn.execute(
+        "SELECT status, report_version FROM answers WHERE run_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        (run_id,)).fetchone()
+    return dict(row) if row and row["status"] == "structurally_valid" and row["report_version"] is not None else None
+
+
+def request_report_change(store: Any, research_id: str, turn_id: str, expected_scope_revision: int) -> dict[str, Any]:
+    """The person's own "Add to the report" on a published turn: the answer run that opens the next report version.
+
+    The rules are the ones the model's own flag is held to (`_report_after`), decided here before anything is sent.
+    What this adds is the person's second try. A run of this chain that is still going, paused included, is the
+    same attempt and is handed back as a conflict: a paused run resumes, and a new key would pay for its work
+    twice. A run that ended without writing a version does not swallow the next click — it gets an attempt of its
+    own. And a version already written stands: the report's own screen is where a further version is started, so
+    the same question cannot write two.
+    """
+    from deixis.workflow.run.store import ACTIVE_RUN_STATUSES, NotFound
+
+    with transaction(store.conn):
+        research = store.research(research_id)
+        check_expected_version(expected_scope_revision, research["current_scope_revision"])
+        row = store.conn.execute("SELECT * FROM followup_turns WHERE id = ? AND research_id = ?",
+                                 (turn_id, research_id)).fetchone()
+        if row is None:
+            raise NotFound(turn_id)
+        turn = dict(row)
+        if turn["status"] not in PUBLISHED:
+            raise ReportChangeRefused("turn_not_published", "This follow-up has no published answer to add")
+        if turn["scope_revision"] != research["current_scope_revision"]:
+            raise ReportChangeRefused("scope_revised", "The research question changed after this answer")
+        if not store.included_works(research_id) and not store.discovery_completed(research_id):
+            raise ReportChangeRefused("nothing_included", "No source is included yet")
+        root = turn["revises_turn_id"] or turn["id"]
+        attempts = _report_runs(store, root)
+        for run in attempts:
+            if run["status"] in ACTIVE_RUN_STATUSES + ("paused",):
+                raise RevisionConflict(f"run {run['id']} is still active")
+            if _wrote_report(store, run["id"]):
+                raise ReportChangeRefused("already_written", "This question already wrote a report version")
+        active = store.conn.execute(
+            f"SELECT id FROM runs WHERE research_id = ? AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+            (research_id, *ACTIVE_RUN_STATUSES)).fetchone()
+        if active:
+            raise RevisionConflict(f"run {active['id']} is still active")
+        attempt = len(attempts) + 1
+        key = report_run_key(root) if attempt == 1 else f"{report_run_key(root)}:a{attempt}"
+        scope = store.scope(research_id)
+        run = store.create_run(research_id, "answer", fast_answer.answer_run_budget(store, research_id, scope), key,
+                               target={"report_request": {"turn_id": turn["id"], "text": turn["question"]}},
+                               expected_scope_revision=turn["scope_revision"])
+        store._event(research_id, "report_change_asked", {"turn_id": turn["id"], "attempt": attempt}, run["id"])
+        return run
+
+
+def report_change_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
+    """What the screen says about this chain's report version: the run, what it wrote, and whether a try is open.
+
+    Read for every published turn, not only one the model flagged, because the person's own action is theirs to
+    take. `offered` applies the same rules as `request_report_change` without writing anything.
+    """
+    root = row["revises_turn_id"] or row["id"]
+    attempts = _report_runs(store, root)
+    last = attempts[-1] if attempts else None
+    written = _wrote_report(store, last["id"]) if last else None
+    reason = None
+    # A version this chain wrote is read first, so a turn whose question was revised afterwards still says which
+    # version it wrote: the version is what happened, and the revision only stops another one.
+    if written is not None:
+        reason = "already_written"
+    elif row["status"] not in PUBLISHED:
+        reason = "turn_not_published"
+    elif row["scope_revision"] != store.research(row["research_id"])["current_scope_revision"]:
+        reason = "scope_revised"
+    elif any(run["status"] in ("queued", "running", "pause_requested", "paused") for run in attempts):
+        reason = "report_change_running"
+    elif not store.included_works(row["research_id"]) and not store.discovery_completed(row["research_id"]):
+        reason = "nothing_included"
+    # Why no run was opened at all, which only a turn that asked for the report to change ever says.
+    skipped = store.conn.execute(
+        "SELECT payload_json FROM events WHERE run_id = ? AND type = 'report_change_not_started'"
+        " ORDER BY id DESC LIMIT 1", (row["run_id"],)).fetchone() if not attempts else None
+    return {"run_id": last["id"] if last else None, "run_status": last["status"] if last else None,
+            "answer_status": written["status"] if written else None,
+            "report_version": written["report_version"] if written else None,
+            "attempts": len(attempts), "offered": reason is None, "not_offered_reason": reason,
+            "not_started": json.loads(skipped["payload_json"])["reason"] if skipped else None}
+
+
 def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     """One turn as the UI reads it. Claims and citations are shown only for a valid published answer; an unverified
     draft shows its issues and no claim (fail-closed). `question` is what "Search for new works on this" revises to."""
@@ -1101,6 +1217,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         row["selection_revision"] != research["selection_revision"]
         or row["user_signature"] != small_batch.user_signature(store, row["research_id"]))
     answer = None
+    draft: dict[str, Any] = {}
     if row["status"] in PUBLISHED:
         draft = json.loads(row["draft_json"])
         cited: dict[str, list[dict[str, Any]]] = {}
@@ -1167,21 +1284,11 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
             binding["in_pool"] = binding["passage_id"] in in_pool
             # Only a published answer's own input says what the model was given; before that it is not yet known.
             binding["given"] = None if given_ids is None else binding["passage_id"] in given_ids
-    # A turn that asked for the report to change: the answer run it queued, or why none was queued.
-    report_change = None
-    if answer is not None and draft.get("report_change_requested") is True:
-        queued = store.conn.execute("SELECT id, status FROM runs WHERE idempotency_key = ?", (report_run_key(row["revises_turn_id"] or row["id"]),)).fetchone()
-        skipped = None if queued else store.conn.execute(
-            "SELECT payload_json FROM events WHERE run_id = ? AND type = 'report_change_not_started' ORDER BY id DESC LIMIT 1",
-            (row["run_id"],)).fetchone()
-        # What the run published: only a valid answer is a new report version; a draft or no-evidence answer is not.
-        written = queued and store.conn.execute(
-            "SELECT status, report_version, report_revision FROM answers WHERE run_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
-            (queued["id"],)).fetchone()
-        report_change = {"run_id": queued["id"] if queued else None, "run_status": queued["status"] if queued else None,
-                         "answer_status": written["status"] if written else None,
-                         "report_version": written["report_version"] if written else None,
-                         "not_started": json.loads(skipped["payload_json"])["reason"] if skipped else None}
+    # This chain's report version: the run it queued, what that wrote, and whether a version can be asked for now.
+    # Read for every published turn, because adding an answer to the report is the person's own action; the model's
+    # own reading of the question is `report_change_requested` beside it, and only that decides what is said about
+    # a version the person did not ask for.
+    report_change = report_change_view(store, row) if answer is not None else None
     return {
         "id": row["id"], "research_id": row["research_id"], "scope_revision": row["scope_revision"],
         "question": row["question"], "status": row["status"], "created_at": row["created_at"],
@@ -1195,6 +1302,10 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},
         "answer": answer, "report_change": report_change, "attachments": attached,
+        "report_change_requested": draft.get("report_change_requested") is True,
+        # A question that moved to another setting, population or criterion: the research of its own this turn
+        # offers, which applies none of this research's scope (`branch_research`).
+        "branch": branch_research.offer(store, row),
         # The person asked for new works with this question, and the turn that answered it again over what the
         # search found; `answered_again` is on the first turn, `answers_again` on the second.
         "search_requested": bool(row["search_requested"]),

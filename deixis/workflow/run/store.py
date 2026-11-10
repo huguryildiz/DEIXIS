@@ -519,6 +519,14 @@ class Store:
                 (research_id,))
             self.conn.execute("DELETE FROM followup_turn_attachments WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM followup_turn_links WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
+            # A branch opened from a question of this research is another research and stays: its own row keeps,
+            # with the origin it can no longer point at emptied. A branch of its own loses only its link row.
+            self.conn.execute(
+                "UPDATE research_branches SET from_turn_id = NULL WHERE from_turn_id IN"
+                " (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
+            self.conn.execute("UPDATE research_branches SET from_research_id = NULL WHERE from_research_id = ?",
+                              (research_id,))
+            self.conn.execute("DELETE FROM research_branches WHERE research_id = ?", (research_id,))
             # A turn that answers another turn again names it, so those rows go first; one level deep is enforced
             # on insert (`followup_turns_one_revision_deep`), so these two statements cover every turn.
             self.conn.execute("DELETE FROM followup_turns WHERE research_id = ? AND revises_turn_id IS NOT NULL",

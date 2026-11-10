@@ -1,9 +1,9 @@
--- The whole library schema at version 28. A new library is made from this file in one transaction and
--- records versions 1 to 28; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 29. A new library is made from this file in one transaction and
+-- records versions 1 to 29; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 28
+-- deixis:schema-version 29
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -2593,3 +2593,19 @@ BEGIN SELECT RAISE(ABORT, 'the turn a follow-up answers again is named once and 
 
 CREATE UNIQUE INDEX followup_turns_one_revision ON followup_turns(revises_turn_id)
   WHERE revises_turn_id IS NOT NULL;
+
+-- A research of its own, opened from a follow-up question that moved to another setting, population or inclusion
+-- criterion. The link carries no scope: the branch applies none of the research it came from, which is the whole
+-- point of opening one instead of widening that research. One branch per question, and the links are nullable
+-- because either research may be purged while the other stays.
+CREATE TABLE research_branches (
+  research_id TEXT PRIMARY KEY REFERENCES researches(id),
+  from_research_id TEXT REFERENCES researches(id) ON DELETE SET NULL,
+  from_turn_id TEXT REFERENCES followup_turns(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX research_branches_one_per_turn ON research_branches(from_turn_id)
+  WHERE from_turn_id IS NOT NULL;
+
+CREATE INDEX research_branches_from ON research_branches(from_research_id);

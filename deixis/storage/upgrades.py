@@ -976,4 +976,20 @@ BEGIN SELECT RAISE(ABORT, 'the turn a follow-up answers again is named once and 
 CREATE UNIQUE INDEX followup_turns_one_revision ON followup_turns(revises_turn_id)
   WHERE revises_turn_id IS NOT NULL;
 """),
+    29: Step("0029_research_branches.sql", False, """-- A follow-up question that moves to another setting, population or
+-- inclusion criterion opens a research of its own instead of widening this one, and this records where it came from.
+-- The link carries no scope: the branch applies none of the research it came from. One branch per question, and both
+-- links are nullable because either research may be purged while the other stays.
+CREATE TABLE research_branches (
+  research_id TEXT PRIMARY KEY REFERENCES researches(id),
+  from_research_id TEXT REFERENCES researches(id) ON DELETE SET NULL,
+  from_turn_id TEXT REFERENCES followup_turns(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX research_branches_one_per_turn ON research_branches(from_turn_id)
+  WHERE from_turn_id IS NOT NULL;
+
+CREATE INDEX research_branches_from ON research_branches(from_research_id);
+"""),
 }

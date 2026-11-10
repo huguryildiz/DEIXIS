@@ -18,10 +18,12 @@
     "more_queries",
     "report_change_requested",
     "new_works_requested",
+    "scope_change_requested",
+    "scope_change_note",
     "work_classifications"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.followup_answer.v5" },
+    "schema_version": { "type": "string", "const": "deixis.followup_answer.v6" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -81,6 +83,15 @@
     "new_works_requested": {
       "type": "boolean",
       "description": "true when the follow-up asks for works, studies or sources beyond the ones supplied (other studies, more or newer papers, work that also covers something the supplied works do not). The application then offers the person a search for new works; it starts nothing by itself. false when the follow-up asks about the supplied works."
+    },
+    "scope_change_requested": {
+      "type": "boolean",
+      "description": "true when the follow-up moves the question to another setting, population or inclusion criterion rather than asking about this one (another environment, another field, another kind of system, a different year range as the subject of the question). The application then offers the person a linked research of its own for that question, and applies none of this research's criterion to it; it starts nothing by itself and this answer is still written. false when the follow-up stays inside this research's question, including a question about works it does not hold."
+    },
+    "scope_change_note": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "One short line naming what the question moves to (the setting, population or criterion), for the person reading the offer. Null when scope_change_requested is false."
     },
     "work_classifications": {
       "type": "array",

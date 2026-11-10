@@ -521,6 +521,7 @@ EMPTY_BECAUSE = {
     "followup_turn_attachments": "same as followup_turns",
     "followup_turn_attachment_bindings": "same as followup_turns",
     "library_items": "the builder saves nothing to the Library; backup/restore: tests/storage/test_library_items.py",
+    "research_branches": "the builder opens no linked research; backup/restore: tests/features/test_research_branch.py",
     "research_model_changes": "the builder changes no research model; backup/restore: tests/models/test_research_model_change.py",
     "watch_gaps": "the rich library builder starts no interval watch, so no scheduling gap is recorded",
     "watch_schedule_changes": "the rich library builder changes no follow-up watch schedule",

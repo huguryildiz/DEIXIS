@@ -56,6 +56,18 @@ answer from the supplied passages. Set it to false when the follow-up asks
 about the supplied works themselves ("which of these reports the highest
 delivery ratio?", "compare the two approaches").
 
+Set `scope_change_requested` to true when the follow-up moves the question to
+another setting, population or inclusion criterion instead of asking about this
+one ("now let us look at this for aerial networks", "same question for
+children", "what about the pre-2015 work?" as the subject of the question). Put
+one short line in `scope_change_note` saying what it moves to. The application
+then offers the person a linked research of its own for that question and
+applies none of this research's criterion to it; it starts nothing, and you
+still answer from the supplied passages. Set it to false when the question
+stays inside this research, including when it asks for works this research does
+not hold - that is `new_works_requested`. Leave `scope_change_note` null when
+it is false.
+
 When `conversation.more_queries_allowed` is true and the passages do not answer
 the question fully, put up to three short search phrases in `more_queries`: the
 words a passage that answers the missing part would contain, in the language of

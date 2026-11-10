@@ -60,7 +60,7 @@ SCHEMA_FILES = {
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v4",
-    "FollowupAnswer": "deixis.followup_answer.v5",
+    "FollowupAnswer": "deixis.followup_answer.v6",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
@@ -3109,8 +3109,15 @@ def _check_followup(allow: dict[str, set[str]], step_input: dict[str, Any], draf
     if draft["outcome"] != "answered" and not draft["unanswered_aspects"]:
         report.issues.append(Issue("followup_unanswered_without_aspect", "/unanswered_aspects",
                                    f"outcome {draft['outcome']!r} needs what the given passages do not say"))
+    # A note belongs to the offer it explains: without the judgement there is nothing for the person to read, and a
+    # line kept there would be shown beside an offer this answer did not make.
+    if not draft["scope_change_requested"] and draft["scope_change_note"]:
+        report.issues.append(Issue("scope_change_note_without_request", "/scope_change_note",
+                                   "a note on what the question moves to needs scope_change_requested"))
     fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
     fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
+    if draft["scope_change_note"]:
+        fields.append(("/scope_change_note", draft["scope_change_note"]))
     for i, work in enumerate(draft["work_classifications"]):
         fields += [(f"/work_classifications/{i}/memberships/{j}/group", m["group"]) for j, m in enumerate(work["memberships"])]
         if work["note"]:

@@ -650,6 +650,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # and a screen that offers a search over it would promise what the run refuses (`followup_search.offer`).
     from deixis.workflow.features.candidates import candidates_run as candidates
     scope_view["search_providers_eligible"] = candidates.eligible_providers(scope)
+    # Where this research came from, when a follow-up question of another research opened it: the origin research
+    # and that question, as far as both still exist (`branch_research`). None of that research's scope is here.
+    from deixis.workflow.features.branch import branch_research
+    view_branch = branch_research.of_research(store, research_id)
 
     service_waits = {row["run_id"]: json.loads(row["payload_json"]) for row in conn.execute(
         "SELECT run_id, payload_json FROM events WHERE research_id = ? AND type = 'service_waiting' ORDER BY id",
@@ -1084,6 +1088,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     included_now = table_sources.table_sources(store, research_id) if pending_answer else []
     study_table_pending = {"sources": len(included_now)} if included_now else None
     return {"research": research, "intent_outcome": intent_outcome(store, research), "scope": scope_view, "runs": runs,
+            "branched_from": view_branch,
             "run_total": run_total, "study_table_pending": study_table_pending, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
             # The semantic search arm for this research's current revision (slice 21); no count of what will be sent.

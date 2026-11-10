@@ -212,6 +212,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Follow-up questions of this research (R30/R31, S22b); not the Follow-up panel above, which watches for new works.
   const followups = useFollowupTurns(id, lastEventId ?? 0)
   const [asking, setAsking] = useState(false)
+  // The question a research of its own would be opened with, while the person is still editing it.
+  const [branchAsk, setBranchAsk] = useState<{ turnId: string; question: string } | null>(null)
   const [followupFill, setFollowupFill] = useState<FollowupFill | null>(null)
   const [followupQuote, setFollowupQuote] = useState<FollowupPick | null>(null)
   const [threadCol, setThreadCol] = useState<HTMLDivElement | null>(null)
@@ -717,6 +719,37 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       else toast('error', t('The search was not started: {error}', { error: errorText(e) }))
     } finally { setAsking(false) }
   }
+  // The person's own "Add this to the report" on a published turn: it opens the next report version. A try after a
+  // run that wrote nothing is a request of its own; a run still going or paused answers 409 and the list is reread.
+  const addFollowupToReport = async (turnId: string) => {
+    if (asking) return
+    setAsking(true)
+    try {
+      await followupApi.addToReport(id, turnId, view.research.current_scope_revision)
+      await followups.reload()
+      onChanged()
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 409 || e.status === 422)) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: e.message })); await Promise.all([load(), followups.reload()]) }
+      else toast('error', t('The report version was not started: {error}', { error: errorText(e) }))
+    } finally { setAsking(false) }
+  }
+  // A research of its own for a question that moved elsewhere: the person edits the question first, and the new
+  // research opens with none of this one's criterion, screening, sources or report.
+  const openBranch = async () => {
+    if (!branchAsk || asking) return
+    setAsking(true)
+    try {
+      // No language is sent: the hint belongs to the question it was saved with, and this is another question.
+      const opened = await followupApi.branch(id, branchAsk.turnId, branchAsk.question.trim(),
+                                              view.research.current_scope_revision, null)
+      setBranchAsk(null)
+      await followups.reload()
+      window.location.hash = `/research/${opened.research.id}`
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 409 || e.status === 422)) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: e.message })); await Promise.all([load(), followups.reload()]) }
+      else toast('error', t('The research was not opened: {error}', { error: errorText(e) }))
+    } finally { setAsking(false) }
+  }
   // The latest answer in the thread (S10): the run writing its next version, the earlier version of the same question
   // revision, a claim review still running, and the panels its pills and Next steps rows open.
   const answerRun = run && run.kind === 'answer' && active && answer && run.id !== answer.run_id ? run : null
@@ -883,6 +916,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         conflict={reviseConflict} onRebase={() => setRevising(form => (form ? { ...form, revision: view.research.current_scope_revision } : form))}
         disabled={busy || active} onSubmit={(text, terms, english) => { void saveRevision(text, terms, english) }} onCancel={endRevise} />
       : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}
+    {/* Opened from a follow-up question of another research. Said plainly, because none of that research's scope,
+        screening or evidence is here: this is where the question came from, not what it brought. */}
+    {view.branched_from && <p className="followup-note research-branched-from">
+      {view.branched_from.research_id
+        ? <>{t('Opened from a follow-up question in another research.')} <a href={`#/research/${view.branched_from.research_id}`}>{t('Open it')}</a></>
+        : t('Opened from a follow-up question in a research that is gone.')}
+      {' '}{t('Nothing of it is here: this research screens and includes on its own.')}</p>}
     {/* The evidence boundaries stay separate counts (CLAUDE.md); each one opens the panel that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>
@@ -975,6 +1015,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onControl: (runId, action) => { const target = view.runs.find(r => r.id === runId); if (target) controlRun(target, action); else void act(() => api.controlRun(runId, action)) },
           onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) },
           onSearch: turnId => { void searchFollowup(turnId) },
+          onAddToReport: turnId => { void addFollowupToReport(turnId) },
+          onBranch: (turnId, question) => setBranchAsk({ turnId, question }),
           onShowCandidates: opener => { setSourceFocus(null); setSourceFilter('passed'); openPanel('sources', { opener }) } }} />)}</div>}
       <FollowupComposer disabledReason={anyActive ? t('Wait for the current run to finish before asking a follow-up.') : null} sending={asking}
         searchDisabledReason={view.scope.search_providers_eligible.length === 0
@@ -989,6 +1031,21 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
 
     </div>
+    {/* A research of its own for a question that moved elsewhere: the question is the person's to edit, and the
+        sentence says what the new research does and does not start with. */}
+    <ConfirmDialog open={branchAsk !== null} dark={dark} neutral
+      title={t('Open a research of its own')}
+      description={t('It starts from this question alone: this research’s criterion, screening, sources and report do not come with it. The settings for how it runs do.')}
+      confirmLabel={t('Open it')} cancelLabel={t('Cancel')} busy={asking}
+      confirmDisabled={(branchAsk?.question.trim().length ?? 0) < 3}
+      onConfirm={() => { void openBranch() }} onOpenChange={next => { if (!next) setBranchAsk(null) }}>
+      <label className="branch-ask">
+        <span>{t('The new research’s question')}</span>
+        <textarea rows={3} value={branchAsk?.question ?? ''} maxLength={4000}
+          onChange={e => setBranchAsk(current => (current ? { ...current, question: e.target.value } : current))} />
+      </label>
+      {view.scope.source_scope === 'attached' && <p className="followup-note">{t('This research searches no academic source, so the new one starts with no works until you add PDFs to it.')}</p>}
+    </ConfirmDialog>
     {/* Hidden, not removed, while a panel is open or the window is under 1100px: a panel opened from the rail hands focus back to its button. */}
     <Rail view={view} researchId={id} cited={citedCount} reports={reports} tables={tables} hidden={Boolean(panel)} candidateCount={candidateCount} followupCount={followupCount.count}
       openPanel={openPanel} onOpenReport={setOpenReportId} onOpenEvidenceReport={setOpenEvidenceReportId} onOpenTable={openTable} />

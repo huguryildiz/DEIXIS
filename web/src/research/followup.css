@@ -78,3 +78,15 @@
 .followup-group-head{margin:0;font-size:13.5px;color:var(--ink-2)}
 .followup-group ul{margin:4px 0 0;padding-left:18px;list-style:disc;font-size:13.5px;line-height:1.55}
 .followup-group li .cite-chip{margin-left:4px}
+
+/* The person's own two actions under a published answer: put it in the report, and open a research of its own for a
+   question that moved elsewhere. Quiet by default; the accent is only for the offer the answer itself suggested. */
+.followup-offers{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+.followup-branch-offer{display:grid;gap:8px;justify-items:start}
+.followup-turn .followup-branch-offer p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.research-branched-from{margin:0 0 8px}
+/* The question the new research would start from, editable in the dialog that opens it. */
+.branch-ask{display:grid;gap:6px;font-size:12.5px;color:var(--muted)}
+.branch-ask textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--paper);
+  color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical}
+.branch-ask textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

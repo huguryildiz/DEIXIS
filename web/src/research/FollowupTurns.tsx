@@ -1,4 +1,4 @@
-import { BookOpen, Copy, MessageSquare, Pause, PencilLine, Play, RotateCw, Search, TriangleAlert } from 'lucide-react'
+import { BookOpen, Copy, FileText, GitBranch, MessageSquare, Pause, PencilLine, Play, RotateCw, Search, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Claim, type FollowupSearchRequest, type FollowupSearchRun, type FollowupTurn, type FollowupWorkGroups, type Source } from '../lib/api'
 import { attachmentReason, locatorText, pauseReasonText, providerName, serviceErrorSentence, serviceKind, versionText } from '../lib/labels'
@@ -101,6 +101,8 @@ export type FollowupTurnActions = {
   onControl: (runId: string, action: 'resume' | 'cancel') => void
   onAskAgain: (question: string) => void
   onSearch: (turnId: string) => void
+  onAddToReport: (turnId: string) => void
+  onBranch: (turnId: string, question: string) => void
   onShowCandidates: (opener: HTMLElement) => void
 }
 
@@ -190,6 +192,35 @@ const groupsText = (groups: FollowupWorkGroups) => [
   ...GROUP_GAPS.filter(([part]) => groups[part].length > 0).flatMap(([part, heading]) => ['', `${t(heading)}:`,
     ...groups[part].map(w => `- ${workTitle(w)}${'note' in w && w.note ? ` — ${w.note}` : ''}`)]),
 ]
+
+// The person's own two actions on a published answer: put it in the report, and open a research of its own for a
+// question that moved elsewhere. Both are theirs to take; the model's reading of the question only sets the emphasis
+// and the sentence above the button, and starts nothing.
+function FollowupActs({ turn, actions }: { turn: FollowupTurn; actions: FollowupTurnActions }) {
+  const report = turn.report_change
+  const branch = turn.branch
+  const suggested = branch.emphasis === 'suggested'
+  // Each action stands on its own: a turn whose answer could not be cited, or that had no passage to read, has no
+  // report version to add but may still be a question that belongs in a research of its own.
+  if (!report?.offered && report?.not_offered_reason !== 'already_written' && !branch.offered && !branch.research_id) return null
+  return <div className="followup-offers">
+    {report?.offered && <Button size="sm" variant="outline" disabled={actions.busy || actions.locked}
+      onClick={() => actions.onAddToReport(turn.id)}>
+      <FileText size={14} aria-hidden />{t(report.attempts > 0 ? 'Try the report version again' : 'Add this to the report')}</Button>}
+    {report && !report.offered && report.not_offered_reason === 'already_written' && report.report_version !== null
+      && <p className="followup-note">{t('This answer was added to the research’s report as V{n}.', { n: report.report_version })}</p>}
+    {branch.research_id
+      ? <p className="followup-note">{t('A research of its own was opened for this question.')} <a href={`#/research/${branch.research_id}`}>{t('Open it')}</a></p>
+      : branch.offered && <div className={`followup-branch-offer${suggested ? ' is-suggested' : ''}`}>
+        {suggested && <p>{[t('This moves the question to another setting, so it gets a research of its own; none of this research’s criterion is applied to it.'),
+          branch.note].filter(Boolean).join(' ')}</p>}
+        <Button size="sm" variant={suggested ? 'default' : 'outline'} disabled={actions.busy || actions.locked}
+          onClick={() => actions.onBranch(turn.id, turn.question)}>
+          <GitBranch size={14} aria-hidden />{t('Open a research of its own')}</Button>
+      </div>}
+  </div>
+}
+
 
 export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTurn; sources: Source[]; actions: FollowupTurnActions }) {
   const toast = useToast()
@@ -304,7 +335,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
       </div>}
       {answer.unanswered_aspects.length > 0 && <div className="followup-gaps"><p>{t('Not answered by these passages')}</p>
         <ul>{answer.unanswered_aspects.map(a => <li key={a}><MathText text={a} /></li>)}</ul></div>}
-      {turn.report_change && <p className="followup-note">{turn.report_change.run_id
+      {turn.report_change_requested && turn.report_change && <p className="followup-note">{turn.report_change.run_id
         ? turn.report_change.answer_status === 'structurally_valid'
           ? t('This asked for a change to the report; report V{n} was written for it.', { n: turn.report_change.report_version ?? '' })
           : turn.report_change.run_status && ['queued', 'running', 'pause_requested', 'paused'].includes(turn.report_change.run_status)
@@ -317,6 +348,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
     {!live && turn.status !== 'pending' && (claims.length > 0 || groups) && <div className="followup-acts">
       {(claims.length > 0 || groups) && <Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Copy follow-up answer')} title={t('Copy follow-up answer')} onClick={() => { void copy() }}><Copy size={16} aria-hidden /></Button>}
     </div>}
+    {!live && turn.status !== 'pending' && <FollowupActs turn={turn} actions={actions} />}
     {!live && turn.status !== 'pending' && <FollowupSearchView turn={turn} actions={actions} />}
   </section>
 }

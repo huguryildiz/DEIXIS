@@ -39,7 +39,7 @@ from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt, unusable
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited, model_call
-from deixis.providers import openalex, query_compiler, facade, contract
+from deixis.providers import openalex, pubmed, query_compiler, facade, contract
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
 from deixis.providers.registry import CONNECTORS, Connector, effective_sort, endpoint_options, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
@@ -61,6 +61,7 @@ from deixis.workflow.search import english_question
 from deixis.workflow.run import flow_counts
 from deixis.workflow.read import fulltext
 from deixis.workflow.search import lookups
+from deixis.workflow.search import mesh as mesh_rules
 from deixis.workflow.read import person_reading
 from deixis.workflow.search import probes as probe_rules
 from deixis.workflow.search import protocol
@@ -654,6 +655,10 @@ class ResearchFlow:
             vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
             criterion = await self._criterion(run, scope, vocabulary)
             vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)
+            # The last step before the freeze, so what the protocol freezes is what is sent: PubMed's own headings
+            # are written into the query this depth will send it, once the person's own sources and the approval
+            # they gave are settled.
+            queries = await self._mesh_expansion(run, scope, vocabulary, queries)
             # The protocol is frozen before the first provider request that plans anything, and every step opened
             # after it carries its hash (SW14.1). The question's request and the translation it does not wait for are
             # the exception the seed match already set: they open before the freeze, carry no hash, and their plan is
@@ -1523,6 +1528,118 @@ class ResearchFlow:
             "queries": compiled, "query_compiler": query_compiler.BLOCKS_VERSION})
         self._checkpoint(run_id, revision)
         return self._proposed(run_id, built, compiled)
+
+    async def _mesh_expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                              queries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Write PubMed's own headings into the query this depth will send it, or record why it sends none.
+
+        PubMed indexes under NLM's controlled vocabulary, so a record can be about the question's concept without
+        carrying the question's words. The headings are asked of NCBI twice: PubMed's term mapping names the
+        heading of each term, and the MeSH database says whether that name is a descriptor of its own. A heading
+        is written beside its term, never in place of it, so a record NLM has not indexed is still reachable.
+
+        The expansion runs only for the one field source this depth will really search (`field_sources` and the
+        person's own sources, as the search stage reads them) and only while a query is compiled for it and can be
+        read back from the vocabulary that wrote it. Anything else, a failed lookup included, leaves the compiled
+        query exactly as it is and says so in its own step. A resumed run reads the step and asks nothing again.
+        """
+        from deixis.workflow.search import search as fast_search  # the plan reader, imported where the flow is
+        run_id = run["id"]
+        step = self.store.existing_step(run_id, "mesh_expansion")
+        if step is not None and step["status"] == "succeeded":
+            return self._with_mesh(queries, step["output"])
+        # Opened before this run freezes its own protocol, so it carries no hash: a later discovery run of the
+        # same revision would otherwise take the earlier run's plan and claim to belong to it.
+        step = step or self.store.step(run_id, "mesh_expansion", "code:mesh_expansion", protocol_hash=None)
+        self.store.start_step(step["id"])
+        provider = pubmed.PROVIDER_ID
+        frozen = (run["budget"].get("fast_path") or {}).get("field_search") or {}
+        routing = self._routing_step(run_id)
+        chosen = routing_rules.field_sources(routing, frozen.get("sources", 0)) if routing else []
+        excluded = user_plan_rules.excluded(scope)
+        index = next((position for position, query in enumerate(queries)
+                      if query["provider_id"] == provider), None)
+        written = None
+        if not frozen.get("sources"):
+            reason = "depth_searches_no_field_source"
+        elif not any(row["provider_id"] == provider for row in chosen):
+            reason = "not_the_field_source"
+        elif provider not in scope["providers"]:
+            reason = "not_in_scope"
+        elif provider in excluded:
+            reason = user_plan_rules.EXCLUDED
+        elif index is None:
+            reason = "query_not_compiled"
+        else:
+            written = fast_search.written_blocks(vocabulary, queries[index])
+            # The terms are read back from the compiler itself: a query text its own vocabulary does not write
+            # again says nothing about the terms it holds, and a heading would then be put beside a term this
+            # query may not carry.
+            reason = "query_not_read_back" if written is None else None
+        if reason is not None:
+            return self._mesh_finished(step, run, {"rule": mesh_rules.RULE, "provider": provider, "reason": reason},
+                                       queries)
+        groups = written[1]
+        terms = [term for group in groups for term in group]
+        connector = CONNECTORS[provider]
+        key, email = connector.api_key(), self.deps.settings.contact_email
+        if fast_path.past_deadline(self.store, run, "plan"):
+            # The stage's share is seconds and the query is already compiled without any heading: the person
+            # waiting is better served by the search starting than by a lookup that widens it.
+            return self._mesh_finished(step, run, {"rule": mesh_rules.RULE, "provider": provider,
+                                                   "reason": "plan_deadline"}, queries)
+        # Each lookup is a request this run sends to a provider, so the run's own count holds it, and a budget
+        # read from that count sees what really went out. The request is counted before it is sent, so a stop
+        # between the reply and this line cannot lose it.
+        self.store.add_usage(run_id, "provider_requests", 1)
+        lookup = await pubmed.mesh_mapping(self.deps.http, mesh_rules.lookup_text(groups), api_key=key,
+                                          contact_email=email)
+        self.store.add_usage(run_id, "provider_requests", lookup["requests"] - 1 + lookup["retries"])
+        record: dict[str, Any] = {"rule": mesh_rules.RULE, "provider": provider, "terms": terms, "lookup": lookup}
+        if lookup["status"] != "completed":
+            return self._mesh_finished(step, run, record | {"reason": "lookup_failed"}, queries)
+        mapped, unmapped = mesh_rules.heading_candidates(lookup["translations"], terms)
+        record |= {"mapped": mapped, "unmapped": unmapped}
+        if not mapped:
+            return self._mesh_finished(step, run, record | {"reason": "no_heading_mapped"}, queries)
+        if fast_path.past_deadline(self.store, run, "plan"):
+            return self._mesh_finished(step, run, record | {"reason": "plan_deadline"}, queries)
+        # The verification is two requests where the MeSH search finds records and one where it does not. Both
+        # are reserved before either goes out, so a stop in between cannot lose one, and the count is corrected
+        # by what the adapter reports it really sent.
+        self.store.add_usage(run_id, "provider_requests", 2)
+        verification = await pubmed.mesh_descriptors(self.deps.http, sorted(set(mapped.values())), api_key=key,
+                                                     contact_email=email)
+        self.store.add_usage(run_id, "provider_requests", verification["requests"] - 2 + verification["retries"])
+        record |= {"verification": verification}
+        if verification["status"] != "completed":
+            # Nothing is written on a mapping no descriptor record confirmed: an unverified heading is not a
+            # heading this run claims.
+            return self._mesh_finished(step, run, record | {"reason": "verification_failed"}, queries)
+        verified = {term: verification["verified"][heading] for term, heading in mapped.items()
+                    if heading in verification["verified"]}
+        expanded = mesh_rules.expanded(provider, groups, {term: row["descriptor"] for term, row in verified.items()})
+        if expanded is None:
+            return self._mesh_finished(step, run, record | {"reason": "no_heading_verified" if not verified
+                                                            else "no_heading_fits"}, queries)
+        mesh = expanded | {"headings": [row | {"mesh_ui": verified[row["term"]]["mesh_ui"]}
+                                        for row in expanded["headings"]]}
+        return self._mesh_finished(step, run, record | {"mesh": mesh}, queries)
+
+    def _mesh_finished(self, step: dict[str, Any], run: dict[str, Any], output: dict[str, Any],
+                       queries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Store what the step did and give back the queries it leaves behind, expanded or exactly as they were."""
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        self._checkpoint(run["id"], run["scope_revision"])
+        return self._with_mesh(queries, output)
+
+    def _with_mesh(self, queries: list[dict[str, Any]], output: dict[str, Any]) -> list[dict[str, Any]]:
+        """The queries with the step's expansion on the one query it was written for, read back by provider."""
+        mesh, provider = output.get("mesh"), output.get("provider")
+        if not mesh:
+            return queries
+        return [query | {"mesh": mesh} if query["provider_id"] == provider and "mesh" not in query else query
+                for query in queries]
 
     async def _distribution(self, scope: dict[str, Any], query: str | None) -> dict[str, tuple[dict[str, Any] | None, str]]:
         """The field distribution of `query` with its routing status, keyed by the query; one request at most, none

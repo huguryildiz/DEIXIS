@@ -187,13 +187,19 @@ def field_search_view(store: Store, run: dict[str, Any], body: dict[str, Any] | 
         provider = spec["query"]["provider_id"]
         reply = sent.get(provider)
         state = "planned" if reply is None else "searched" if reply["answered"] else "request_failed"
+        mesh = spec["query"].get("mesh") or {}
         rows.append({"provider_id": provider, "share": spec.get("share"), "independent": spec.get("independent"),
                      "state": state, "records": (reply or {}).get("records"),
                      # A source whose first page came back and whose next one did not is searched and says so: the
                      # pages that failed are counted beside what the reply brought, never in place of it.
                      "failed_requests": (reply or {}).get("failed", 0),
                      "reason": None if state == "searched" else
-                     "no_reply_recorded" if reply is None else reply["status"]})
+                     "no_reply_recorded" if reply is None else reply["status"],
+                     # The headings the query that was answered really carries: not a heading the length bound
+                     # left out of it, and not one of a request that never went out or never answered, which
+                     # searched nothing to name them for.
+                     "headings": ([row["heading"] for row in mesh.get("headings") or []] or None)
+                     if state == "searched" else None})
     for provider in SOURCE_ROUTES:
         if any(row["provider_id"] == provider for row in rows):
             continue
@@ -202,7 +208,7 @@ def field_search_view(store: Store, run: dict[str, Any], body: dict[str, Any] | 
             continue
         rows.append({"provider_id": provider, "share": shares.get(provider), "independent": None,
                      "state": "query_not_compiled" if reason == "query_not_compiled" else "not_chosen",
-                     "records": None, "failed_requests": 0, "reason": reason})
+                     "records": None, "failed_requests": 0, "reason": reason, "headings": None})
     if not rows:
         return None
     return {"rule": rule.get("rule"), "sources": rule.get("sources"), "records": rule.get("records"), "rows": rows}

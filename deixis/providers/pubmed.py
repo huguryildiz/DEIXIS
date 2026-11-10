@@ -195,3 +195,169 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     outcome.status = "zero_results" if not outcome.records else "completed"
     outcome.raw_payload = {"search": search_payload, "fetch_xml": fetched.text}
     return outcome
+
+
+MESH_SUMMARY_URL = f"{BASE_URL}/esummary.fcgi"
+MESH_FIELD = "[MeSH Terms]"
+# A term's own mapping, read from a search that asks for no record: ESearch reports the mapping it applied in
+# `translationset`, so the heading comes from NCBI and not from a list of ours.
+MESH_MAPPED = re.compile(r'^"([^"]+)"\[MeSH Terms\]')
+MAX_MESH_NAMES = 12  # the candidate names one verification request carries
+MESH_RECORDS_PER_NAME = 5  # records one name may answer with: its descriptor and its entry terms
+# A lookup waits seconds, not the half minute a search page may: it runs inside the plan stage, whose whole
+# share is seconds, and the query it adds to is already compiled without it. For the same reason a lookup does
+# not wait out a rate limit (`max_rate_limit_retries` 0): a refused lookup is an expansion that does not happen,
+# while its waits would be the person's.
+MESH_TIMEOUT_SECONDS = 5.0
+
+
+def _mesh_credentials(api_key: str | None, contact_email: str | None) -> tuple[dict[str, Any], str]:
+    common: dict[str, Any] = {"tool": "DEIXIS"}
+    if contact_email:
+        common["email"] = contact_email
+    if api_key:
+        common["api_key"] = api_key
+    return common, "api_key" if api_key else "keyless"
+
+
+def _top_level(text: str) -> str | None:
+    """`text` with every parenthesised group replaced by one mark, or None when the text is not well formed.
+
+    A group is the mapping of something else — the single words a phrase was split into — so what the mapping did
+    with the phrase as a whole is read outside the groups. Parentheses inside a quoted name are part of the name
+    and open no group. A quote or a parenthesis that is never closed means the text is not the mapping it looks
+    like, and then nothing is read from it: half of a mapping is not a mapping.
+    """
+    out, depth, quoted_part = [], 0, False
+    for character in text:
+        if character == '"':
+            quoted_part = not quoted_part
+        if not quoted_part and character in "()":
+            depth += 1 if character == "(" else -1
+            if depth < 0:
+                return None
+            if character == "(" and depth == 1:
+                out.append(" \x00 ")
+            continue
+        if depth == 0:
+            out.append(character)
+    return None if depth or quoted_part else "".join(out)
+
+
+def mapped_heading(translation: str) -> str | None:
+    """The one MeSH heading NCBI mapped this whole phrase to, or None when it mapped it to something else.
+
+    PubMed writes the mapping of a phrase as the operands it searched for it. A heading is read only when the
+    mapping is an OR of alternatives whose first one is that heading: `AND` or `NOT` outside a group means PubMed
+    searched the phrase's words together rather than the phrase itself, and a second heading outside the groups
+    leaves the phrase mapped to two headings, neither of them its own. A heading inside a group belongs to those
+    words, not to the phrase.
+    """
+    text = translation.strip()
+    first = MESH_MAPPED.match(text)
+    if first is None:
+        return None
+    skeleton = _top_level(text)
+    # A field tag left unclosed is an operand that was cut off, so the text is not a whole mapping either.
+    if skeleton is None or skeleton.count("[") != skeleton.count("]"):
+        return None
+    if re.search(r"\b(?:AND|NOT)\b", skeleton) or skeleton.count(MESH_FIELD) != 1:
+        return None
+    return first.group(1)
+
+
+async def mesh_mapping(client: httpx.AsyncClient, text: str, *, api_key: str | None = None,
+                       contact_email: str | None = None, max_rate_limit_retries: int = 0) -> dict[str, Any]:
+    """How NCBI maps the phrases of `text`: one search that reads no record (`retmax=0`), reported back.
+
+    The phrases are sent unquoted, because a quoted phrase is searched as it stands and gets no mapping. The
+    answer's `translationset` names each phrase NCBI mapped and the operands it searched for it, so a heading this
+    run uses is one NCBI itself chose. Nothing here is a search of the research: no record is asked for and none
+    is read.
+    """
+    common, access_mode = _mesh_credentials(api_key, contact_email)
+    description = f"GET {SEARCH_URL} db=pubmed term={text!r} retmax=0 access={access_mode}"
+    params = common | {"db": "pubmed", "term": text, "retmode": "json", "retmax": 0}
+    response, outcome = await send(client, SEARCH_URL, params, {}, description, access_mode, RATE_LIMIT_HEADERS,
+                                  (api_key,), timeout=MESH_TIMEOUT_SECONDS,
+                                  max_rate_limit_retries=max_rate_limit_retries)
+    result: dict[str, Any] = {"request": description, "requests": 1, "retries": outcome.retries,
+                              "translations": []}
+    if response is None:
+        return result | {"status": outcome.status, "error": outcome.error}
+    try:
+        payload = response.json()["esearchresult"]
+        translations = [{"from": str(row["from"]), "to": str(row["to"])}
+                        for row in payload.get("translationset") or []]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        return result | {"status": "parse_error", "error": str(exc)[:300]}
+    return result | {"status": "completed", "translations": translations}
+
+
+async def mesh_descriptors(client: httpx.AsyncClient, names: list[str], *, api_key: str | None = None,
+                           contact_email: str | None = None, max_rate_limit_retries: int = 0) -> dict[str, Any]:
+    """Which of `names` the MeSH database itself holds as a descriptor, with its own preferred name and MeSH UI.
+
+    Two requests over the MeSH database: a search of the names as headings, then a summary of the records it
+    returned. A name is verified only when a returned record is a descriptor (`ds_recordtype`) whose preferred
+    name — the first of its MeSH terms — is that name. An entry term, a qualifier or a supplementary record
+    answers the search too, so the search alone would not say what was found. A name no record carries is
+    reported as missing, and a failed request verifies nothing.
+    """
+    common, access_mode = _mesh_credentials(api_key, contact_email)
+    asked = list(dict.fromkeys(name for name in names if name.strip()))
+    wanted, unchecked = asked[:MAX_MESH_NAMES], asked[MAX_MESH_NAMES:]
+    term = " OR ".join(f'"{name}"{MESH_FIELD}' for name in wanted)
+    # One name can answer with several records — its own descriptor and the records that carry it as an entry
+    # term — so the page is wide enough to hold the descriptor of every name asked about.
+    records = len(wanted) * MESH_RECORDS_PER_NAME
+    search_description = f"GET {SEARCH_URL} db=mesh term={term!r} retmax={records} access={access_mode}"
+    result: dict[str, Any] = {"request": search_description, "requests": 1, "retries": 0, "verified": {},
+                              "missing": wanted,
+                              # A name this request did not carry is not verified and not missing: it was not asked.
+                              **({"unchecked": unchecked} if unchecked else {})}
+    if not wanted:
+        return result | {"status": "completed", "requests": 0, "missing": []}
+    params = common | {"db": "mesh", "term": term, "retmode": "json", "retmax": records}
+    response, outcome = await send(client, SEARCH_URL, params, {}, search_description, access_mode,
+                                  RATE_LIMIT_HEADERS, (api_key,), timeout=MESH_TIMEOUT_SECONDS,
+                                  max_rate_limit_retries=max_rate_limit_retries)
+    result["retries"] = outcome.retries
+    if response is None:
+        return result | {"status": outcome.status, "error": outcome.error}
+    try:
+        answer = response.json()["esearchresult"]
+        ids = [str(value) for value in answer.get("idlist") or []]
+        # Whether this one page holds every record the names answered with. It usually does; when it does not, a
+        # name whose descriptor record is on a later page is not missing from MeSH, it was not reached.
+        whole = int(answer["count"]) <= records
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        return result | {"status": "parse_error", "error": str(exc)[:300]}
+    if not ids:
+        return result | {"status": "zero_results"}
+    summary_description = f"GET {MESH_SUMMARY_URL} db=mesh ids={len(ids)} access={access_mode}"
+    result |= {"request": f"{search_description}; {summary_description}", "requests": 2}
+    summary, summary_outcome = await send(client, MESH_SUMMARY_URL, common | {"db": "mesh", "id": ",".join(ids),
+                                                                             "retmode": "json"}, {},
+                                          summary_description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
+                                          timeout=MESH_TIMEOUT_SECONDS,
+                                          max_rate_limit_retries=max_rate_limit_retries)
+    result["retries"] += summary_outcome.retries
+    if summary is None:
+        return result | {"status": summary_outcome.status, "error": summary_outcome.error}
+    try:
+        payload = summary.json()["result"]
+        records = [payload[uid] for uid in payload.get("uids") or [] if isinstance(payload.get(uid), dict)]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        return result | {"status": "parse_error", "error": str(exc)[:300]}
+    descriptors = {}
+    for record in records:
+        terms = record.get("ds_meshterms") or []
+        if record.get("ds_recordtype") != "descriptor" or not terms:
+            continue
+        descriptors[str(terms[0]).casefold()] = {"descriptor": str(terms[0]), "mesh_ui": str(record.get("ds_meshui") or "")}
+    verified = {name: descriptors[name.casefold()] for name in wanted if name.casefold() in descriptors}
+    rest = [name for name in wanted if name not in verified]
+    return result | {"status": "completed", "verified": verified,
+                     "missing": rest if whole else [],
+                     **({"unchecked": unchecked + ([] if whole else rest)} if unchecked or not whole else {})}

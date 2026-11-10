@@ -31,7 +31,8 @@ const providerUse: Record<string, string> = {
   openalex: 'Search, citation chain and PDF lookup', semantic_scholar: 'Abstracts; bulk search in Detailed mode',
   crossref: 'Abstracts, metadata checks and PDF lookup', scopus: 'Abstracts, once its full view is confirmed',
   arxiv: FIELD_SOURCE_USE, biorxiv: 'Not searched on its own; OpenAlex brings its preprints',
-  pubmed: FIELD_SOURCE_USE, ieee_xplore: FIELD_SOURCE_USE, core: 'PDF lookup by DOI',
+  pubmed: 'Searched when its fields hold the largest share of a question’s records, with the subject headings NCBI confirms for the searched words',
+  ieee_xplore: FIELD_SOURCE_USE, core: 'PDF lookup by DOI',
   serpapi: 'Web search for a PDF that was not found',
 }
 // What happens while a provider has no key (the keyless modes in providers/*.py, required keys in registry.py).

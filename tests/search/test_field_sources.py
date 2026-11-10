@@ -272,7 +272,8 @@ def test_the_searched_field_source_is_shown_with_its_share_and_what_came_back(tm
                          "share": 0.42, "independent": True}])
     view = views.field_search_view(lib.store, lib.run, body)
     assert view["rows"] == [{"provider_id": "pubmed", "share": 0.42, "independent": True, "state": "searched",
-                            "records": 37, "failed_requests": 0, "reason": None}]
+                            # No heading of its own: this plan froze no MeSH expansion for the query.
+                            "records": 37, "failed_requests": 0, "reason": None, "headings": None}]
     lib.conn.close()
 
 

@@ -12,6 +12,7 @@ from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex, query_compiler
+from deixis.workflow.search import mesh
 from deixis.workflow.search import (completion, english_question, routing, search_page, search_plan, search_query,
                                     seed_match, user_plan)
 from deixis.workflow.run import fast_path
@@ -80,7 +81,9 @@ def sent_plan(body):
     plan froze one, one per seed at version 2, the OpenAlex keyword queries, the query of each field source the depth
     searches and, at Detailed depth, the Semantic Scholar bulk query. The plan's dropped queries are left out:
     they stand in `compiled_queries` but were never meant to be sent. A body without the plan sends every compiled
-    query under `search:<index>`. `arm` says which kind of request it is; `watchable` that a watch can follow it by
+    query under `search:<index>`. A field source's query carries the text that is really sent, which is the
+    compiled text with PubMed's own headings written in where the plan froze them. `arm` says which kind of
+    request it is; `watchable` that a watch can follow it by
     date (a semantic request ranks by meaning, not by date); a watchable request names its `compiled_index`, the place in
     `compiled_queries` a watch's saved units are keyed by."""
     compiled = body.get("compiled_queries") or []
@@ -104,9 +107,12 @@ def sent_plan(body):
     sent += [dict(compiled[item["index"]], key=f"search:{item['index']}", arm="keyword",
                   watchable=compiled[item["index"]].get("origin") != "author", compiled_index=item["index"])
              for item in plan["keywords"]]
-    # The field sources this depth pays for: one planned request each, under the page key its own walk writes.
+    # The field sources this depth pays for: one planned request each, under the page key its own walk writes. The
+    # text here is the text the page really sends, expansion and all, because this list is what the PRISMA-S trace
+    # and the Methods box read a recorded search back against; the plan's own word record reads the compiled text.
     sent += [dict(compiled[spec["index"]], key=f"search:{spec['index']}", arm="field",
                   watchable=compiled[spec["index"]].get("origin") != "author", compiled_index=spec["index"])
+             | mesh.sent_text(spec["query"])
              for spec in plan.get("field") or []]
     if plan.get("s2_bulk"):
         sent.append(dict(plan["s2_bulk"], key="search:fast:s2_bulk", arm="s2_bulk", watchable=True,
@@ -326,15 +332,13 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
             **({"excluded_providers": excluded} if user_plan.of(scope) is not None else {})}
 
 
-def _carried(vocabulary, query):
-    """The (block, form) pairs this compiled query really wrote, or None when that cannot be told.
+def written_blocks(vocabulary, query):
+    """The block names and the terms this compiled query really wrote, or None when that cannot be told.
 
     The block compiler is pure, so its prefix allocation is computed again from the vocabulary that wrote the query
     (the code's beside a model-written one). Only when the text it gives is the stored text are its counts taken;
-    any other text says nothing about what the stored query holds. A statement research's author query (R5) holds
-    the field's root word alone, which the query holding the field also carries, so it adds no pair."""
-    if query.get("origin") == "author":
-        return set()
+    any other text says nothing about what the stored query holds.
+    """
     # `code` is the origin of the question's own query, which a research searched before that query was removed;
     # its words are read back from where that research kept them.
     source = (search_query.question_vocabulary(vocabulary) if query.get("origin") == "code" else None) or vocabulary
@@ -347,7 +351,21 @@ def _carried(vocabulary, query):
     fitted = query_compiler.fit_block_counts(query["provider_id"], groups, query.get("endpoint")) if groups else None
     if fitted is None or fitted[0] != query["query_text"]:
         return None
-    return {(name, form) for name, group, count in zip(names, groups, fitted[1]) for form in group[:count]}
+    return names, [group[:count] for group, count in zip(groups, fitted[1])]
+
+
+def _carried(vocabulary, query):
+    """The (block, form) pairs this compiled query really wrote, or None when that cannot be told.
+
+    A statement research's author query (R5) holds the field's root word alone, which the query holding the field
+    also carries, so it adds no pair."""
+    if query.get("origin") == "author":
+        return set()
+    written = written_blocks(vocabulary, query)
+    if written is None:
+        return None
+    names, groups = written
+    return {(name, form) for name, group in zip(names, groups) for form in group}
 
 
 def plan_words(vocabulary, plan):
@@ -832,7 +850,9 @@ async def execute(flow, run, scope, plan, retry_failed):
                 cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
                 return
             limit = min(plan["page_size"], spec["records"] - spent)
-            result, reserved = await field_send(spec["query"], key, number=state["number"], cursor=state["cursor"],
+            # The expanded text where the plan froze one (PubMed's headings), the compiled text otherwise. The
+            # query keeps its compiled text, which is what the plan's own word record is read back against.
+            result, reserved = await field_send(mesh.sent_query(spec["query"]), key, number=state["number"], cursor=state["cursor"],
                                                 before=state["before"], total=state["total"], limit=limit,
                                                 klass=FIELD_CLASS, index=spec["request_index"], cap=spec["records"],
                                                 terminal="record_cap" if spent + limit >= spec["records"] else None)

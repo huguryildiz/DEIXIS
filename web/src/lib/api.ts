@@ -256,6 +256,9 @@ export type FieldSearchRow = {
   state: 'searched' | 'planned' | 'request_failed' | 'query_not_compiled' | 'not_chosen'
   // records: what the replies brought. failed_requests: pages of this source whose request did not answer.
   records: number | null; failed_requests: number; reason: string | null
+  // headings: the verified MeSH headings the sent query carries beside its own terms (PubMed only), never a
+  // heading the lookup found and the query's length bound left out.
+  headings: string[] | null
 }
 export type FieldSearch = { rule: string | null; sources: number | null; records: number | null; rows: FieldSearchRow[] }
 export type ScreeningLabel = 'candidate' | 'out_of_scope' | 'unresolved'

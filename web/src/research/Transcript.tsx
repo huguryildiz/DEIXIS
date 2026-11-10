@@ -643,6 +643,12 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
               : row.state === 'planned' ? t('planned, no reply recorded') : fieldSourceReasonText(row.reason)}
             {row.share === null ? '' : ` · ${t('fields hold {share} of the question’s records', { share: sharePercent(row.share) })}`}
             {row.failed_requests > 0 ? ` · ${t('{n} requests did not answer', { n: row.failed_requests })}` : ''}
+            {/* The index's own headings, written beside the question's words and never in their place, and said
+                only of a request that answered. The check was of the heading itself; PubMed also searches the
+                headings under it. */}
+            {row.state === 'searched' && row.headings && row.headings.length > 0
+              ? ` · ${t('also searched as the subject headings {headings}', { headings: row.headings.join(', ') })}`
+              : ''}
           </span>)}</p>
         if (!totals && !perSource && !arms && !notFound && !fields) return null
         return <>{totals}{perSource}{fields}{arms}{notFound}</>

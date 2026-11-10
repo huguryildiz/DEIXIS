@@ -297,11 +297,12 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     keys = [key for key in steps_of(run) if key != "source_similarity"]
     # The question's own semantic request opens before anything plans: it needs no model and no criterion (P2).
     # The query a model writes follows the vocabulary, then the source routing of slice 14, then the criterion.
-    assert keys[:14] == ["search:fast:semantic",
+    # PubMed's heading lookup is the last step before the freeze, so what the protocol freezes is what is sent.
+    assert keys[:15] == ["search:fast:semantic",
                          "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
                          "search_query", "search_query:1", "source_routing",
                          "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
-                         "protocol_approval", "protocol"]
+                         "protocol_approval", "mesh_expansion", "protocol"]
     # Every planned provider search was opened after the protocol step, which already held the criterion.
     searches = [i for i, key in enumerate(keys) if key.startswith("search:") and key != "search:fast:semantic"]
     assert searches and min(searches) > keys.index("protocol")

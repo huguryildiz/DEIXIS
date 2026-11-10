@@ -417,8 +417,9 @@ def test_registration_schema_and_purity(memory_keychain, tmp_path):
                     assert result.status == "unsupported" and result.outcome is None and result.answer is None
     asyncio.run(run())
     assert registry.Connector("synthetic", deny_network, 1).adapter_revision == 1
-    # Semantic Scholar is at 3 since its snippet endpoint, whose search sends a second request of its own.
-    assert all(c.adapter_revision == (3 if c.provider_id in ("openalex", "semantic_scholar") else 2)
+    # Semantic Scholar is at 3 since its snippet endpoint, whose search sends a second request of its own; Scopus
+    # since its search asks for a record view and reads the abstract that view carries.
+    assert all(c.adapter_revision == (3 if c.provider_id in ("openalex", "semantic_scholar", "scopus") else 2)
                for c in registry.CONNECTORS.values())
     enum = json.loads((ROOT / "deixis/contracts/research/common.schema.json").read_text(encoding="utf-8"))["$defs"]["provider_id"]["enum"]
     assert set(enum) == set(registry.CONNECTORS)

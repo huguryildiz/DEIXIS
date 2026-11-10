@@ -94,6 +94,12 @@ class Connector:
     # institutional network; CORE and SerpApi were taken out of the search. A query a run already stored
     # is still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
     sw_searchable: bool = True
+    # Whether this connector is searched as an index of its own, on a depth that pays for a second independent
+    # index, rather than because the question's own field distribution points at it. It is not `sw_searchable`: a
+    # broad index gets a compiled query and that depth's own request, and nothing else that reads a searched
+    # provider list — candidate search, watch units, the model's provider list, the research's scope view — is
+    # given it.
+    broad_index: bool = False
     # How a search query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
@@ -201,11 +207,15 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
               host=_host(ieee_xplore.SEARCH_URL), adapter_revision=2, display_name="IEEE Xplore",
               query_syntax=QuerySyntax(boolean_checks=True, unbalanced_suffix=" (it returns zero records instead of an error)")),
+    # Searched as the second independent index of a depth that pays for one (`broad_index`), and asked about a
+    # known DOI as the last abstract source. The search asks for the view that carries abstracts; a network
+    # without the entitlement answers 401 and the page is recorded with that status.
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
-              sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2, display_name="Scopus",
+              sw_searchable=False, broad_index=True, sw_options={"view": scopus.COMPLETE_VIEW},
+              host=_host(scopus.SEARCH_URL), adapter_revision=3, display_name="Scopus",
               fixed_sort=scopus.FIXED_SORT,
               capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, lookup.SCOPUS_LOOKUP_BATCH)},
-              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # last abstract source only
+              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),
     # CORE and SerpApi get no new query: in the third reranker measurement neither brought a verified work no other
     # source
     # brought, and SerpApi is paid.
@@ -252,9 +262,20 @@ def configured_providers() -> list[str]:
     return _configured()
 
 
-def search_providers(providers: list[str]) -> list[str]:
-    """The given providers a new query may go to, in the order given."""
-    return [p for p in providers if CONNECTORS[p].searchable and CONNECTORS[p].sw_searchable]
+def broad_index_providers() -> list[str]:
+    """The connectors searched as a depth's second independent index (`broad_index`), in registry order."""
+    return [pid for pid, connector in CONNECTORS.items() if connector.broad_index]
+
+
+def search_providers(providers: list[str], *, broad: bool = False) -> list[str]:
+    """The given providers a new query may go to, in the order given.
+
+    `broad` also admits a connector that is searched only as a depth's second independent index
+    (`broad_index`). Only the compilers of a discovery run's own first-round queries pass it: every other
+    reader of a searched provider list asks a question a broad index is not part of.
+    """
+    return [p for p in providers if CONNECTORS[p].searchable
+            and (CONNECTORS[p].sw_searchable or (broad and CONNECTORS[p].broad_index))]
 
 
 def reading(query: dict[str, Any]) -> Connector:

@@ -29,7 +29,8 @@ const PROVIDER_ORDER = ['openalex', 'semantic_scholar', 'crossref', 'scopus', 'a
 const FIELD_SOURCE_USE = 'Searched when its fields hold the largest share of a question’s records'
 const providerUse: Record<string, string> = {
   openalex: 'Search, citation chain and PDF lookup', semantic_scholar: 'Abstracts; bulk search in Detailed mode',
-  crossref: 'Abstracts, metadata checks and PDF lookup', scopus: 'Abstracts, once its full view is confirmed',
+  crossref: 'Abstracts, metadata checks and PDF lookup',
+  scopus: 'Searched in Detailed mode as a second index of its own; abstracts, once its full view is confirmed',
   arxiv: FIELD_SOURCE_USE, biorxiv: 'Not searched on its own; OpenAlex brings its preprints',
   pubmed: 'Searched when its fields hold the largest share of a question’s records, with the subject headings NCBI confirms for the searched words',
   ieee_xplore: FIELD_SOURCE_USE, core: 'PDF lookup by DOI',
@@ -42,7 +43,7 @@ const providerNoKey: Record<string, string> = {
   semantic_scholar: 'Without a key, Semantic Scholar often turns requests away at busy times. DEIXIS retries, so abstracts and bulk search results come in more slowly and some may be missing.',
   pubmed: 'Without a key, PubMed allows 3 requests per second instead of 10, so searches can be slower.',
   ieee_xplore: 'Without a key, IEEE Xplore is not searched.',
-  scopus: 'Without a key, Scopus is not used: no Scopus abstracts are read.',
+  scopus: 'Without a key, Scopus is not used: it is not searched and no Scopus abstracts are read.',
   core: 'Without a key, CORE is not searched.',
   serpapi: 'Without a key, SerpApi is not searched.',
 }

@@ -106,7 +106,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     asked about. A body without one was frozen before that step existed. `routing` is the
     source routing the queries were compiled for: the gate query probed, the field shares, the share and table
     it was decided with, and every source chosen or left out with its reason. A body without one
-    was frozen earlier and names the scope's searched providers.
+    was frozen earlier and names the scope's searched providers. `fast_path_search` is the frozen search plan,
+    whose second independent index, where it names one, is a database this run searched too.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
@@ -138,6 +139,12 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         # chosen source none (review of slice 14, 2026-09-23). The routing keeps it among the chosen, apart.
         with_query = {q["provider_id"] for q in queries}
         searched = [p for p in routing["providers"] if p in with_query]
+    # The second independent index this depth searches, which no routing chose: the plan names it, and it is a
+    # database this run searched, so the record reports it as one rather than as a source kept to verify a DOI.
+    broad = (fast_path_search or {}).get("broad")
+    if broad is not None and broad["query"]["provider_id"] not in searched:
+        searched = [*searched, broad["query"]["provider_id"]]
+        in_scope = [*in_scope, broad["query"]["provider_id"]]
 
     # How this run chains citations (the fast chain), read from the policy its budget froze when it was queued.
     chaining = chain_policy(budget, scope["effort"])

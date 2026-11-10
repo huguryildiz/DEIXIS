@@ -9,7 +9,7 @@ from dataclasses import replace
 from deixis.domain.rules import PROVIDER_WAIT, SOURCE_ROUTES
 from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE, SearchOutcome
-from deixis.providers.registry import CONNECTORS, reading
+from deixis.providers.registry import CONNECTORS, broad_index_providers, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex, query_compiler
 from deixis.workflow.search import mesh
@@ -27,6 +27,9 @@ KEYWORD_PAGE_SIZE = 100  # records one OpenAlex keyword page asks for
 # The admission class of a field source's pages: behind the question's own requests (class 0) and the keyword pages
 # (class 1), so a record two sources bring keeps the place the question's own index gave it.
 FIELD_CLASS = 2
+# The admission class of the second independent index's pages: behind the field source's, so a record both
+# bring keeps the place the source the question's own distribution pointed at gave it.
+BROAD_CLASS = 3
 # One more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
 # question's. A plan frozen without `block_semantic`, or with one whose `query_text` is empty, sends none.
 # The 6 Nov rules turned it off for new plans (113 works added, 3 in the top 50, no reference paper in that pilot): they
@@ -79,7 +82,8 @@ def sent_plan(body):
 
     A fast path body sends its `fast_path_search` plan: the semantic request, the block terms' semantic request when the
     plan froze one, one per seed at version 2, the OpenAlex keyword queries, the query of each field source the depth
-    searches and, at Detailed depth, the Semantic Scholar bulk query. The plan's dropped queries are left out:
+    searches, the query of the second independent index a depth that pays for one plans, and, at Detailed depth,
+    the Semantic Scholar bulk query. The plan's dropped queries are left out:
     they stand in `compiled_queries` but were never meant to be sent. A body without the plan sends every compiled
     query under `search:<index>`. A field source's query carries the text that is really sent, which is the
     compiled text with PubMed's own headings written in where the plan froze them. `arm` says which kind of
@@ -114,6 +118,13 @@ def sent_plan(body):
                   watchable=compiled[spec["index"]].get("origin") != "author", compiled_index=spec["index"])
              | mesh.sent_text(spec["query"])
              for spec in plan.get("field") or []]
+    # The second independent index, where the plan froze one: one planned request under its own page key. No watch
+    # follows it — a watch asks its provider for what is new by date, and this index is searched for the breadth of
+    # one run's first list.
+    if plan.get("broad"):
+        spec = plan["broad"]
+        sent.append(dict(compiled[spec["index"]], key=f"search:{spec['index']}", arm="broad_index",
+                         watchable=False, compiled_index=spec["index"]))
     if plan.get("s2_bulk"):
         sent.append(dict(plan["s2_bulk"], key="search:fast:s2_bulk", arm="s2_bulk", watchable=True,
                          compiled_index=plan["s2_bulk_index"]))
@@ -268,6 +279,51 @@ def field_plan(store, run, scope, queries, policy, excluded):
     return specs, dropped, reasons
 
 
+def broad_plan(run, scope, queries, excluded, field_specs):
+    """The second independent index this depth searches, and why it searches none.
+
+    The depth's own numbers say whether it pays for one and how many records it may read (`broad_index` in the
+    frozen policy). The arm the run froze says when it is searched: `always` on every run of a depth that pays for
+    one, `conditional` only where this run's plan names no independent field source of its own. A field source
+    whose query goes through another provider's host is not an independent index, so a run whose only field source
+    is such a source still searches this one; so does a run whose field distribution was never read, which has no
+    share to choose a source by.
+
+    Returns the spec and the provider, the compiled query it owns and why nothing is sent. The query is named
+    even where nothing is sent, so it is not also reported as a field source that lost its place.
+    """
+    rule = fast_path.broad_index(run["budget"])
+    if not rule:
+        # Queued before the rule, or with the `off` arm: nothing planned and nothing to report.
+        return None, None
+    in_scope = [p for p in broad_index_providers() if p in scope["providers"]]
+    provider = next(iter(in_scope or broad_index_providers()), None)
+    if provider is None:
+        return None, None
+    # The one query this arm owns, whether or not it is sent: a connector gets one compiled query per provider.
+    index = next((i for i, query in enumerate(queries) if query["provider_id"] == provider), None)
+    told = {"provider_id": provider, "index": index}
+    if not in_scope:
+        return None, told | {"reason": "not_in_scope"}
+    if not rule["records"]:
+        return None, told | {"reason": "depth_pays_for_no_broad_index"}
+    if rule["arm"] == "conditional" and any(spec.get("independent") for spec in field_specs):
+        # This run already searches an index of its own beside OpenAlex, which is what the second one is for.
+        return None, told | {"reason": "independent_field_source_planned"}
+    if provider in excluded:
+        return None, told | {"reason": user_plan.EXCLUDED}
+    if CONNECTORS[provider].access_mode() == "not_configured":
+        return None, told | {"reason": "not_configured"}
+    if index is None:
+        # The compiler's query limit left it none: recorded, never silently left out.
+        return None, told | {"reason": "query_not_compiled"}
+    # The records of one page, frozen here: the walk reserves what a page asked for, and a provider whose adapter
+    # serves fewer records than the page asked for would spend the whole share on one page.
+    page_records = min(KEYWORD_PAGE_SIZE, reading(queries[index]).max_results)
+    return ({"index": index, "query": queries[index], "records": rule["records"], "page_records": page_records,
+             "request_index": 0, "arm": rule["arm"]}, told)
+
+
 def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     """The frozen search plan. With `vocabulary` (every discovery run since `block_terms_v1`) it also freezes `block_semantic`:
     under `block_terms_v1` the block terms' semantic request, since the 6 Nov rules the record that it is off (`BLOCK_SEMANTIC_OFF`). A plan
@@ -301,6 +357,14 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     # plan, so a source that fails later cannot move them either.
     field_specs, field_dropped, field_reasons = field_plan(store, run, scope, queries, policy, excluded)
     field_records = sum(spec["records"] for spec in field_specs)
+    # The second independent index this depth pays for, decided after the field sources because the conditional
+    # arm's own condition is that this run plans none of its own. Its records come off the same keyword cap.
+    broad_spec, broad_told = broad_plan(run, scope, queries, excluded, field_specs)
+    broad_records = broad_spec["records"] if broad_spec else 0
+    # The one query the broad arm owns is reported on that arm, with its own reason: the field plan's list of what
+    # was not sent does not also name it as a field source that lost its place.
+    owned = broad_told["index"] if broad_told else None
+    field_dropped = [row for row in field_dropped if owned is None or row["index"] != owned]
     return {"version": 1, "semantic": semantic_spec(scope, policy, seed_context),
             **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
             **({"completion": {"rule": arm["rule"], "arm": arm["arm"], "records": reserved,
@@ -319,9 +383,14 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
                     arm["snippet_requests"] if completing else 0, reserved, arm["arm"])}
                if arm is not None else {}),
             "keywords": keyword,
-            "keyword_cap": policy["keyword_record_cap"] - s2_records - reserved - field_records,
+            "keyword_cap": policy["keyword_record_cap"] - s2_records - reserved - field_records - broad_records,
             "field": field_specs,
             **({"field_not_compiled": field_reasons} if field_reasons else {}),
+            # The second index, and why none: a plan frozen before the rule names neither key, and a run resumed
+            # under it sends what its own plan says, not what today's arm would say.
+            **({"broad": broad_spec} if broad_spec else {}),
+            **({"broad_not_sent": {"provider_id": broad_told["provider_id"], "reason": broad_told["reason"]}}
+               if broad_told and "reason" in broad_told else {}),
             "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
             "s2_reserved": s2_records,
@@ -371,7 +440,8 @@ def _carried(vocabulary, query):
 def plan_words(vocabulary, plan):
     """Every setting and task word of the frozen vocabulary and whether a query the plan sends carries it.
 
-    The queries sent are the OpenAlex keyword queries, the query of each field source the depth searches and, at
+    The queries sent are the OpenAlex keyword queries, the query of each field source the depth searches, the query
+    of the second independent index where the plan froze one and, at
     Detailed depth, the Semantic Scholar bulk query; the
     semantic requests send the question's sentence and, in a plan frozen under `block_terms_v1` (no longer
     sent), these words joined
@@ -382,6 +452,7 @@ def plan_words(vocabulary, plan):
     `block_semantic` also records `semantic`: whether the word's phrase stands in the text of the block terms'
     semantic request it sends, so a word left out of every keyword query is not shown as never sent."""
     sent = ([spec["query"] for spec in plan["keywords"]] + [spec["query"] for spec in plan.get("field") or []]
+            + ([plan["broad"]["query"]] if plan.get("broad") else [])
             + ([plan["s2_bulk"]] if plan.get("s2_bulk") else []))
     semantic = (plan["block_semantic"].get("query_text") or "") if "block_semantic" in plan else None
     carried = [_carried(vocabulary, query) for query in sent]
@@ -836,8 +907,13 @@ async def execute(flow, run, scope, plan, retry_failed):
     # hosts, and the stage waits for them at its end like the bulk slot.
     field_shared = {"failure": None, "s2_task": None}
     field_send = page_sender(flow, run, scope, plan, retry_failed, field_shared)
+    broad_shared = {"failure": None, "s2_task": None}
+    broad_send = page_sender(flow, run, scope, plan, retry_failed, broad_shared)
 
-    async def field_source(spec):
+    async def paged_source(spec, send, klass, page_records):
+        """One source's whole walk inside its own record share: a field source's, or the second independent
+        index's. `page_records` is what one page of it asks for, which is not the keyword page size for a
+        provider whose adapter serves fewer records than that."""
         provider = spec["query"]["provider_id"]
         state = {"number": 0, "cursor": FIRST_PAGE, "before": 0, "total": None}
         # The share is counted in the records each page reserved, which is the one measure a page this run already
@@ -849,13 +925,13 @@ async def execute(flow, run, scope, plan, retry_failed):
             if fast_path.past_deadline(store, run, "search"):
                 cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
                 return
-            limit = min(plan["page_size"], spec["records"] - spent)
+            limit = min(page_records, spec["records"] - spent)
             # The expanded text where the plan froze one (PubMed's headings), the compiled text otherwise. The
             # query keeps its compiled text, which is what the plan's own word record is read back against.
-            result, reserved = await field_send(mesh.sent_query(spec["query"]), key, number=state["number"], cursor=state["cursor"],
-                                                before=state["before"], total=state["total"], limit=limit,
-                                                klass=FIELD_CLASS, index=spec["request_index"], cap=spec["records"],
-                                                terminal="record_cap" if spent + limit >= spec["records"] else None)
+            result, reserved = await send(mesh.sent_query(spec["query"]), key, number=state["number"], cursor=state["cursor"],
+                                          before=state["before"], total=state["total"], limit=limit,
+                                          klass=klass, index=spec["request_index"], cap=spec["records"],
+                                          terminal="record_cap" if spent + limit >= spec["records"] else None)
             if result is None:
                 cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
                 return
@@ -870,7 +946,12 @@ async def execute(flow, run, scope, plan, retry_failed):
                       "total": result.get("provider_total") if result.get("provider_total") is not None
                       else state["total"]}
 
-    field_tasks = [asyncio.create_task(field_source(spec)) for spec in plan.get("field") or []]
+    field_tasks = [asyncio.create_task(paged_source(spec, field_send, FIELD_CLASS, plan["page_size"]))
+                   for spec in plan.get("field") or []]
+    # The second independent index, where the plan froze one: its own share, its own sender and its own pages, so
+    # its failure is recorded on its own step and the run goes on with what the other sources brought.
+    field_tasks += [asyncio.create_task(paged_source(plan["broad"], broad_send, BROAD_CLASS,
+                                                     plan["broad"]["page_records"]))] if plan.get("broad") else []
 
     specs = plan["keywords"]
     states = {s["index"]: {"number": 0, "cursor": FIRST_PAGE, "before": 0, "total": None, "ended": False} for s in specs}

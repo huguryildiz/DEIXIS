@@ -6149,6 +6149,14 @@ export const tr: Record<string, string> = {
   'planned, no reply recorded': 'planlandı, yanıt kaydedilmedi',
   'fields hold {share} of the question’s records': 'alanları sorunun kayıtlarının {share} kadarını tutuyor',
   'also searched as the subject headings {headings}': 'konu başlıklarıyla da arandı: {headings}',
+  'searched as a second index, {records} records': 'kendi başına ikinci indeks olarak arandı, {records} kayıt',
+  'this depth searches no second index': 'bu derinlik ikinci bir indeks aramıyor',
+  'this research already searched an index of its own': 'bu araştırma kendine ait bir indeksi zaten aradı',
+  'this network has no access to its records': 'bu ağın kayıtlarına erişimi yok',
+  'Searched in Detailed mode as a second index of its own; abstracts, once its full view is confirmed':
+    'Ayrıntılı modda kendi başına ikinci indeks olarak aranır; tam görünümü doğrulanınca özetler',
+  'Without a key, Scopus is not used: it is not searched and no Scopus abstracts are read.':
+    'Anahtar olmadan Scopus kullanılmaz: aranmaz ve Scopus özeti okunmaz.',
   'another source’s fields hold more of this question': 'bu sorunun daha fazlası başka bir kaynağın alanlarında',
   'this depth searches no field source': 'bu derinlik alan kaynağı aramıyor',
   'the field distribution could not be read': 'alan dağılımı okunamadı',

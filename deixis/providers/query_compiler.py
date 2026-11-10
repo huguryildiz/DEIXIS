@@ -20,13 +20,15 @@ PLAIN_PROVIDERS = tuple(pid for pid, connector in CONNECTORS.items()
                         if connector.query_syntax is not None and connector.query_syntax.kind == "plain")
 
 
-def _searchable(providers: list[str]) -> list[str]:
+def _searchable(providers: list[str], *, broad: bool = False) -> list[str]:
     """The given providers a query may go to, once each and in the order they arrived.
 
     A connector that is only asked about a record whose DOI is already known is dropped here rather than by each
     caller, so no caller names a provider and a research whose scope still holds one compiles no query for it.
+    `broad` also admits a connector searched only as a depth's second independent index; a caller that is not
+    compiling a discovery run's own first-round queries leaves it alone.
     """
-    return search_providers(list(dict.fromkeys(providers)))
+    return search_providers(list(dict.fromkeys(providers)), broad=broad)
 
 
 def quoted(term: str) -> str:
@@ -79,7 +81,8 @@ def fit_block_counts(provider: str, groups: list[list[str]], endpoint: str | Non
         counts[max(range(len(counts)), key=lambda position: (counts[position], position))] -= 1
 
 
-def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int) -> list[dict[str, Any]]:
+def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int,
+                          *, broad: bool = False) -> list[dict[str, Any]]:
     """One query per provider from the code vocabulary's blocks: OR inside a block, AND between blocks (SW2.7).
 
     Only terms of the setting and task blocks are read. Claim words, exclusion words and outcome terms are not in
@@ -99,7 +102,7 @@ def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[st
         return []
     rationale = "Concept blocks: " + " AND ".join(names)
     queries: list[dict[str, Any]] = []
-    for provider in _searchable(enabled_providers):
+    for provider in _searchable(enabled_providers, broad=broad):
         if len(queries) >= limit:
             break
         extra = CONNECTORS[provider].sw_query

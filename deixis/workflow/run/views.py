@@ -214,6 +214,44 @@ def field_search_view(store: Store, run: dict[str, Any], body: dict[str, Any] | 
     return {"rule": rule.get("rule"), "sources": rule.get("sources"), "records": rule.get("records"), "rows": rows}
 
 
+def broad_index_view(store: Store, run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The second independent index of this run: the one the plan searched, or why it searched none.
+
+    It is reported apart from the field sources because it is chosen by nothing the question says: a field source
+    is chosen by the share of the question's records its fields hold, and this one by the depth's own budget and
+    the arm the run froze. `state` is `searched` (a reply came back, a search that found nothing included),
+    `planned` (the plan held the request and nothing was recorded for it), `request_failed` (its reply was recorded
+    with another outcome) or `not_sent`, whose `reason` the plan recorded. A run whose plan knows nothing of the
+    rule has nothing to report.
+    """
+    plan = (body or {}).get("fast_path_search") or {}
+    spec, not_sent = plan.get("broad"), plan.get("broad_not_sent")
+    if spec is None and not not_sent:
+        return None
+    rule = ((run["budget"].get("fast_path") or {}).get("broad_index")) or {}
+    base = {"rule": rule.get("rule"), "arm": rule.get("arm"), "records": rule.get("records")}
+    if spec is None:
+        return base | {"provider_id": not_sent["provider_id"], "state": "not_sent", "records_found": None,
+                       "failed_requests": 0, "reason": not_sent["reason"]}
+    provider = spec["query"]["provider_id"]
+    answered, found, failed, status = False, 0, 0, None
+    for row in store.conn.execute(
+            "SELECT status, result_count FROM search_runs WHERE run_id = ? AND request_class = ? AND provider = ?"
+            " ORDER BY rowid", (run["id"], fast_search.BROAD_CLASS, provider)):
+        replied = row["status"] in ("completed", "zero_results")
+        answered = answered or replied
+        found += row["result_count"] if replied else 0
+        failed += 0 if replied else 1
+        status = row["status"]
+    state = "planned" if status is None else "searched" if answered else "request_failed"
+    return base | {"provider_id": provider, "state": state,
+                   "records_found": found if status is not None else None,
+                   # A page that came back and a later one that did not are counted apart: the records the reply
+                   # brought are not reduced by a page that failed after them.
+                   "failed_requests": failed,
+                   "reason": None if state == "searched" else "no_reply_recorded" if status is None else status}
+
+
 def _utf16_len(text: str) -> int:
     """The text's length as a browser string counts it, so offsets land on the same characters in the UI."""
     return len(text.encode("utf-16-le")) // 2
@@ -773,8 +811,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
         # Which field source this run searched beside OpenAlex, and what became of every other one. Only the plan
         # this run itself froze is read: a run that froze none has no field plan of its own to show.
-        run["field_search"] = field_search_view(store, run, fast_search.frozen_body(store, run)) \
-            if run["kind"] == "discovery" else None
+        frozen = fast_search.frozen_body(store, run) if run["kind"] == "discovery" else None
+        run["field_search"] = field_search_view(store, run, frozen) if run["kind"] == "discovery" else None
+        # The second independent index this run searched beside the field source, or why it searched none.
+        run["broad_index"] = broad_index_view(store, run, frozen) if run["kind"] == "discovery" else None
         # What became of the fast chain's requests, by the one rule the report's method section uses too.
         run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).

@@ -63,6 +63,11 @@ HANDOVER_RULE = "answer_handover_v1"
 # included.
 COMPLETION_RULE = "s2_completion_v1"
 COMPLETION_ARMS = ("off", "conditional", "always")
+# The second independent index a depth may pay for (`registry.broad_index`). `conditional` searches it only
+# where the run's plan names no independent field source of its own, `always` on every run of a depth that
+# pays for one, `off` never. The arm is frozen into the run's budget, so a run sends what it was queued with.
+BROAD_INDEX_RULE = "broad_index_v1"
+BROAD_INDEX_ARMS = ("off", "conditional", "always")
 # A run in one of these states will send nothing more, so whether it met its target is settled.
 TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
@@ -88,6 +93,7 @@ class Mode(NamedTuple):
     snippet_requests: int  # snippet queries this depth may send; Quick names no focused concept, so none
     field_sources: int  # field sources this depth searches beside OpenAlex: none in Quick, one in Standard and Deep
     field_records: int  # records each of them may read, taken off the same keyword cap
+    broad_index_records: int  # records the second independent index may read; none at the depths that pay for none
 
 
 # The stage seconds are the delivery-time targets split across the stages: the four pre-answer stages sum to the
@@ -108,22 +114,25 @@ MODES = {
                   rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0,
                   completion_records=50, snippet_requests=0,
                   # Quick binds its first list to no other source: it searches OpenAlex alone.
-                  field_sources=0, field_records=0),
+                  field_sources=0, field_records=0, broad_index_records=0),
     "standard": Mode((8, 12, 17, 33, 50), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
                      backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
                      rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3,
                      completion_records=100, snippet_requests=1,
                      # The one field source the question's own field distribution points at. The records are a pilot
                      # setting: nothing has measured what a field source adds for what it takes off OpenAlex.
-                     field_sources=1, field_records=250),
+                     field_sources=1, field_records=250,
+                     # Standard's own conditional sub-topic search of the second index is not built yet.
+                     broad_index_records=0),
     "detailed": Mode((18, 36, 48, 108, 90), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
                      backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
                      # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
                      rerank_pool=8.0, rerank_point="before_list", file_asks=5, fulltext_searches=5,
                      completion_records=200, snippet_requests=2,
-                     # Deep searches the same one field source; the independent second index it is to pay for is not
-                     # built yet, and the run records that it sent none.
-                     field_sources=1, field_records=250),
+                     # Deep searches the same one field source and pays for a second independent index beside it,
+                     # whose records come off the same keyword cap. The number is a pilot setting: what that index
+                     # adds to the first list is not measured.
+                     field_sources=1, field_records=250, broad_index_records=100),
 }
 
 
@@ -157,7 +166,7 @@ def elapsed(start: str, end: str) -> int:
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
                   method: str = "legacy", deep_screening: bool = False,
                   lexical_exclusion: bool = True, candidate_embedding: bool = True,
-                  completion_arm: str = "off") -> dict[str, Any]:
+                  completion_arm: str = "off", broad_index_arm: str = "off") -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -179,11 +188,16 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     `completion_arm` is which Semantic Scholar completion arm this run may send (`COMPLETION_ARMS`), and it is the
     default here so that a policy frozen without it is byte for byte the one frozen before the rule, hash included:
     the absence of the key **is** the `off` arm, and `completion()` reads it that way. The other two arms name
-    themselves, the records the arm may read and how many snippet queries the depth may send."""
+    themselves, the records the arm may read and how many snippet queries the depth may send.
+
+    `broad_index_arm` is the same shape for the second independent index (`BROAD_INDEX_ARMS`): `off` writes no
+    key, which is the policy frozen before the rule, and the other two name the arm and the records."""
     if method not in SEARCH_METHODS:
         raise ValueError(f"unknown search method {method!r}")
     if completion_arm not in COMPLETION_ARMS:
         raise ValueError(f"unknown completion arm {completion_arm!r}")
+    if broad_index_arm not in BROAD_INDEX_ARMS:
+        raise ValueError(f"unknown broad index arm {broad_index_arm!r}")
     mode = MODES[effort]
     bases = mode.stage_seconds
     policy = {
@@ -234,6 +248,11 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # total; what the arm did not spend is recorded, which is how the pilot sees the cost of the reservation.
         policy["completion"] = {"rule": COMPLETION_RULE, "arm": completion_arm, "records": mode.completion_records,
                                 "snippet_requests": mode.snippet_requests}
+    if broad_index_arm != "off":
+        # The records come off the keyword cap too (`search.build_plan`). A policy frozen with the `off` arm names
+        # no block, which is byte for byte the policy frozen before the rule: a run queued then sends none either.
+        policy["broad_index"] = {"rule": BROAD_INDEX_RULE, "arm": broad_index_arm,
+                                 "records": mode.broad_index_records}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
     if not candidate_embedding:
@@ -314,6 +333,12 @@ def completion(budget: dict[str, Any]) -> dict[str, Any] | None:
     """The Semantic Scholar completion arm this run froze, or None for a run of the `off` arm and for every run
     queued before the rule."""
     return (budget.get("fast_path") or {}).get("completion")
+
+
+def broad_index(budget: dict[str, Any]) -> dict[str, Any] | None:
+    """The second independent index's arm this run froze, or None for a run of the `off` arm and for every run
+    queued before the rule."""
+    return (budget.get("fast_path") or {}).get("broad_index")
 
 
 def candidate_embedding_on(budget: dict[str, Any]) -> bool:

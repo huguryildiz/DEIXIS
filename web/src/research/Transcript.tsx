@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { api, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from '../lib/api'
 import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
-import { fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
+import { broadIndexReasonText, fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
 import { ConnectionIcon } from '../components/connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ModelName } from '../components/ModelName'
@@ -650,8 +650,20 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
               ? ` · ${t('also searched as the subject headings {headings}', { headings: row.headings.join(', ') })}`
               : ''}
           </span>)}</p>
-        if (!totals && !perSource && !arms && !notFound && !fields) return null
-        return <>{totals}{perSource}{fields}{arms}{notFound}</>
+        // The second independent index this depth pays for, said apart from the field sources: nothing about the
+        // question chose it, so it carries no share, and the line claims only what was sent and what came back.
+        const broad = run.broad_index && <p className="chat-provider-totals"><span>
+          <ConnectionIcon id={run.broad_index.provider_id} />{providerName(run.broad_index.provider_id)}{' '}
+          {run.broad_index.state === 'searched'
+            ? t('searched as a second index, {records} records',
+                { records: (run.broad_index.records_found ?? 0).toLocaleString(uiLocale()) })
+            : run.broad_index.state === 'planned' ? t('planned, no reply recorded')
+            : broadIndexReasonText(run.broad_index.reason)}
+          {run.broad_index.failed_requests > 0
+            ? ` · ${t('{n} requests did not answer', { n: run.broad_index.failed_requests })}` : ''}
+        </span></p>
+        if (!totals && !perSource && !arms && !notFound && !fields && !broad) return null
+        return <>{totals}{perSource}{fields}{broad}{arms}{notFound}</>
       }
       case 'screen': {
         const basis = tally(present(screened.map(s => s.selection.proposal_basis)))

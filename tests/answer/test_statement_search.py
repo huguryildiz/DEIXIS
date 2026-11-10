@@ -34,7 +34,7 @@ def model_vocabulary(author):
 
 
 def test_author_queries_go_only_to_a_provider_that_takes_the_filter(monkeypatch):
-    monkeypatch.setattr(search_query.query_compiler, "compile_block_queries", lambda v, p, limit: [
+    monkeypatch.setattr(search_query.query_compiler, "compile_block_queries", lambda v, p, limit, broad=False: [
         {"provider_id": provider, "query_text": "x"} for provider in p])
     vocabulary = model_vocabulary({"groups": [["Chandra"], ["Erçetin", "Gedik"]], "search": "quantum"})
     queries = search_query.compile_queries(vocabulary, ["openalex", "arxiv"], 20)

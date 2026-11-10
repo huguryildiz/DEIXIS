@@ -191,6 +191,15 @@ const fieldSourceReasons: Record<string, string> = {
   outcome_unknown: 'the outcome of its request is unknown',
 }
 export const fieldSourceReasonText = (reason: string | null) => t(fieldSourceReasons[reason ?? ''] ?? (reason ?? '').replaceAll('_', ' '))
+// Why the second independent index was not searched; the reasons it shares with a field source are read from
+// the list above.
+const broadIndexReasons: Record<string, string> = {
+  depth_pays_for_no_broad_index: 'this depth searches no second index',
+  independent_field_source_planned: 'this research already searched an index of its own',
+  entitlement_missing: 'this network has no access to its records',
+}
+export const broadIndexReasonText = (reason: string | null) =>
+  broadIndexReasons[reason ?? ''] ? t(broadIndexReasons[reason ?? '']) : fieldSourceReasonText(reason)
 
 const recoveryDecisions: Record<string, string> = {
   candidate_failed: 'the new read failed', augmented_text_would_be_lost: 'the new read would drop OCR, Marker or arXiv source text',

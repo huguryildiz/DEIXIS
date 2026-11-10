@@ -41,7 +41,8 @@ from deixis.models import prompt, unusable
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited, model_call
 from deixis.providers import openalex, pubmed, query_compiler, facade, contract
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
-from deixis.providers.registry import CONNECTORS, Connector, effective_sort, endpoint_options, search_providers
+from deixis.providers.registry import (CONNECTORS, Connector, broad_index_providers, effective_sort,
+                                        endpoint_options, search_providers)
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.run.concurrency import ModelCallLimiter
 from deixis.workflow.search.search_page import Page
@@ -203,6 +204,18 @@ def _planned_providers(scope: dict[str, Any]) -> list[str]:
     """The scope's providers less those the person left out of a saved search plan (S23a); all of them otherwise."""
     excluded = user_plan_rules.excluded(scope)
     return [provider for provider in scope["providers"] if provider not in excluded]
+
+
+def _with_broad_index(scope: dict[str, Any], providers: list[str]) -> list[str]:
+    """`providers` and, after them, the connectors a depth may search as its second independent index.
+
+    The routing table names no such index: the question's own field distribution does not choose it, the depth's
+    budget does. So the last compile is given it beside the routed sources, and the frozen plan alone decides
+    whether its query is sent (`search.broad_plan`).
+    """
+    planned = _planned_providers(scope)
+    return list(providers) + [p for p in broad_index_providers()
+                              if p in planned and p not in providers]
 
 
 def _sought_terms(vocabulary: dict[str, Any]) -> list[str]:
@@ -1008,7 +1021,8 @@ class ResearchFlow:
         built = search_query_rules.vocabulary(code_vocabulary, checked, record)
         if claim is not None:
             built["statement"] = claim
-        queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
+        queries = search_query_rules.compile_queries(built, _planned_providers(scope),
+                                                     run["budget"]["max_provider_requests"], broad=True)
         built = search_query_rules.with_compiled(built, queries)
         # The focused queries of the same plan (P5): the main query asks for both concepts at once, each of these
         # asks for a concept the plan named beside either of them. The depth's Boolean plan budget says how many
@@ -1125,7 +1139,8 @@ class ResearchFlow:
                                               question_words=False)
         # The person's words are the whole keyword search: a word they removed returns in no query, no ranking block
         # and no screening block (F18).
-        queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
+        queries = search_query_rules.compile_queries(built, _planned_providers(scope),
+                                                     run["budget"]["max_provider_requests"], broad=True)
         built = search_query_rules.with_compiled(built, queries)
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output={
@@ -1521,7 +1536,7 @@ class ResearchFlow:
         frozen = (run["budget"].get("fast_path") or {}).get("field_search") or {}
         routing = routing_rules.route(scope["providers"], query, *reads[query] if query in reads else (None, "unavailable"),
                                       excluded=user_plan_rules.excluded(scope), share=frozen.get("share"))
-        built, compiled = self._compiled(vocabulary, routing["providers"], run["budget"])
+        built, compiled = self._compiled(vocabulary, _with_broad_index(scope, routing["providers"]), run["budget"])
         # Written before the run can stop, so a resumed run reads the answer back instead of asking again.
         self.store.finish_step(step["id"], "succeeded", output={
             "routing": routing, "reads": {q: dist for q, (dist, _) in reads.items()}, "vocabulary": built,
@@ -1662,10 +1677,12 @@ class ResearchFlow:
         limit = budget["max_provider_requests"]
         if not search_query_rules.is_model_written(vocabulary):
             compiled = search_query_rules.with_authors(
-                vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit), providers, limit)
+                vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit, broad=True),
+                providers, limit)
             return search_query_rules.with_authors_compiled(vocabulary, compiled), compiled
         compiled = search_plan_rules.with_focused(
-            vocabulary, search_query_rules.compile_queries(vocabulary, providers, limit), providers, budget)
+            vocabulary, search_query_rules.compile_queries(vocabulary, providers, limit, broad=True),
+            providers, budget)
         return search_query_rules.with_compiled(vocabulary, compiled), compiled
 
     def _routing_step_output(self, run_id: str) -> dict[str, Any] | None:

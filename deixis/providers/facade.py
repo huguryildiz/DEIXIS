@@ -44,7 +44,8 @@ def descriptor_for(connector: registry.Connector, order: int) -> contract.Connec
     retry = contract.RetryPolicy(**(policy | connector.retry))
 
     def options(names):
-        return tuple(contract.OptionDescriptor(name, "str" if name in ("sort", "works_filter") else "bool", None)
+        return tuple(contract.OptionDescriptor(name, "str" if name in ("sort", "works_filter", "view") else "bool",
+                                              None)
                      for name in names)
 
     endpoints = (contract.EndpointDescriptor(None, connector.paging, connector.max_results,

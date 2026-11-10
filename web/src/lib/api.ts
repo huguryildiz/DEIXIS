@@ -246,6 +246,7 @@ export type Run = {
   // Which field source this discovery run searched beside OpenAlex, and what became of every other one; null for
   // another run kind and for a run whose frozen plan holds no field block.
   field_search?: FieldSearch | null
+  broad_index?: BroadIndex | null
 }
 // One row per source the routing table names. state: `searched` a reply came back (a search that found nothing
 // answered too), `planned` the plan held the request and nothing was recorded for it, `request_failed` its request
@@ -261,6 +262,15 @@ export type FieldSearchRow = {
   headings: string[] | null
 }
 export type FieldSearch = { rule: string | null; sources: number | null; records: number | null; rows: FieldSearchRow[] }
+// The second independent index of a run: the index a depth pays for beside the field source the question's own
+// distribution points at. `arm` is which rule the run froze (`conditional` searches it only where the run plans
+// no independent field source of its own). `records` is what the plan allowed it, `records_found` what its
+// replies brought. state: `not_sent` with `reason` where the plan sent nothing.
+export type BroadIndex = {
+  rule: string | null; arm: string | null; records: number | null; provider_id: string
+  state: 'searched' | 'planned' | 'request_failed' | 'not_sent'
+  records_found: number | null; failed_requests: number; reason: string | null
+}
 export type ScreeningLabel = 'candidate' | 'out_of_scope' | 'unresolved'
 export type ScreeningPasses = {
   read: number; agreed: number; disagreed: number; unresolved: number

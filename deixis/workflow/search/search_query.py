@@ -323,12 +323,17 @@ def question_terms(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
     return list(own["terms"]) if own else []
 
 
-def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int) -> list[dict[str, Any]]:
+def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int,
+                    *, broad: bool = False) -> list[dict[str, Any]]:
     """The first round: the question's own plan, one query per provider, until `limit` queries.
 
     One plan is searched here, the one the model wrote or the one a person saved, and every query says which
     (`origin`: `model`, or `user` for a saved plan). A statement research's author queries follow them
     (`with_authors`), and the focused queries of an `m2` plan are added after this round (`search_plan.with_focused`).
+
+    `broad` also compiles one query for a connector searched only as a depth's second independent index
+    (`registry.broad_index`); whether that query is sent is the frozen plan's own decision. Every other caller
+    leaves it alone, so a follow-up search and a candidate's kill queries compile exactly what they did before.
 
     A research searched before the question's own code query was removed holds that query's own compiled queries in
     its stored vocabulary; they are placed here as they were sent then, one after the plan's query of the same
@@ -338,7 +343,7 @@ def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int
     # The terms of a person's saved search plan (S23a) take the model's place and say so.
     origin = "user" if vocabulary["search_query"].get("origin") == "user" else "model"
     plan = {q["provider_id"]: q | {"origin": origin}
-            for q in query_compiler.compile_block_queries(vocabulary, providers, limit)}
+            for q in query_compiler.compile_block_queries(vocabulary, providers, limit, broad=broad)}
     stored = vocabulary.get("code_query") or {}
     code = {q["provider_id"]: q | {"origin": "code"} for q in stored.get("queries") or []} if stored.get("searched") else {}
     ordered: list[dict[str, Any]] = []

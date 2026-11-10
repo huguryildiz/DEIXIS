@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { api, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from '../lib/api'
 import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
-import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
+import { fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
 import { ConnectionIcon } from '../components/connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ModelName } from '../components/ModelName'
@@ -160,6 +160,8 @@ const USER_PLAN = new Set(['user', 'user_edited'])
 const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unknown'
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
+// A field source's share of the question's records, as the routing record read it.
+const sharePercent = (share: number) => new Intl.NumberFormat(uiLocale(), { style: 'percent', maximumFractionDigits: 0 }).format(share)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
 export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
@@ -631,8 +633,19 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         const totals = perProvider.size < 2 ? null : <p className="chat-provider-totals">{[...perProvider].map(([id, { taken, total }]) => <span key={id}>
           <ConnectionIcon id={id} />{providerName(id)} {total !== null && total > taken ? t('{count} of {total}', { count: taken, total: compact(total) }) : taken}
         </span>)}</p>
-        if (!totals && !perSource && !arms && !notFound) return null
-        return <>{totals}{perSource}{arms}{notFound}</>
+        // Beside OpenAlex: the field source this depth searched, and why each other one was not. The share, the
+        // reason and whether a request really went out stay separate facts; nothing here claims the source helped.
+        const fields = run.field_search && run.field_search.rows.length > 0 && <p className="chat-provider-totals">
+          {run.field_search.rows.map(row => <span key={row.provider_id}>
+            <ConnectionIcon id={row.provider_id} />{providerName(row.provider_id)}{' '}
+            {row.state === 'searched'
+              ? t('searched, {records} records', { records: (row.records ?? 0).toLocaleString(uiLocale()) })
+              : row.state === 'planned' ? t('planned, no reply recorded') : fieldSourceReasonText(row.reason)}
+            {row.share === null ? '' : ` · ${t('fields hold {share} of the question’s records', { share: sharePercent(row.share) })}`}
+            {row.failed_requests > 0 ? ` · ${t('{n} requests did not answer', { n: row.failed_requests })}` : ''}
+          </span>)}</p>
+        if (!totals && !perSource && !arms && !notFound && !fields) return null
+        return <>{totals}{perSource}{fields}{arms}{notFound}</>
       }
       case 'screen': {
         const basis = tally(present(screened.map(s => s.selection.proposal_basis)))

@@ -23,14 +23,16 @@ const providerNames: Record<string, string> = {
 const providerKeyEnv: Record<string, string> = { openalex: 'OPENALEX_API_KEY', biorxiv: 'OPENALEX_API_KEY', semantic_scholar: 'S2_API_KEY', pubmed: 'NCBI_API_KEY', ieee_xplore: 'IEEE_API_KEY', scopus: 'SCOPUS_API_KEY', core: 'CORE_API_KEY', serpapi: 'SERPAPI_API_KEY' }
 // The mockup's order comes first (plan ST7); every other registered connector follows in the registry's order.
 const PROVIDER_ORDER = ['openalex', 'semantic_scholar', 'crossref', 'scopus', 'arxiv']
-// What the fast path asks each source for (search.py, read.py, documents/acquisition.py). The fast path sends
-// no query to arXiv, PubMed or IEEE Xplore (fast_search drops them as openalex_only) and calls SerpApi nowhere
-// (flow.py passes web_search=False).
+// What the fast path asks each source for (search.py, read.py, documents/acquisition.py). Standard and Detailed
+// search one field source beside OpenAlex: the one whose fields hold the largest share of the question's records
+// (`field_search` in the frozen policy). SerpApi is asked for a web result only by the full-text search.
+const FIELD_SOURCE_USE = 'Searched when its fields hold the largest share of a question’s records'
 const providerUse: Record<string, string> = {
   openalex: 'Search, citation chain and PDF lookup', semantic_scholar: 'Abstracts; bulk search in Detailed mode',
   crossref: 'Abstracts, metadata checks and PDF lookup', scopus: 'Abstracts, once its full view is confirmed',
-  arxiv: 'Not searched now', biorxiv: 'Not searched on its own; OpenAlex brings its preprints',
-  pubmed: 'Not searched now', ieee_xplore: 'Not searched now', core: 'PDF lookup by DOI', serpapi: 'Not used now',
+  arxiv: FIELD_SOURCE_USE, biorxiv: 'Not searched on its own; OpenAlex brings its preprints',
+  pubmed: FIELD_SOURCE_USE, ieee_xplore: FIELD_SOURCE_USE, core: 'PDF lookup by DOI',
+  serpapi: 'Web search for a PDF that was not found',
 }
 // What happens while a provider has no key (the keyless modes in providers/*.py, required keys in registry.py).
 const providerNoKey: Record<string, string> = {

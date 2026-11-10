@@ -1511,8 +1511,11 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         query = routing_rules.gate_query(vocabulary)
         reads = await self._distribution(scope, query)
+        # The share this run froze when it started, not today's table: a run waiting in the queue keeps the number
+        # it was queued with. A run queued before the policy carried one reads the table's own default.
+        frozen = (run["budget"].get("fast_path") or {}).get("field_search") or {}
         routing = routing_rules.route(scope["providers"], query, *reads[query] if query in reads else (None, "unavailable"),
-                                      excluded=user_plan_rules.excluded(scope))
+                                      excluded=user_plan_rules.excluded(scope), share=frozen.get("share"))
         built, compiled = self._compiled(vocabulary, routing["providers"], run["budget"])
         # Written before the run can stop, so a resumed run reads the answer back instead of asking again.
         self.store.finish_step(step["id"], "succeeded", output={

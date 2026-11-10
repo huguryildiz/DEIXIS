@@ -174,6 +174,24 @@ const recoveryReasons: Record<string, string> = {
   retention_conflict: 'the damaged bytes could not be kept because their stored name holds another file',
   file_not_regular: 'the stored entry is not a regular file',
 }
+// Why a field source was not searched, in the words the plan and the routing record stored.
+const fieldSourceReasons: Record<string, string> = {
+  after_the_depth_s_field_source: 'another source’s fields hold more of this question',
+  depth_searches_no_field_source: 'this depth searches no field source',
+  field_share_not_read: 'the field distribution could not be read',
+  share_below: 'its fields hold too little of this question',
+  query_not_compiled: 'no query was compiled for it',
+  one_query_per_field_source: 'one query per field source',
+  excluded_by_user: 'you left it out',
+  not_in_scope: 'it is not one of this research’s sources',
+  not_configured: 'it has no key',
+  not_in_sw_search: 'it is not searched for a question',
+  no_reply_recorded: 'no reply was recorded',
+  failed: 'its request failed', cancelled: 'its request was cancelled',
+  outcome_unknown: 'the outcome of its request is unknown',
+}
+export const fieldSourceReasonText = (reason: string | null) => t(fieldSourceReasons[reason ?? ''] ?? (reason ?? '').replaceAll('_', ' '))
+
 const recoveryDecisions: Record<string, string> = {
   candidate_failed: 'the new read failed', augmented_text_would_be_lost: 'the new read would drop OCR, Marker or arXiv source text',
   status_worse: 'the new read is less complete', page_count_changed: 'the page count changed',

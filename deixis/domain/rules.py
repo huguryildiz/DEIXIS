@@ -60,6 +60,10 @@ SOURCE_ROUTES = {
     "pubmed": LIFE_SCIENCE_FIELDS,
     "biorxiv": LIFE_SCIENCE_FIELDS,
 }
+# The sources above that index preprints. A depth that searches one field source compares the share first and uses
+# this only to break a tie: two sources whose fields hold the same share are not equally good first reads, and the
+# design names the preprint sources under a scope condition while it names PubMed and IEEE Xplore as field indexes.
+PREPRINT_SOURCES = ("arxiv", "biorxiv")
 
 # Screening proposals are requested for at most this many candidates per model call.
 SCREENING_BATCH = 40

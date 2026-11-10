@@ -121,7 +121,9 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, f
         assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF and not block and "block_semantic" not in arms
     assert len(rows(lib)) == 450 + 2 * semantic
     assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, semantic]
-    assert plan['dropped'][0]['reason'] == 'openalex_only'
+    # The arXiv query of this synthetic plan names a source this research does not hold, so that is the reason it
+    # is dropped with, and not the old blanket one (a depth that searches no field source says so: its own test).
+    assert plan['dropped'][0]['reason'] == 'not_in_scope'
     assert lib.store.existing_step(lib.run['id'], 'vocabulary_expansion') is None
     searches = [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]
     assert searches[-1]['stop_reason'] == 'record_cap'

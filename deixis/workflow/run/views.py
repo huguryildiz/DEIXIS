@@ -11,7 +11,7 @@ from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.contracts import SOURCE_MENTION, citation_handles, locate_anchor, name_sources_in_prose, step_output_schema
 from deixis.domain.numbers import quoted_measures
-from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applicability
+from deixis.domain.rules import FULLTEXT_RUNS, SOURCE_ROUTES, effective_reviewer, result_applicability
 from deixis.workflow.search import english_question as english_question_rules
 from deixis.workflow.search import approval as approval_rules
 from deixis.workflow.run import flow_counts as flow_rules
@@ -22,6 +22,7 @@ from deixis.workflow.search import probes as probe_rules
 from deixis.workflow.answer import answer as answer_input, source_mentions
 from deixis.workflow.screen import screen_more
 from deixis.workflow.search.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
+from deixis.workflow.search import search as fast_search
 from deixis.workflow.search import vocabulary as vocabulary_rules
 from deixis.workflow.read.equations import chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.screen.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
@@ -145,6 +146,66 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
         # Beside the search's own rows, not inside them: their fields and meaning stay exactly as the search wrote them.
         counts["arms"] = probe_rules.arm_counts(store, run_id, searches, works, card, probe)
     return counts
+
+
+def field_search_view(store: Store, run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What each field source did in this run: one row per source the routing table names, four facts kept apart.
+
+    `searched` is the source whose query really went out, with the share that chose it, what the reply brought and
+    how many of its pages failed; `planned` is a request the plan held that no reply was recorded for;
+    `request_failed` is a request whose reply was recorded with another outcome; `not_chosen` is a source the
+    distribution ranked below the one chosen or that this depth does not pay for, with the reason the plan recorded;
+    and a source the routing chose that no query could be compiled for says exactly that. A run whose plan is not
+    readable, or that searched no field source and chose none, has nothing to report and gets None.
+    """
+    plan = (body or {}).get("fast_path_search") or {}
+    routing = (body or {}).get("source_routing") or {}
+    if not plan or "field" not in plan:
+        return None
+    rule = (((run["budget"].get("fast_path") or {}).get("field_search")) or {})
+    shares = {row["provider_id"]: row.get("share") for row in [*routing.get("chosen", []), *routing.get("left_out", [])]}
+    left_out = {row["provider_id"]: row["reason"] for row in routing.get("left_out", [])}
+    not_compiled = plan.get("field_not_compiled") or {}
+    dropped = {row["query"]["provider_id"]: row["reason"] for row in plan.get("dropped", [])
+               if row["query"]["provider_id"] in SOURCE_ROUTES}
+    # What each field request did: its reply's own rows, read by the class the fast path admitted it under. That a
+    # reply was recorded and what it brought are read apart: a search that found nothing answered, and a request
+    # that failed is not a request that was never sent.
+    sent: dict[str, dict[str, Any]] = {}
+    for row in store.conn.execute(
+            "SELECT provider, status, result_count FROM search_runs WHERE run_id = ? AND request_class = ?"
+            " ORDER BY rowid", (run["id"], fast_search.FIELD_CLASS)):
+        seen = sent.setdefault(row["provider"], {"answered": False, "status": row["status"], "records": 0,
+                                                 "failed": 0})
+        answered = row["status"] in ("completed", "zero_results")
+        seen["records"] += row["result_count"] if answered else 0
+        seen["answered"] = seen["answered"] or answered
+        seen["failed"] += 0 if answered else 1
+        seen["status"] = row["status"]
+    rows = []
+    for spec in plan["field"]:
+        provider = spec["query"]["provider_id"]
+        reply = sent.get(provider)
+        state = "planned" if reply is None else "searched" if reply["answered"] else "request_failed"
+        rows.append({"provider_id": provider, "share": spec.get("share"), "independent": spec.get("independent"),
+                     "state": state, "records": (reply or {}).get("records"),
+                     # A source whose first page came back and whose next one did not is searched and says so: the
+                     # pages that failed are counted beside what the reply brought, never in place of it.
+                     "failed_requests": (reply or {}).get("failed", 0),
+                     "reason": None if state == "searched" else
+                     "no_reply_recorded" if reply is None else reply["status"]})
+    for provider in SOURCE_ROUTES:
+        if any(row["provider_id"] == provider for row in rows):
+            continue
+        reason = not_compiled.get(provider) or dropped.get(provider) or left_out.get(provider)
+        if reason is None:
+            continue
+        rows.append({"provider_id": provider, "share": shares.get(provider), "independent": None,
+                     "state": "query_not_compiled" if reason == "query_not_compiled" else "not_chosen",
+                     "records": None, "failed_requests": 0, "reason": reason})
+    if not rows:
+        return None
+    return {"rule": rule.get("rule"), "sources": rule.get("sources"), "records": rule.get("records"), "rows": rows}
 
 
 def _utf16_len(text: str) -> int:
@@ -704,6 +765,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["approval"] = approval_view(store, run["id"])
         # What each source brought in this run, and how much of it no other source did.
         run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
+        # Which field source this run searched beside OpenAlex, and what became of every other one. Only the plan
+        # this run itself froze is read: a run that froze none has no field plan of its own to show.
+        run["field_search"] = field_search_view(store, run, fast_search.frozen_body(store, run)) \
+            if run["kind"] == "discovery" else None
         # What became of the fast chain's requests, by the one rule the report's method section uses too.
         run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple, Protocol
 
 from deixis.domain import canonical
+from deixis.domain.rules import ROUTE_SHARE, SOURCE_ROUTES_VERSION
 from deixis.storage.db import new_id, transaction
 
 POLICY = "fast_path_v1"
@@ -43,6 +44,12 @@ FILE_ASK_RULE = "file_ask_v1"
 # search, so the depth's own allowance, frozen in the policy and reserved before each request goes out. A run queued
 # before the rule carries neither key and sends none.
 FULLTEXT_SEARCH_RULE = "fulltext_search_v1"
+# Which sources beside OpenAlex a depth searches, and by what field share they are chosen: the routing step already
+# reads the field distribution of the question's gate query, and this rule says how many of the sources it chose a
+# depth pays for and how many records each may read. Frozen in the policy with the share and the table's own
+# version, so a run decides by the numbers it started with. A run queued before the rule carries none and searches
+# OpenAlex alone, as every run did.
+FIELD_SEARCH_RULE = "field_search_v1"
 # The delivery-time rule: each depth has an end-to-end target for the first sourced answer and a moment by which
 # the run must hand over to answer writing, whatever it has read. Both count on the person's own clock, from the
 # question's submission, so the queue and any pause are inside them. Frozen in the policy under this name; a run
@@ -79,6 +86,8 @@ class Mode(NamedTuple):
     fulltext_searches: int  # the most works this depth sends an open-web full-text search for, over the same life
     completion_records: int  # records the completion arm may read, taken off the keyword cap while the arm is frozen
     snippet_requests: int  # snippet queries this depth may send; Quick names no focused concept, so none
+    field_sources: int  # field sources this depth searches beside OpenAlex: none in Quick, one in Standard and Deep
+    field_records: int  # records each of them may read, taken off the same keyword cap
 
 
 # The stage seconds are the delivery-time targets split across the stages: the four pre-answer stages sum to the
@@ -97,16 +106,24 @@ MODES = {
                   # about, and its first list waits for no extra search. The records are for the fallback alone,
                   # which is the only thing that stands between a technical OpenAlex failure and an empty Quick run.
                   rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0,
-                  completion_records=50, snippet_requests=0),
+                  completion_records=50, snippet_requests=0,
+                  # Quick binds its first list to no other source: it searches OpenAlex alone.
+                  field_sources=0, field_records=0),
     "standard": Mode((8, 12, 17, 33, 50), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
                      backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
                      rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3,
-                     completion_records=100, snippet_requests=1),
+                     completion_records=100, snippet_requests=1,
+                     # The one field source the question's own field distribution points at. The records are a pilot
+                     # setting: nothing has measured what a field source adds for what it takes off OpenAlex.
+                     field_sources=1, field_records=250),
     "detailed": Mode((18, 36, 48, 108, 90), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
                      backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
                      # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
                      rerank_pool=8.0, rerank_point="before_list", file_asks=5, fulltext_searches=5,
-                     completion_records=200, snippet_requests=2),
+                     completion_records=200, snippet_requests=2,
+                     # Deep searches the same one field source; the independent second index it is to pay for is not
+                     # built yet, and the run records that it sent none.
+                     field_sources=1, field_records=250),
 }
 
 
@@ -183,6 +200,11 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "forward_requests": mode.forward_requests, "forward_page_size": 25,
         "chain_in_flight": 5, "chain_rule": "fast_chain_v1", "acquire_rule": ACQUIRE_RULE,
         "file_ask_rule": FILE_ASK_RULE, "file_asks": mode.file_asks,
+        # Which other sources this depth searches, and by what share of the question's field distribution they are
+        # chosen. The share is frozen here so a run decides by the value it started with, and a pilot that moves the
+        # table or the share cannot change what a waiting run sends.
+        "field_search": {"rule": FIELD_SEARCH_RULE, "sources": mode.field_sources, "records": mode.field_records,
+                         "share": ROUTE_SHARE, "table_version": SOURCE_ROUTES_VERSION},
         "fulltext_search_rule": FULLTEXT_SEARCH_RULE, "fulltext_searches": mode.fulltext_searches,
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,

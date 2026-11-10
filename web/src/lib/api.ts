@@ -243,7 +243,21 @@ export type Run = {
   // The works that passed the abstract stage but were not read in full text in this fast-path discovery run, each
   // with the reason its stored records give ('unknown' when none does). null for other runs.
   fulltext_gaps?: FulltextGaps | null
+  // Which field source this discovery run searched beside OpenAlex, and what became of every other one; null for
+  // another run kind and for a run whose frozen plan holds no field block.
+  field_search?: FieldSearch | null
 }
+// One row per source the routing table names. state: `searched` a reply came back (a search that found nothing
+// answered too), `planned` the plan held the request and nothing was recorded for it, `request_failed` its request
+// was recorded with another outcome, `query_not_compiled` the routing chose it and no query carried it, `not_chosen`
+// the reason is in `reason`. `share` is the share of the question's records its fields hold, where one was read.
+export type FieldSearchRow = {
+  provider_id: string; share: number | null; independent: boolean | null
+  state: 'searched' | 'planned' | 'request_failed' | 'query_not_compiled' | 'not_chosen'
+  // records: what the replies brought. failed_requests: pages of this source whose request did not answer.
+  records: number | null; failed_requests: number; reason: string | null
+}
+export type FieldSearch = { rule: string | null; sources: number | null; records: number | null; rows: FieldSearchRow[] }
 export type ScreeningLabel = 'candidate' | 'out_of_scope' | 'unresolved'
 export type ScreeningPasses = {
   read: number; agreed: number; disagreed: number; unresolved: number

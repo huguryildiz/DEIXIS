@@ -2535,6 +2535,20 @@ class ResearchFlow:
             # named one and the provider answered in its own order.
             sort=effective_sort(query),
         )
+        if admission is not None:
+            # The place this request was admitted at, on the row itself: the merge reads it, so it cannot depend on
+            # a step output a later reader would have to parse.
+            search_fields |= dict(request_class=admission["class"], request_index=admission["request_index"])
+        if dispatched is not None or outcome.status in ("completed", "zero_results"):
+            # What the provider really answered with, before any check or cut of ours: `result_count` is what was
+            # left after the identity check and the read limit, and the two are not the same number. Where no
+            # admission ran, nothing was dropped and the two counts are the same. An adapter whose endpoint has no
+            # page size of its own cuts the answer locally, and what came in before that cut is reported with the
+            # request, so the column says what the provider sent either way. A request that did not answer has no
+            # count at all and leaves the column NULL.
+            answered = dispatched.returned_count if dispatched is not None else len(outcome.records)
+            raw = (admission or {}).get("raw_returned_count")
+            search_fields["returned_count"] = max(answered, raw) if raw else answered
         ok = outcome.status in ("completed", "zero_results")
         read_total = None
         if page is not None:

@@ -1,9 +1,9 @@
--- The whole library schema at version 31. A new library is made from this file in one transaction and
--- records versions 1 to 31; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 32. A new library is made from this file in one transaction and
+-- records versions 1 to 32; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 31
+-- deixis:schema-version 32
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -141,6 +141,13 @@ CREATE TABLE source_assets (
 
 CREATE VIRTUAL TABLE passages_fts USING fts5(text, content='passages', content_rowid='rowid');
 
+-- `page_limit` is what this request asked the provider for; `returned_count` what the provider really
+-- answered with, before any check or cut of ours; `result_count` what was left after the identity check and
+-- the run's own per-query read limit, and so what this run really read; `works_new` the works that were not
+-- in the research's pool when the request was written, and `works_found_removed` how many of the works it
+-- brought the person had removed before.
+-- `request_class` and `request_index` are the place the fast path admitted this request at: the merge is
+-- decided by them, so a reply that came back first takes no place from a request admitted before it.
 CREATE TABLE search_runs (
   id TEXT PRIMARY KEY,
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -158,7 +165,7 @@ CREATE TABLE search_runs (
   error_json TEXT,
   raw_payload_path TEXT,
   retrieved_at TEXT NOT NULL
-, scope_revision INTEGER, payload_sha256 TEXT, page_number INTEGER, read_limit INTEGER, read_total INTEGER, stop_reason TEXT, unread_count INTEGER, connector_json TEXT, sort TEXT);
+, scope_revision INTEGER, payload_sha256 TEXT, page_number INTEGER, read_limit INTEGER, read_total INTEGER, stop_reason TEXT, unread_count INTEGER, connector_json TEXT, sort TEXT, request_class INTEGER, request_index INTEGER, returned_count INTEGER, works_new INTEGER, works_found_removed INTEGER);
 
 CREATE TABLE candidates (
   id TEXT PRIMARY KEY,

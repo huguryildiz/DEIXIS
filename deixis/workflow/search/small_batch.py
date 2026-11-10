@@ -493,7 +493,31 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
         manifest["preselect"] = {"rule": rule["preselect"], "k": rule["rrf_k"], "floors": dict(rule["floors"])}
     from deixis.workflow.search.fast_chain import manifest as chain_manifest
     manifest["fast_path"] = chain_manifest(store, run)
+    manifest["cutoff"] = cutoff_record(store, run)
     return manifest
+
+
+def cutoff_record(store: Any, run: dict[str, Any]) -> dict[str, Any]:
+    """The search rows of this run written by the moment the pool was read, which of them came in late, and the
+    requests still unwritten then.
+
+    The list is the read cutoff, and this says which of this run's requests had reached the store when the pool was
+    read: every search row written by then, whatever that request answered, so a request that failed or timed out is
+    in it too and the set is not a count of what brought records. A request whose reply was written after the search
+    stage's own time ran out is named apart, since the pool it was read into had already passed its cutoff. Apart
+    from both, a request whose step had not finished is named. Pages are written when their own reply arrives, so
+    this is not the order they were admitted at. What an earlier run of the same research put in the pool is not
+    named here; the pool itself carries that.
+    """
+    written, late = [], []
+    for row in store.conn.execute(
+            "SELECT sr.id, s.output_json FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
+            " WHERE sr.run_id = ? AND s.kind LIKE 'provider_search:%'", (run["id"],)):
+        admission = (json.loads(row["output_json"]) if row["output_json"] else {}).get("fast_path_request") or {}
+        (late if admission.get("late") else written).append(row["id"])
+    unfinished = [step["operation_key"] for step in store.run_steps(run["id"])
+                  if step["kind"].startswith("provider_search") and step["status"] in ("pending", "running")]
+    return {"searches": sorted(written), "late": sorted(late), "unfinished": sorted(unfinished)}
 
 
 def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versions: dict[str, Any],

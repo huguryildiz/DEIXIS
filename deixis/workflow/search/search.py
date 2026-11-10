@@ -18,7 +18,9 @@ from deixis.workflow.run import fast_path
 from deixis.workflow.search.search_page import Page
 from deixis.workflow.search.expansion import queried_form
 
-# At Detailed depth one Semantic Scholar bulk request reads up to this many records, taken off the keyword cap.
+# At Detailed depth one Semantic Scholar bulk request reads up to this many records, taken off the keyword cap —
+# and only when that request is really planned. A depth that reserves for a request it will not send spends the
+# records on nothing: the share goes back to the keyword queries, which are the open-scope question's own.
 S2_RESERVED_RECORDS = 500
 KEYWORD_PAGE_SIZE = 100  # records one OpenAlex keyword page asks for
 # One more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
@@ -210,6 +212,11 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     arm = fast_path.completion(run["budget"])
     completing = arm is not None and "semantic_scholar" not in excluded
     reserved = arm["records"] if completing else 0
+    # The bulk request's own reservation, taken only for a request this plan really names. Why none, when the depth
+    # would have paid for one, is recorded beside it: a reservation that buys nothing is not silently kept.
+    s2_records = S2_RESERVED_RECORDS if (deep and s2 is not None) else 0
+    s2_skipped = None if s2_records else (
+        "not_deep" if not deep else user_plan.EXCLUDED if "semantic_scholar" in excluded else "not_planned")
     return {"version": 1, "semantic": semantic_spec(scope, policy, seed_context),
             **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
             **({"completion": {"rule": arm["rule"], "arm": arm["arm"], "records": reserved,
@@ -228,10 +235,11 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
                     arm["snippet_requests"] if completing else 0, reserved, arm["arm"])}
                if arm is not None else {}),
             "keywords": keyword,
-            "keyword_cap": policy["keyword_record_cap"] - (S2_RESERVED_RECORDS if deep else 0) - reserved,
+            "keyword_cap": policy["keyword_record_cap"] - s2_records - reserved,
             "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
-            "s2_reserved": S2_RESERVED_RECORDS if deep else 0,
+            "s2_reserved": s2_records,
+            **({"s2_skipped": s2_skipped} if s2_skipped else {}),
             "dropped": [{"index": i, "query": q,
                          "reason": user_plan.EXCLUDED if q["provider_id"] in excluded else "openalex_only"}
                         for i, q in enumerate(queries) if q["provider_id"] != "openalex" and i != s2_index],
@@ -361,9 +369,10 @@ def close_queries(flow, run, specs, reason):
 def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("budget_exhausted",)):
     """The one function that sends a page of a search and records it, and the stop it reads.
 
-    `shared` carries what the callers share: `failure` is the failure to report, `s2_task` the Semantic Scholar slot
-    whose write comes before the first keyword page. `first_semantic` and `execute` each build their own sender, so
-    the question's request can go out before anything plans and the search stage can send the rest later (P2).
+    `shared` carries what the callers share: `failure` is the failure to report, `s2_task` the Semantic Scholar
+    slot, which the stage waits for at its end and no page waits for in between. `first_semantic` and `execute`
+    each build their own sender, so the question's request can go out before anything plans and the search stage
+    can send the rest later (P2).
     `retry_cancels` are the stop reasons a cancelled page may be sent again for, and it is read only where
     `retry_failed` is set."""
     store, run_id = flow.store, run["id"]
@@ -420,8 +429,6 @@ def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("bu
         if outcome is None:
             return None, 0
         finished = now()
-        if query["provider_id"] == "openalex" and klass == 1 and shared["s2_task"]:
-            await shared["s2_task"]
         if after is not None:
             # An earlier request in admission order writes first, whichever reply came back first.
             await after
@@ -438,7 +445,14 @@ def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("bu
             dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
         # The S2 adapter caps locally, since its bulk API has no page-size option.
         raw_count = len((answer.raw_payload or {}).get("data", [])) if klass == 1 and query["provider_id"] == "semantic_scholar" else returned
-        admission = admission | {"returned_count": returned, "raw_returned_count": raw_count}
+        # When this reply was written, against the moment the search stage's own time ran out. A request sent in
+        # time whose reply arrives after it is recorded as late, the way a chain reply is, so what came in by the
+        # cutoff and what came after it are told apart in the frozen list instead of being read as one set.
+        arrived, cutoff = store.clock.now(), fast_path.stage_deadline(store, run, "search")
+        admission = admission | {"returned_count": returned, "raw_returned_count": raw_count,
+                                 "arrived_at": arrived.isoformat(timespec="milliseconds"),
+                                 "cutoff_at": cutoff.isoformat(timespec="milliseconds") if cutoff else None,
+                                 "late": bool(cutoff is not None and arrived >= cutoff)}
         ok = answer.status in ("completed", "zero_results")
         reason = "page_failed" if not ok else terminal
         if ok:
@@ -607,14 +621,18 @@ async def execute(flow, run, scope, plan, retry_failed):
                                         index=1, terminal="single_page")
             if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
                 cancel_step(store, run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar", "deadline", None)
-        elif plan["s2_reserved"]:
-            reason = user_plan.EXCLUDED if "semantic_scholar" in excluded else "not_planned"
-            cancel_step(store, run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar", reason)
+        elif plan.get("s2_skipped") and plan["s2_skipped"] != "not_deep":
+            # A depth that would have sent a bulk request records why it did not. The records it would have read are
+            # already back with the keyword queries, so the step says what was skipped, not what was held.
+            cancel_step(store, run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar", plan["s2_skipped"])
 
-    # Finish the independent S2 slot before admitting keyword pages (request 1).
-    # Its transport overlaps the first keyword page; writes keep admission order.
-    shared["s2_task"] = asyncio.create_task(s2_page()) if plan["s2_reserved"] else None
-    request_index += int(bool(plan["s2_reserved"]))
+    # The independent S2 slot (request 1), sent while the first keyword page is in flight. A ready keyword page no
+    # longer waits for this slot's write: each page is recorded as it arrives, and what the list is computed from is
+    # decided by the stored admission key, not by which reply came back first.
+    s2_skipped = plan.get("s2_skipped")
+    shared["s2_task"] = (asyncio.create_task(s2_page())
+                         if plan["s2_bulk"] is not None or (s2_skipped and s2_skipped != "not_deep") else None)
+    request_index += int(plan["s2_reserved"] > 0)
     # The completion arm's own sender, with its own failure slot: an arm that is sent only when OpenAlex could not
     # complete must not itself fail the search stage. Its failure is recorded on its own step and the run goes on with
     # what it has.
@@ -718,8 +736,9 @@ async def execute(flow, run, scope, plan, retry_failed):
     main_indexes = search_plan.main_plan_indexes(specs)
     slots = 0
     try:
-        # S2 writes its own earlier slot first. Different host scheduling remains
-        # bounded; later keyword results cannot acquire first-admission identities.
+        # Each page is recorded when its own reply arrives, whatever another arm is still waiting for. Which record
+        # heads a work, and which search a candidate names, are decided by the admission key the request stored, so
+        # a page that came back first does not take a place from a request that was admitted before it.
         while any(not s["ended"] for s in states.values()):
             for spec in specs:
                 state = states[spec["index"]]

@@ -15,7 +15,8 @@ from test_seed_pdf import no_upload_lookup  # noqa: F401  (fixtures used by name
 
 SEED_ONLY_TITLE = "SYNTHETIC a work only a seed's own request found"
 PLAN_KEYS = {"version", "semantic", "keywords", "keyword_cap", "page_size", "order", "s2_bulk", "s2_bulk_index",
-             "s2_reserved", "dropped", "expansion", "words",  # words: which plan words a sent query carries
+             "s2_reserved", "s2_skipped",  # why the depth reserved nothing for a bulk request
+             "dropped", "expansion", "words",  # words: which plan words a sent query carries
              "block_semantic"}  # the block terms' semantic request, frozen as off since that change
 
 

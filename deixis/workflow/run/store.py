@@ -62,6 +62,22 @@ SURFACED_SKIPS = ("s2_cooldown",)
 HOLD_REASONS = ("no_abstract", "no_abstract_text_route", "no_abstract_lookup_open")
 
 
+# Where a search request stands in the order the fast path admitted the requests of its run, as one value that
+# sorts: the run's own time first, then the request's class and index. Requests of two runs are never compared by
+# their places alone, and a row written before those places were stored compares as the earliest of its run.
+_ADMITTED_AT = ("COALESCE((SELECT r.created_at || printf('%%012d', COALESCE(sr.request_class, 0) * 1000000"
+                " + COALESCE(sr.request_index, 0)) FROM search_runs sr JOIN runs r ON r.id = sr.run_id"
+                " WHERE sr.id = %s), '')")
+
+# When a search first found a version the research holds: the earliest admitted place among every search that
+# reported it (`candidate_hits` keeps them all and is never rewritten), so the value cannot move when a later
+# search takes over the candidate row's own `search_run_id`. It is asked of records a search brought: a member
+# added another way keeps the time it was added, which a search finding it later does not move.
+_FIRST_FOUND = ("COALESCE((SELECT MIN(r.created_at || printf('%%012d', COALESCE(sr.request_class, 0) * 1000000"
+                " + COALESCE(sr.request_index, 0))) FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
+                " JOIN runs r ON r.id = sr.run_id WHERE h.research_id = %s AND h.source_version_id = %s), %s)")
+
+
 def _surfaced(output: Any) -> dict[str, Any]:
     """A skip reason and how many records it left, and how many records the rerank held without an abstract, by why."""
     if not isinstance(output, dict):
@@ -2989,29 +3005,45 @@ class Store:
         if hit_ranks is not None and len(hit_ranks) != len(records):
             raise ValueError("hit_ranks must name a place for every record")
         with transaction(self.conn):
+            # The pool as it stands before this request is written, named by its records rather than by their works:
+            # the identity rule may put two of them in one work further down, and then the works these records stood
+            # for must still be the works this request found already there. Read first, so what the request itself
+            # adds cannot count as already in the pool.
+            before = {row["source_version_id"]: bool(row["live"]) for row in self.conn.execute(
+                "SELECT source_version_id, removed_at IS NULL AS live FROM corpus_memberships"
+                " WHERE research_id = ?", (search_fields["research_id"],))}
             srid = self.add_search_run(**search_fields)
+            admission = (step_output or {}).get("fast_path_request") or {}
+            # A reply written after the stage's own cutoff: its records are kept as members of the research, so
+            # nothing the question paid for is lost, but they are not candidates of this read. The list the cutoff
+            # froze is then exactly the set the cutoff record names, and a late arm cannot slip into it by answering
+            # while the pool was being read.
+            late = bool(admission.get("late"))
             found = []
             for rank, record in enumerate(records, start=first_rank):
                 svid, _ = self.upsert_provider_source(provider, record, payload_path)
                 found.append(svid)
-                # A version of a work that already has a candidate here is found again as that candidate.
-                record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
-                # The score the provider gave this record for this query, kept with the place on the hit row. A record
-                # from a provider that scores nothing carries none, and that is NULL, not zero.
-                self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank,
-                                   scope_revision=search_fields["scope_revision"], keep_candidate=keep_candidate,
-                                   raw_score=record.relevance_score,
-                                   hit_rank=rank if hit_ranks is None else hit_ranks[rank - first_rank])
-                if record_svid != svid:
+                if late:
                     self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
+                else:
+                    # A version of a work that already has a candidate here is found again as that candidate.
+                    record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
+                    # The score the provider gave this record for this query, kept with the place on the hit row. A
+                    # record from a provider that scores nothing carries none, and that is NULL, not zero.
+                    self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank,
+                                       scope_revision=search_fields["scope_revision"], keep_candidate=keep_candidate,
+                                       raw_score=record.relevance_score,
+                                       hit_rank=rank if hit_ranks is None else hit_ranks[rank - first_rank])
+                    if record_svid != svid:
+                        self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
             links.link_records(self, search_fields["research_id"], found)  # the narrow rule widens to SW6
+            self._count_works_added(search_fields["research_id"], srid, before, found)
             if snippets:
                 self._insert_snippets(search_fields["research_id"], srid, provider, records, found, snippets)
-            admission = (step_output or {}).get("fast_path_request")
             from deixis.workflow.run import fast_path
-            run = self.run(search_fields["run_id"]) if admission else None
+            run = self.run(search_fields["run_id"]) if admission and not late else None
             if run and fast_path.enabled(run["budget"]) and run["kind"] == "discovery":
                 similarity = self.existing_step(run["id"], "source_similarity")
                 identity = (similarity or {}).get("output") or {}
@@ -3067,6 +3099,25 @@ class Store:
                  dumps(snippet.get("sentences") or []), ts))
         return linked
 
+    def _count_works_added(self, research_id: str, srid: str, before: dict[str, bool], found: list[str]) -> None:
+        """What this one request brought the pool, counted in works and read after the identity rule has run.
+
+        A work is counted once however many versions of it came back, and two records the rule has just joined into
+        one work count as that one work. The two numbers are kept apart: the works that were not in the pool at all,
+        and the works the person had removed before and this request found again. Neither is the number of records:
+        a page of fifty can add one work or none.
+        """
+        held = {row["source_version_id"]: row for row in self.conn.execute(
+            "SELECT m.source_version_id, v.work_id, m.removed_at IS NULL AS live FROM corpus_memberships m"
+            " JOIN source_versions v ON v.id = m.source_version_id WHERE m.research_id = ?", (research_id,))}
+        kept = {svid: row["work_id"] for svid, row in held.items()}
+        live_before = {kept[svid] for svid, live in before.items() if live and svid in kept}
+        removed_before = {kept[svid] for svid, live in before.items() if not live and svid in kept} - live_before
+        works = {kept[svid] for svid in found if svid in kept}
+        self.conn.execute(
+            "UPDATE search_runs SET works_new = ?, works_found_removed = ? WHERE id = ?",
+            (len(works - live_before - removed_before), len(works & removed_before), srid))
+
     def _work_candidate(self, research_id: str, svid: str) -> str | None:
         """Another source version of svid's work that is a candidate of the research, unless svid is one itself.
 
@@ -3076,7 +3127,11 @@ class Store:
             "SELECT c.source_version_id, c.source_version_id = ? AS own FROM candidates c"
             " JOIN source_versions v ON v.id = c.source_version_id"
             " WHERE c.research_id = ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
-            " ORDER BY own DESC, c.created_at LIMIT 1", (svid, research_id, svid)
+            # Which candidate the record is found again as comes from where the searches that reported that
+            # candidate were admitted, so a work with more than one candidate credits the same one whichever reply
+            # came back first and whatever a later search does to the candidate row.
+            f" ORDER BY own DESC, {_FIRST_FOUND % ('c.research_id', 'c.source_version_id', 'c.created_at')},"
+            " c.created_at, c.source_version_id LIMIT 1", (svid, research_id, svid)
         ).fetchone()
         if not row or row[1]:
             return None
@@ -3124,17 +3179,27 @@ class Store:
         return {work_id for work_id, only in found.items() if only}
 
     def work_heads(self, research_id: str, include_removed: bool = False) -> dict[str, str]:
-        """The record that heads each work in the research: a published record, else the first record.
+        """The record that heads each work in the research: a published record, else the one found first.
 
         A record is a candidate or a source added other than by search; other versions found by search never head a work.
         Sources removed from the research head nothing unless include_removed.
+
+        "Found first" is read from the searches that reported the record — their run and the place each request was
+        admitted at — and never from the order the replies came back in, so two arms that bring two versions of one
+        work give the same head whichever answered first. The searches of a record are kept as they are found and
+        none of them is rewritten later, so the head does not move when a later search takes over a candidate row.
+        A record added other than by search keeps the time it was added, whether or not a search finds it later.
+        The order decides only between versions that are each a candidate here: a second version of a work that
+        already has a candidate is found again as that candidate and heads nothing (`_work_candidate`).
         """
         heads: dict[str, dict[str, Any]] = {}
         for row in self.conn.execute(
             "SELECT v.id, v.work_id, v.doi, v.version_label FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
             f" WHERE m.research_id = ?{'' if include_removed else ' AND m.removed_at IS NULL'} AND (c.id IS NOT NULL OR m.added_by != 'search')"
-            " ORDER BY m.created_at, c.rank", (research_id,)
+            " ORDER BY CASE WHEN m.added_by = 'search' THEN"
+            f"   {_FIRST_FOUND % ('m.research_id', 'm.source_version_id', 'm.created_at')}"
+            "  ELSE m.created_at END, c.rank, v.id", (research_id,)
         ):
             current = heads.get(row["work_id"])
             if current is None or (is_published(dict(row)) and not is_published(current)):
@@ -3426,13 +3491,18 @@ class Store:
                 # A record found again under a newer question revision becomes a candidate of that revision; found again
                 # under the same revision (another query or provider), it keeps its best rank and the search that gave it.
                 # A follow-up search (`keep_candidate`) never moves a candidate of its own revision.
+                # Which search the candidate names when two of them found it at the same place in their own query:
+                # the one admitted first, read from the stored place, so it does not depend on which reply was
+                # written first. A row from before that place was stored compares as the earliest, as it did.
+                kept = ("candidates.scope_revision = excluded.scope_revision AND (candidates.rank < excluded.rank"
+                        f" OR (candidates.rank = excluded.rank AND {_ADMITTED_AT % 'candidates.search_run_id'}"
+                        f" <= {_ADMITTED_AT % 'excluded.search_run_id'}))")
                 self.conn.execute(
                     "INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank, scope_revision, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (research_id, source_version_id) DO UPDATE SET"
-                    " search_run_id = CASE WHEN candidates.scope_revision = excluded.scope_revision AND candidates.rank <= excluded.rank"
-                    " THEN candidates.search_run_id ELSE excluded.search_run_id END,"
-                    " rank = CASE WHEN candidates.scope_revision = excluded.scope_revision AND candidates.rank <= excluded.rank"
-                    " THEN candidates.rank ELSE excluded.rank END, scope_revision = excluded.scope_revision",
+                    f" search_run_id = CASE WHEN {kept} THEN candidates.search_run_id ELSE excluded.search_run_id END,"
+                    f" rank = CASE WHEN {kept} THEN candidates.rank ELSE excluded.rank END,"
+                    " scope_revision = excluded.scope_revision",
                     (new_id("cnd"), research_id, search_run_id, svid, rank, scope_revision, ts),
                 )
             if added_by == "search" and candidate:

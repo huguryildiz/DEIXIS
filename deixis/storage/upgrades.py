@@ -1030,4 +1030,21 @@ CREATE INDEX provider_snippets_source ON provider_snippets(source_version_id);
 
 CREATE INDEX provider_snippets_research ON provider_snippets(research_id);
 """),
+    32: Step("0032_search_run_counters.sql", False, """-- What each search request asked for, what really came back
+-- and what it brought the pool, kept apart: `page_limit` is the ask, `returned_count` the provider's own answer
+-- before any check or cut of ours, `result_count` what was left after the identity check and the run's own
+-- per-query read limit, `works_new` the works that were not in the research's pool when the request was
+-- written, and `works_found_removed` how many of those works the person had removed before.
+-- `request_class` and `request_index` are the place the fast path admitted the request
+-- at, so the merge is decided by the admission order and not by which reply came back first.
+ALTER TABLE search_runs ADD COLUMN request_class INTEGER;
+
+ALTER TABLE search_runs ADD COLUMN request_index INTEGER;
+
+ALTER TABLE search_runs ADD COLUMN returned_count INTEGER;
+
+ALTER TABLE search_runs ADD COLUMN works_new INTEGER;
+
+ALTER TABLE search_runs ADD COLUMN works_found_removed INTEGER;
+"""),
 }

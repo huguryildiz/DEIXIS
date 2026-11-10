@@ -1,9 +1,9 @@
--- The whole library schema at version 29. A new library is made from this file in one transaction and
--- records versions 1 to 29; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 30. A new library is made from this file in one transaction and
+-- records versions 1 to 30; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 29
+-- deixis:schema-version 30
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -1101,7 +1101,7 @@ CREATE TABLE fast_path_ledgers (
     answer_run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
     answer_published_at TEXT,
     answer_outcome TEXT
-);
+, handover_passed_at TEXT);
 
 CREATE TABLE fast_path_stages (
     ledger_run_id TEXT NOT NULL REFERENCES fast_path_ledgers(ledger_run_id) ON DELETE CASCADE,

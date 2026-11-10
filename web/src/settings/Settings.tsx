@@ -660,7 +660,7 @@ function ResearchPreferences() {
           {depths.map(d => {
             const e = limits?.efforts?.[d.id]
             return <span key={d.id} className="set-depth"><strong>{d.label}</strong> · {d.use}
-              {e && <> {t('About {minutes} min · up to {papers} papers · {fulltext} in full text', { minutes: number(e.minutes), papers: number(e.papers), fulltext: number(e.fulltext ?? 0) })}</>}
+              {e && <> {t('Up to {papers} papers · {fulltext} in full text', { papers: number(e.papers), fulltext: number(e.fulltext ?? 0) })}</>}
               {e?.screened_once && <> {t('· {first}–{last} screened once', { first: number(e.screened_once.first), last: number(e.screened_once.last) })}</>}</span>
           })}</p>
         <Segment<Effort> label={t('Default depth')} value={prefs?.default_effort ?? null} disabled={off} onPick={v => change({ default_effort: v })}

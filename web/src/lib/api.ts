@@ -717,10 +717,11 @@ export type AuditView = {
 }
 export type AuditRowView = { row: AuditRow | AuditAbstractRow | null; detail: QueueDetail & { cues: unknown } | null }
 export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['selection']; undo_token: string | null }
-// What each depth gives a run, from the fast path's modes: about how many minutes (the stage deadlines summed) and how
-// many papers at the top of the ranking it reads.
+// What each depth gives a run, from the fast path's modes: how many papers at the top of the ranking it reads and how
+// many of them in full text. No length of time, because a depth's budgets aim at a delivery target whose attainment is
+// measured rather than promised.
 // `screened_once`: the list places the deeper screening reads once, present only while the option is on.
-export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number; fulltext?: number; screened_once?: { first: number; last: number } }> }
+export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { papers: number; fulltext?: number; screened_once?: { first: number; last: number } }> }
 // The human queue of an sw research (slice 16). Rows are derived from stored decisions each time they are read.
 export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'

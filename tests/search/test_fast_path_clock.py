@@ -60,7 +60,11 @@ def historical_read_policy(monkeypatch, request):
     def historical(*args, **kwargs):
         policy = freeze(*args, **kwargs)
         policy["enforced_stages"] = ["read"]
-        for key in ("approval_mode", "auto_answer", "policy_hash"):
+        # These regressions are about the stage accounting itself: active time, excluded downtime and the balance
+        # carried between stages. The delivery-time handover is a later cap with its own tests
+        # (`test_delivery_time.py`), and a policy frozen before that rule keeps exactly this arithmetic, so dropping
+        # the two keys here keeps each test on the one rule it was written for.
+        for key in ("approval_mode", "auto_answer", "policy_hash", "handover_rule", "handover_ms"):
             policy.pop(key, None)
         return policy | {"policy_hash": canonical.sha256_hex(policy)}
     monkeypatch.setattr(fast_path, "freeze_budget", historical)
@@ -122,7 +126,7 @@ def app_for(tmp_path, clock=None, adapter=None):
 
 @pytest.mark.parametrize("effort,bases,n,k,cap,seeds,back,forward", [
     # Quick opens no citation request of its own, so its seed and request numbers are zero.
-    ("quick", (30, 30, 30, 60, 30), 25, 10, 450, 0, 0, 0),
+    ("quick", (7, 7, 7, 14, 25), 25, 10, 450, 0, 0, 0),
 ])
 def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, n, k, cap, seeds, back, forward):
     clock = FakeClock()
@@ -135,6 +139,9 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
         assert (policy["N"], policy["K"], policy["keyword_record_cap"], policy["chain_seeds"],
                 policy["backward_requests"], policy["forward_requests"]) == (n, k, cap, seeds, back, forward)
         assert policy["total_ms"] == sum(bases) * 1000
+        # The depth's handover moment: the pre-answer stages' bases, on the person's clock from submission.
+        assert policy["handover_rule"] == fast_path.HANDOVER_RULE
+        assert policy["handover_ms"] == sum(bases[:len(fast_path.PRE_ANSWER)]) * 1000
         assert policy["mode"] == ("deep" if effort == "detailed" else effort)
         assert policy["policy_hash"] == canonical.sha256_hex({k: v for k, v in policy.items() if k != "policy_hash"})
         assert policy["enforced_stages"] == ["search", "ranking", "read", "answer"]
@@ -149,9 +156,10 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
 
 
 def test_04_unused_time_carries_forward(library):
-    finish(library, "plan", 12)
+    finish(library, "plan", 3)
     fast_path.enter_stage(library.store, library.run, "search")
-    assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (18000, 48000)
+    # Quick's plan base is 7 s; finishing in 3 carries 4 s forward to search's own 7.
+    assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (4000, 11000)
 
 
 @pytest.mark.parametrize("frozen", ["d152", "before_d152"])
@@ -165,17 +173,19 @@ def test_plan_debt_is_charged_after_search(library, frozen):
     run = library.store.create_run(library.rid, "discovery", budget | {"fast_path": policy}, None)
     library.store.update_run(run["id"], status="running")
     lib = SimpleNamespace(**(vars(library) | {"run": library.store.run(run["id"])}))
-    finish(lib, "plan", 57)
+    finish(lib, "plan", 20)
     fast_path.enter_stage(lib.store, lib.run, "search")
     if frozen == "before_d152":
-        # A run frozen earlier keeps the old arithmetic on resume: the plan's 27 s overrun shrinks search.
-        assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-27000, 18000)
+        # A run frozen earlier keeps the old arithmetic on resume: the plan's 12 s overrun shrinks search to its
+        # quarter floor.
+        assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-12000, 3000)
         return
-    assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-27000, 45000)
-    lib.clock.advance(45)
+    assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-12000, 12000)
+    lib.clock.advance(12)
     fast_path.close_stage(lib.store, lib.run["id"], "search")
     fast_path.enter_stage(lib.store, lib.run, "ranking")
-    assert (stage(lib, "ranking")["balance_before_ms"], stage(lib, "ranking")["alloc_ms"]) == (-27000, 33000)
+    # The plan's debt is charged here instead: ranking's 17 s base less the 12 s the plan overran.
+    assert (stage(lib, "ranking")["balance_before_ms"], stage(lib, "ranking")["alloc_ms"]) == (-12000, 5000)
 
 
 def test_07_crash_charges_last_checkpoint_and_excludes_downtime(library, tmp_path):

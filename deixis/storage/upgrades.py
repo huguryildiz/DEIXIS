@@ -992,4 +992,10 @@ CREATE UNIQUE INDEX research_branches_one_per_turn ON research_branches(from_tur
 
 CREATE INDEX research_branches_from ON research_branches(from_research_id);
 """),
+    30: Step("0030_handover_passed_at.sql", False, """-- The moment a run's own delivery clock ran out while it was
+-- still working towards its first answer. The clock counts from the question's submission, so a long queue, the gaps
+-- between stages and any pause are inside it, and the run is recorded as having missed its depth's target even where
+-- it went on to answer. Written once, by whichever stage first sees the moment pass.
+ALTER TABLE fast_path_ledgers ADD COLUMN handover_passed_at TEXT;
+"""),
 }

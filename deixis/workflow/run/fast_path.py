@@ -12,6 +12,8 @@ from deixis.storage.db import new_id, transaction
 POLICY = "fast_path_v1"
 RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
+# The stages that must be done before the answer is written. Their bases sum to the depth's handover moment.
+PRE_ANSWER = STAGES[:4]
 # The search method a discovery run is queued with, frozen in its policy. `legacy` is every run's default:
 # chain admission `fast_chain_v1`. `m1` selects chain admission `fast_chain_v2`; it is for the M1 measurement
 # until all its gates pass.
@@ -41,6 +43,13 @@ FILE_ASK_RULE = "file_ask_v1"
 # search, so the depth's own allowance, frozen in the policy and reserved before each request goes out. A run queued
 # before the rule carries neither key and sends none.
 FULLTEXT_SEARCH_RULE = "fulltext_search_v1"
+# The delivery-time rule: each depth has an end-to-end target for the first sourced answer and a moment by which
+# the run must hand over to answer writing, whatever it has read. Both count on the person's own clock, from the
+# question's submission, so the queue and any pause are inside them. Frozen in the policy under this name; a run
+# queued before the rule carries no handover and keeps its stage deadlines alone.
+HANDOVER_RULE = "answer_handover_v1"
+# A run in one of these states will send nothing more, so whether it met its target is settled.
+TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
 DEEP_SCREENING_EFFORTS = ("standard", "detailed")
 
@@ -62,19 +71,23 @@ class Mode(NamedTuple):
     fulltext_searches: int  # the most works this depth sends an open-web full-text search for, over the same life
 
 
+# The stage seconds are the delivery-time targets split across the stages: the four pre-answer stages sum to the
+# depth's handover moment (35 s / 1 min 10 s / 3 min 30 s) and all five to its end-to-end target (1 / 2 / 5 minutes).
+# The split inside the handover is today's pilot configuration, each stage scaled from the budget it had before the
+# targets were applied; which split and which K/N actually hold the targets is measured, not assumed.
 MODES = {
     # Quick opens no citation request of its own: the reference ids the first semantic page brings are stored and
     # the links inside that page are written, which costs nothing, but no seed work is read.
-    "quick": Mode((30, 30, 30, 60, 30), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=0,
+    "quick": Mode((7, 7, 7, 14, 25), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=0,
                   backward_requests=0, forward_requests=0, boolean_plans=1, chain_rescue=0,
                   # Quick shows its list without waiting for the reranker, so the reranker does not order that list:
                   # it reads a small group after the list is frozen, and the run keeps its scores to be measured.
                   # Quick asks for no file at all: it is the depth that answers from what it can reach itself.
                   rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0),
-    "standard": Mode((30, 45, 60, 120, 45), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
+    "standard": Mode((8, 12, 17, 33, 50), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
                      backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
                      rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3),
-    "detailed": Mode((45, 90, 120, 270, 75), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
+    "detailed": Mode((18, 36, 48, 108, 90), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
                      backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
                      # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
                      rerank_pool=8.0, rerank_point="before_list", file_asks=5, fulltext_searches=5),
@@ -139,6 +152,8 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "late_revision": {"mode": "auto", "max_revisions": 1},
         "mode": "deep" if effort == "detailed" else effort,
         "stage_base_ms": dict(zip(STAGES, (s * 1000 for s in bases))), "total_ms": sum(bases) * 1000,
+        # The delivery-time target and the handover moment, both on the person's clock from the question's submission.
+        "handover_rule": HANDOVER_RULE, "handover_ms": sum(bases[:len(PRE_ANSWER)]) * 1000,
         "N": mode.read_top, "K": mode.fulltext_works, "keyword_record_cap": mode.keyword_record_cap, "semantic_top": 50,
         "chain_seeds": mode.chain_seeds, "backward_requests": mode.backward_requests, "backward_page_size": 50,
         "forward_requests": mode.forward_requests, "forward_page_size": 25,
@@ -175,6 +190,12 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
         policy["no_deadline_stages"] = ["read", "answer"]
+        # The handover goes with them, and the policy says so by name rather than simply missing the key: the design
+        # gives every depth a handover moment, so a run that keeps none is a departure from it, readable in the run's
+        # own record. The reason is the one the stage deadlines already carry: a model this computer runs screens and
+        # answers far slower than the bases assume, and cutting its read hands the answer unscreened evidence.
+        policy["handover"] = "none_local_model"
+        del policy["handover_ms"]
     return policy | {"policy_hash": canonical.sha256_hex(policy)}
 
 
@@ -215,12 +236,15 @@ def screened_once(effort: str) -> dict[str, int] | None:
 
 
 def effort_limits(deep_screening: bool = False) -> dict[str, Any]:
-    """What each research depth gives a run, read from MODES at the moment of asking: Home's depth text says these
-    numbers, so a changed mode cannot leave the text behind. `minutes` is the stage bases summed and rounded, the
-    stages' soft deadlines rather than a promise of how long a run takes; `papers` is N, the top of the ranking a run
-    reads; `fulltext` is K, the most works a run reads in their full text (selected pages, UI parity S14's funnel).
-    With `deep_screening` on, Standard and Detailed add `screened_once`, the list places read once."""
-    return {"efforts": {effort: {"minutes": round(sum(mode.stage_seconds) / 60), "papers": mode.read_top,
+    """What each research depth gives a run, read from MODES at the moment of asking: the depth text says these
+    numbers, so a changed mode cannot leave the text behind. `papers` is N, the top of the ranking a run reads;
+    `fulltext` is K, the most works a run reads in their full text (selected pages, UI parity S14's funnel). With
+    `deep_screening` on, Standard and Detailed add `screened_once`, the list places read once.
+
+    No minutes: a depth's stage budgets are soft deadlines aimed at a delivery target, and how often that target is
+    actually met is measured rather than assumed, so a number of minutes here would promise the person something no
+    measurement supports. The target and its attainment rate belong to the measurement, not to the depth's label."""
+    return {"efforts": {effort: {"papers": mode.read_top,
                                  "fulltext": mode.fulltext_works,
                                  **({"screened_once": once} if deep_screening and (once := screened_once(effort)) else {})}
                         for effort, mode in MODES.items()}}
@@ -249,9 +273,46 @@ def enforces(budget: dict[str, Any], stage: str) -> bool:
     return enabled(budget) and isinstance(stages, list) and stage in stages
 
 
-def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | None:
-    if not enforces(run["budget"], stage) or stage in run["budget"]["fast_path"].get("no_deadline_stages", ()):
+def ledger_started_at(store: Any, run: dict[str, Any]) -> datetime | None:
+    """When this run's clock started: the moment the question was submitted and the discovery run was created."""
+    ledger_id = (run["budget"].get("fast_path") or {}).get("ledger_run_id", run["id"])
+    row = store.conn.execute("SELECT started_at FROM fast_path_ledgers WHERE ledger_run_id = ?", (ledger_id,)).fetchone()
+    return datetime.fromisoformat(row["started_at"]) if row else None
+
+
+def handover_deadline(store: Any, run: dict[str, Any]) -> datetime | None:
+    """The moment this run must hand over to answer writing, however much it has read by then.
+
+    It is read from the ledger's start, not from the time the stages were actually working: the person's clock runs
+    from the question's submission to the answer in front of them, so the queue, the gaps between stages and a pause
+    are all inside it. A run that stopped overnight has missed its target; it does not get a fresh window on resume.
+    None where the policy carries no handover: a run frozen before the rule, and a run on a model this computer
+    runs (`handover` = `none_local_model`)."""
+    binding = (run["budget"].get("fast_path") or {})
+    if not enabled(run["budget"]):
         return None
+    handover = binding.get("handover_ms")
+    if handover is None and (ledger_id := binding.get("ledger_run_id")):
+        # An answer run carries only its binding, so the depth's handover is read from the run that froze it.
+        handover = ((store.run(ledger_id)["budget"].get("fast_path") or {}).get("handover_ms"))
+    if not isinstance(handover, int) or isinstance(handover, bool):
+        return None
+    started = ledger_started_at(store, run)
+    return None if started is None else started + timedelta(milliseconds=handover)
+
+
+def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | None:
+    """A stage's own soft deadline, never later than the run's handover moment for a stage that must be done before
+    the answer is written. The handover is the harder of the two: a stage that carried time forward, or a protected
+    stage that keeps its whole base, cannot push the first answer past the depth's target.
+
+    The handover stands even where the stage has no deadline of its own, which is how it reaches the two places the
+    stage accounting does not: a stage this policy does not enforce, the plan stage above all, and a stage working in
+    a rework interval, which is what retrying a failed search of a completed run opens. The person's clock has run
+    out in both cases."""
+    handover = handover_deadline(store, run) if stage in PRE_ANSWER else None
+    if not enforces(run["budget"], stage) or stage in run["budget"]["fast_path"].get("no_deadline_stages", ()):
+        return handover
     ledger = run["budget"]["fast_path"].get("ledger_run_id", run["id"])
     row = store.conn.execute(
         "SELECT i.started_at, s.alloc_ms, s.used_ms FROM fast_path_stages s"
@@ -260,13 +321,39 @@ def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | No
         " AND i.run_id = ? AND i.closed_at IS NULL AND i.rework = 0",
         (ledger, stage, run["id"])).fetchone()
     if row is None:
-        return None
-    return datetime.fromisoformat(row["started_at"]) + timedelta(milliseconds=row["alloc_ms"] - row["used_ms"])
+        return handover
+    deadline = datetime.fromisoformat(row["started_at"]) + timedelta(milliseconds=row["alloc_ms"] - row["used_ms"])
+    return deadline if handover is None else min(deadline, handover)
 
 
 def past_deadline(store: Any, run: dict[str, Any], stage: str) -> bool:
+    """Whether this stage must stop. A pre-answer stage past the run's handover moment also records that the run
+    missed its depth's target, wherever in the run that moment arrives."""
     deadline = stage_deadline(store, run, stage)
-    return deadline is not None and store.clock.now() >= deadline
+    past = deadline is not None and store.clock.now() >= deadline
+    if past and stage in PRE_ANSWER:
+        note_handover_passed(store, run)
+    return past
+
+
+def note_handover_passed(store: Any, run: dict[str, Any]) -> None:
+    """Write the moment this run's delivery clock ran out, once, if it has. The record is what the handover produces
+    where stopping would leave nothing usable: a plan cut in the middle leaves no query to search with, so planning
+    goes on and the run is marked as having missed its target instead of being abandoned."""
+    handover = handover_deadline(store, run)
+    # The moment itself is inside the target, which is how `view()` and the measurement read it too: a run that
+    # turns to writing at exactly that second met the depth's deadline. Only passing it is a miss.
+    if handover is None or store.clock.now() <= handover:
+        return
+    ledger_id = run["budget"]["fast_path"].get("ledger_run_id", run["id"])
+    # Read before writing: the read stage asks this on every work it considers, and once the moment is recorded a
+    # repeated write would take a lock to change nothing.
+    row = store.conn.execute("SELECT handover_passed_at FROM fast_path_ledgers WHERE ledger_run_id = ?",
+                             (ledger_id,)).fetchone()
+    if row is None or row["handover_passed_at"]:
+        return
+    store.conn.execute("UPDATE fast_path_ledgers SET handover_passed_at = ? WHERE ledger_run_id = ?"
+                       " AND handover_passed_at IS NULL", (timestamp(store.clock), ledger_id))
 
 
 def ranking_similarities(store: Any, run: dict[str, Any], model: str) -> dict[str, float]:
@@ -330,6 +417,7 @@ def enter_stage(store: Any, run: dict[str, Any], stage: str) -> str | None:
         return None
     if run["budget"]["fast_path"].get("role") == "late_revision":
         return None
+    note_handover_passed(store, run)
     conn, ts = store.conn, timestamp(store.clock)
     binding = run["budget"]["fast_path"]
     ledger_id = binding.get("ledger_run_id", run["id"])
@@ -476,6 +564,8 @@ def view(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
         "ledger_run_id": ledger_id, "role": binding.get("role"), "stages": stages,
         "balance_ms": sum(s["base_ms"] - s["used_ms"] for s in stages if s["seq"] > 0),
         "used_ms": sum(s["used_ms"] for s in stages if s["seq"] > 0),
+        # The time to the answer being recorded, not to it being on screen: the display is not timed here, so a
+        # delivery rate read from this number is a rate to the record and is named that way wherever it is reported.
         "latency_ms": elapsed(ledger["started_at"], ledger["answer_published_at"]) if ledger["answer_published_at"] else None,
         "answer_outcome": ledger["answer_outcome"],
         "max_checkpoint_gap_ms": max((i["max_checkpoint_gap_ms"] for i in intervals), default=0),
@@ -486,4 +576,37 @@ def view(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
     if "enforced_stages" in policy:
         result["enforced_stages"] = policy["enforced_stages"]
         result["enforcement"] = policy["enforced_stages"]
+    # The depth's delivery-time target and handover moment, and where this run actually stood against them.
+    result["target_ms"] = policy.get("total_ms")
+    result["handover_ms"] = policy.get("handover_ms")
+    result["handover"] = policy.get("handover")
+    # Already recorded as having missed the target, by whichever stage first saw the moment pass.
+    result["handover_passed_at"] = ledger["handover_passed_at"]
+    # When the run actually turned to writing: the answer stage opening, not the read stage closing. Between the two
+    # sit the optional title call and queuing the answer run, and a reworked read stage would move its `done_at`.
+    answer_started = min((i["started_at"] for i in intervals if i["stage"] == "answer"), default=None)
+    result["handover_at_ms"] = elapsed(ledger["started_at"], answer_started) if answer_started else None
+    target, handover = result["target_ms"], result["handover_ms"]
+    # An answer that ended without being published missed the target: the person was given no sourced answer inside
+    # it. Undecided only while the run may still publish one.
+    answer_status = (store.conn.execute("SELECT status FROM runs WHERE id = ?", (ledger["answer_run_id"],)).fetchone()
+                     if ledger["answer_run_id"] else None)
+    # Nothing more can arrive: the answer recorded an outcome, the answer run ended, or no answer was ever queued
+    # and the run that would have queued one ended.
+    ended = bool(ledger["answer_outcome"]) or (
+        answer_status["status"] in TERMINAL if answer_status
+        else store.run(ledger_id)["status"] in TERMINAL)
+    if policy.get("handover") == "none_local_model":
+        # No handover and no deadline on the stages where the model works, so no delivery target to meet either.
+        result["on_target"] = None
+    elif result["latency_ms"] is not None and isinstance(target, int):
+        result["on_target"] = result["latency_ms"] <= target
+    elif isinstance(target, int) and (ended or elapsed(ledger["started_at"], ts) > target):
+        # Still working, but the depth's whole target has passed: an answer recorded now cannot meet it either, so
+        # leaving this run undecided would report the rate among the runs that were quick enough.
+        result["on_target"] = False
+    else:
+        result["on_target"] = None
+    result["handover_on_target"] = (result["handover_at_ms"] <= handover
+                                    if result["handover_at_ms"] is not None and isinstance(handover, int) else None)
     return result

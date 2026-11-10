@@ -31,8 +31,10 @@ export const effortOptions: Record<Effort, { icon: LucideIcon }> = {
 }
 
 // The depth text, from the fast path's modes (`fast_path.MODES`): the same numbers the run is given, so a changed mode
-// cannot leave this text behind. Without an answer from the server the depth carries no text at all. A model this
-// computer runs has no read or answer deadline, so its time depends on the computer and no minutes are shown.
+// cannot leave this text behind. Without an answer from the server the depth carries no text at all. It names what the
+// depth reads and no length of time: a depth's budgets aim at a delivery target whose attainment is measured, so a
+// number of minutes here would promise what no measurement supports. A model this computer runs says only that its
+// time depends on the computer, because it keeps no read or answer deadline.
 function effortDetail(effort: Effort, limits: EffortLimits | null | undefined, local = false): string | undefined {
   const e = limits?.efforts?.[effort]
   if (!e) return undefined
@@ -41,7 +43,7 @@ function effortDetail(effort: Effort, limits: EffortLimits | null | undefined, l
   const once = e.screened_once
   if (local) return t('Local model: no time limit, it depends on this computer · up to {papers} papers', { papers: number(e.papers) })
     + (once ? ` ${t('· {first}–{last} screened once, which takes longer', { first: number(once.first), last: number(once.last) })}` : '')
-  return t('About {minutes} min · up to {papers} papers', { minutes: number(e.minutes), papers: number(e.papers) })
+  return t('Up to {papers} papers', { papers: number(e.papers) })
     + (once ? ` ${t('· {first}–{last} screened once', { first: number(once.first), last: number(once.last) })}` : '')
 }
 // Connections whose model runs on this computer (backend `openai_compat.LOCAL_CONNECTIONS`).

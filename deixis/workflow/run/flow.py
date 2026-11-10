@@ -397,6 +397,8 @@ class ResearchFlow:
     def _close_clock_stage(self, run: dict[str, Any], stage: str) -> None:
         if not fast_path.enabled(run["budget"]):
             return
+        if stage in fast_path.PRE_ANSWER:
+            fast_path.note_handover_passed(self.store, run)
         fast_path.close_stage(self.store, run["id"], stage)
         for name, task in self._clock_tasks.get(run["id"], {}).values():
             if name == stage:
@@ -644,6 +646,11 @@ class ResearchFlow:
                 # the search stage retries it, and the plan step then reads whatever records the page wrote.
                 await first_request
             vocabulary, queries = await self._search_query(run, scope, vocabulary)
+            # The first safe point of the plan stage: there is a query now, so the run could search. If its own
+            # delivery clock has already run out — a long queue, a model call that took minutes, or a run resumed
+            # the next morning — that is recorded here rather than only at the end. Planning still finishes, because
+            # a plan cut in the middle leaves no query at all.
+            fast_path.note_handover_passed(self.store, run)
             vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
             criterion = await self._criterion(run, scope, vocabulary)
             vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)

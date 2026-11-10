@@ -1781,7 +1781,13 @@ export type AnswerMethod = {
   search: { queries: { provider: string; query: string; records_read: number; provider_total: number | null; date: string; complete: boolean; origin: string | null }[]
     records_read: number; planned: number; planned_not_sent: number; chaining: { ran: boolean; requests: number; records_read: number }
     // Follow-up searches completed before the answer started, from its start snapshot; null: not recorded.
-    followup_searches?: FollowupSearchBrief[] | null }
+    followup_searches?: FollowupSearchBrief[] | null
+    // What the Semantic Scholar completion arm came to in this question revision; null where the run froze no arm.
+    // `sent` says the request went out in OpenAlex's place, `failures` what OpenAlex's own requests recorded.
+    completion?: { arm: string | null; state: string | null; sent: boolean; records: number | null; reason: string | null
+      // The status the sent request itself recorded; null where no request went out.
+      request_status: string | null
+      failures: Record<string, number> } | null }
   // The reading counts come from the answer's start snapshot; null on an older answer that did not store them.
   selection: { snapshot: boolean; works_found: number | null; screened: number | null; abstract_read: number | null; full_text_attempted: number | null; full_text_read: number | null; person_decisions: number | null; included: number | null; not_met: number | null
     waiting_for_pdf: number | null; not_read: number | null; criterion: string | null

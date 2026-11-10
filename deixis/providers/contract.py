@@ -80,6 +80,9 @@ class EndpointDescriptor:
     total: TotalSemantics
     options: tuple[OptionDescriptor, ...]
     retry: RetryPolicy
+    # Requests one search of this endpoint may send, as an upper bound. It repeats the connector's own count unless
+    # the endpoint differs, so provenance records what the request the query named really costs.
+    requests_per_search: int = 1
 
 
 @dataclass(frozen=True)

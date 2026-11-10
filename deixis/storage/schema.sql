@@ -1,9 +1,9 @@
--- The whole library schema at version 30. A new library is made from this file in one transaction and
--- records versions 1 to 30; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 31. A new library is made from this file in one transaction and
+-- records versions 1 to 31; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 30
+-- deixis:schema-version 31
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -2609,3 +2609,36 @@ CREATE UNIQUE INDEX research_branches_one_per_turn ON research_branches(from_tur
   WHERE from_turn_id IS NOT NULL;
 
 CREATE INDEX research_branches_from ON research_branches(from_research_id);
+
+-- Passages a provider said it found, from Semantic Scholar's snippet search. Finding a passage is not reading the
+-- full text, so these are not `passages` rows: nothing here can become a cited anchor, an answer passage or a
+-- reading depth above what the work's own stored text reaches. `source_version_id` is the record the snippet's work
+-- was linked to, NULL where the second request could not reach it. `ref_mentions_json` keeps the provider's citation
+-- marks with their spans and the works they point at, so a person can tell an experiment the paper only cites from
+-- one it ran.
+CREATE TABLE provider_snippets (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  search_run_id TEXT NOT NULL REFERENCES search_runs(id),
+  provider TEXT NOT NULL,
+  corpus_id TEXT NOT NULL,
+  source_version_id TEXT REFERENCES source_versions(id),
+  snippet_kind TEXT CHECK (snippet_kind IS NULL OR snippet_kind IN ('title', 'abstract', 'body')),
+  section TEXT,
+  text TEXT NOT NULL,
+  text_sha256 TEXT NOT NULL,
+  char_start INTEGER,
+  char_end INTEGER,
+  score REAL,
+  ref_mentions_json TEXT NOT NULL,
+  sentences_json TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  -- The same passage of the same work in the same request, so a retry of that request writes it once. SQLite
+  -- counts NULLs as different, so a passage the provider sent with no place of its own is kept as it came
+  -- instead of being collapsed into another one; a later request records its own rows, as every search does.
+  UNIQUE (search_run_id, corpus_id, text_sha256, snippet_kind, section, char_start)
+);
+
+CREATE INDEX provider_snippets_source ON provider_snippets(source_version_id);
+
+CREATE INDEX provider_snippets_research ON provider_snippets(research_id);

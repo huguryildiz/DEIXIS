@@ -248,7 +248,10 @@ def replay_case(provider_id, endpoint_id, fixture, case, *, direct=False, key=SY
     stage = case.get("stage", "search")
     attempts = 1 + case["expected"].get("retries", 0) if failing else 1
     search_url = fixture.get("url") or response_spec(provider_id, endpoint_id)["url"]
-    fetch_url = fixture.get("fetch_url")
+    # A second request belongs to the endpoint that sends it, so an endpoint may name its own; the method is
+    # the endpoint's too, since a lookup of the works a passage search named is a POST.
+    fetch_url = ep.get("fetch_url") or fixture.get("fetch_url")
+    fetch_method = ep.get("fetch_method", "GET")
     script = ([(search_url, False)] if stage == "fetch" else []) + [(fetch_url if stage == "fetch" else search_url, failing)] * attempts
     if not failing and fetch_url and case["expected"].get("status") not in {"parse_error", "zero_results"}:
         script += [(fetch_url, False)]
@@ -260,7 +263,8 @@ def replay_case(provider_id, endpoint_id, fixture, case, *, direct=False, key=SY
     def transport(request):
         assert remaining, f"unscripted request {provider_id}/{endpoint_id}/{case['name']}"
         url, fail = remaining.pop(0)
-        assert request.method == "GET" and str(request.url.copy_with(query=None)) == url
+        method = fetch_method if fetch_url and url == fetch_url else "GET"
+        assert request.method == method and str(request.url.copy_with(query=None)) == url
         assert request.url.host == connector.host
         assert_auth(request, fixture, key)
         requests.append(request)
@@ -310,7 +314,8 @@ def replay_case(provider_id, endpoint_id, fixture, case, *, direct=False, key=SY
             connect_failures = attempts if case.get("exception") == "connect" else 0
             assert sum(e["sends"] for e in entries) == len(requests) - connect_failures
             assert sum(e["retries"] for e in entries) == outcome.retries
-            assert len(entries) <= connector.requests_per_search
+            assert len(entries) <= next(e for e in facade.connectors()[provider_id].descriptor.endpoints
+                                        if e.endpoint_id == endpoint_id).requests_per_search
             assert all(0 <= e["retries"] <= 2 for e in entries)
             assert SYNTHETIC_KEY not in json.dumps(entries)
             return outcome
@@ -376,7 +381,9 @@ CASES = [(pid, e.endpoint_id, FIXTURES[pid], case)
          for pid, f in facade.connectors().items() if pid in FIXTURES for e in f.descriptor.endpoints
          for ep in FIXTURES[pid]["endpoints"] if ep["endpoint_id"] == e.endpoint_id for case in ep["cases"]]
 # A representative sample of CASES (the full grid was cut in the stage-5 test simplification).
-SAMPLE_IDS = {"openalex/default/g3/positive", "openalex/semantic/g5/root_array", "semantic_scholar/bulk/g3/positive"}
+SAMPLE_IDS = {"openalex/default/g3/positive", "openalex/semantic/g5/root_array", "semantic_scholar/bulk/g3/positive",
+              # The passage endpoint is the one search that sends a second request, so its own row is replayed.
+              "semantic_scholar/snippet/g3/positive"}
 CONFORMANCE_SAMPLE = [(p, e, f, c) for p, e, f, c in CASES if f"{p}/{e or 'default'}/g{c['group']}/{c['name']}" in SAMPLE_IDS]
 
 
@@ -410,7 +417,9 @@ def test_registration_schema_and_purity(memory_keychain, tmp_path):
                     assert result.status == "unsupported" and result.outcome is None and result.answer is None
     asyncio.run(run())
     assert registry.Connector("synthetic", deny_network, 1).adapter_revision == 1
-    assert all(c.adapter_revision == (3 if c.provider_id == "openalex" else 2) for c in registry.CONNECTORS.values())
+    # Semantic Scholar is at 3 since its snippet endpoint, whose search sends a second request of its own.
+    assert all(c.adapter_revision == (3 if c.provider_id in ("openalex", "semantic_scholar") else 2)
+               for c in registry.CONNECTORS.values())
     enum = json.loads((ROOT / "deixis/contracts/research/common.schema.json").read_text(encoding="utf-8"))["$defs"]["provider_id"]["enum"]
     assert set(enum) == set(registry.CONNECTORS)
     assert os.environ == before_env and memory_keychain.items == before_keys and list(tmp_path.iterdir()) == before_files

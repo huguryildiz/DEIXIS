@@ -540,6 +540,8 @@ class Store:
             self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
             # Stage decisions, proposals and ranks go before the run steps and passages they point at.
             for table in ("person_pdf_requests", "pdf_skips", "answer_reviews", "answers", "model_sessions", "step_inputs",
+                          # The provider's own passages name a search run and a record, so they go before both.
+                          "provider_snippets",
                           "candidate_hits", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "human_selection_links", "stage_decisions",
@@ -2963,7 +2965,7 @@ class Store:
     def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,
                       step_id: str, step_status: str, step_output: dict[str, Any] | None = None, first_rank: int = 0,
                       keep_found: bool = False, keep_candidate: bool = False, hit_ranks: list[int] | None = None,
-                      **step_fields: Any) -> str:
+                      snippets: list[dict[str, Any]] | None = None, **step_fields: Any) -> str:
         """Commit the search run, normalized sources, candidates and the step outcome together.
 
         `first_rank` is how many records the query read on its earlier pages: a candidate's rank is its place in the
@@ -2977,6 +2979,12 @@ class Store:
         rank, which a paged search already counts over its pages. A caller whose `records` are not the provider's own
         order, or whose candidate rank carries an ordering offset instead of a place, passes the real places as
         `hit_ranks`, one per record in the same order.
+
+        `snippets` are passages the provider said it found (`SearchOutcome.snippets`), written in this same
+        transaction and linked to the record of the work each came from by the corpus id the provider named. A
+        snippet whose work no record was reached for is written with no record, so what the provider found is never
+        lost to a failure of the request that looks those works up. A snippet is not a `passages` row: finding a
+        passage is not reading the full text.
         """
         if hit_ranks is not None and len(hit_ranks) != len(records):
             raise ValueError("hit_ranks must name a place for every record")
@@ -2999,6 +3007,8 @@ class Store:
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
             links.link_records(self, search_fields["research_id"], found)  # the narrow rule widens to SW6
+            if snippets:
+                self._insert_snippets(search_fields["research_id"], srid, provider, records, found, snippets)
             admission = (step_output or {}).get("fast_path_request")
             from deixis.workflow.run import fast_path
             run = self.run(search_fields["run_id"]) if admission else None
@@ -3024,6 +3034,38 @@ class Store:
                 output["accepted_source_version_ids"] = list(dict.fromkeys(found))
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid
+
+    def _insert_snippets(self, research_id: str, srid: str, provider: str, records: list[Any], found: list[str],
+                         snippets: list[dict[str, Any]]) -> int:
+        """Write the passages a provider returned, each linked to the record of its own work. The caller holds the
+        transaction; returns how many were linked to a record.
+
+        The link is by the corpus id the provider named on both sides — the snippet and the record's own identifiers —
+        never by the order the two replies came in. A snippet whose work is not among the records is written with
+        none, and the step output counts it.
+        """
+        by_corpus = {}
+        for record, svid in zip(records, found):
+            corpus = (getattr(record, "identifiers", None) or {}).get("CorpusId")
+            if corpus:
+                by_corpus[str(corpus)] = svid
+        ts = now()
+        linked = 0
+        for snippet in snippets:
+            svid = by_corpus.get(str(snippet["corpus_id"]))
+            linked += int(svid is not None)
+            text = snippet["text"]
+            self.conn.execute(
+                "INSERT OR IGNORE INTO provider_snippets (id, research_id, search_run_id, provider, corpus_id,"
+                " source_version_id, snippet_kind, section, text, text_sha256, char_start, char_end, score,"
+                " ref_mentions_json, sentences_json, retrieved_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_id("snp"), research_id, srid, provider, str(snippet["corpus_id"]), svid,
+                 snippet.get("snippet_kind"), snippet.get("section"), text,
+                 hashlib.sha256(text.encode()).hexdigest(), snippet.get("char_start"), snippet.get("char_end"),
+                 snippet.get("score"), dumps(snippet.get("ref_mentions") or []),
+                 dumps(snippet.get("sentences") or []), ts))
+        return linked
 
     def _work_candidate(self, research_id: str, svid: str) -> str | None:
         """Another source version of svid's work that is a candidate of the research, unless svid is one itself.
@@ -3539,6 +3581,10 @@ class Store:
                 f"DELETE FROM human_selection_links WHERE research_id = ? AND (head IN ({marks}) OR decision_id IN"
                 f" (SELECT id FROM stage_decisions WHERE research_id = ? AND source_version_id IN ({marks})))",
                 (research_id, *chosen, research_id, *chosen))
+            # A removed record leaves the provider's own passages standing, with the link they can no longer point at
+            # emptied: the snippet is still what the provider said it found.
+            self.conn.execute(f"UPDATE provider_snippets SET source_version_id = NULL WHERE source_version_id IN ({marks})",
+                              chosen)
             for table in ("person_pdf_requests", "pdf_discovery_runs", "source_similarities", "suspected_duplicates",
                           "selection_history", "selections", "candidate_hits", "candidates", "stage_decisions",
                           "model_proposals",

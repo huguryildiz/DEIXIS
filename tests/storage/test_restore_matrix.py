@@ -494,6 +494,8 @@ EMPTY_BECAUSE = {
     "pdf_discovery_runs": "same lookup as pdf_candidates",
     "pdf_skips": "written when a person chooses 'Continue without PDF' for a waiting work, which this flow does not",
     "person_pdf_requests": "written by the 'read it yourself' person-reading flow, not exercised here",
+    "provider_snippets": "written only by the Semantic Scholar snippet search, which a run sends when a part of its"
+                         " question is unmet; this flow's fake provider answers every query",
     "record_flags": "written by record lookups (workflow/search/lookups.py), not run here",
     "record_links": "written by record linking (workflow/run/links.py), not run here",
     "record_lookups": "written by record lookups, not run here",

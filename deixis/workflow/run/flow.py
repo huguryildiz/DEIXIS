@@ -2559,9 +2559,17 @@ class ResearchFlow:
             if page is not None:
                 output |= {"page": page.number, "next_cursor": outcome.next_cursor, "read_total": read_total,
                            "provider_total": outcome.provider_total, "stop_reason": stop_reason}
+            if outcome.snippets is not None:
+                # Passages the provider returned beside its records: how many reached a record of their own work, and
+                # how many could not, so the step says what the second request managed.
+                linked = len({s["corpus_id"] for s in outcome.snippets
+                              if any(str((r.identifiers or {}).get("CorpusId")) == str(s["corpus_id"])
+                                     for r in outcome.records)})
+                output |= {"snippets": len(outcome.snippets), "snippet_works": linked,
+                           "snippet_works_unlinked": len({s["corpus_id"] for s in outcome.snippets}) - linked}
             self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], "succeeded",
                                      step_output=output, first_rank=before, hit_ranks=hit_ranks,
-                                     finished_at=finished_at, keep_found=keep_found)
+                                     finished_at=finished_at, keep_found=keep_found, snippets=outcome.snippets)
             return None
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
         self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], final,
@@ -2571,7 +2579,9 @@ class ResearchFlow:
                                  | {"error_kind": outcome.error_kind, "service_kind": outcome.service_kind or service_error_kind(outcome.error_kind or outcome.http_status or outcome.status),
                                     "reset_at": retry_at(outcome.rate_limit.get("retry-after"))},
                                  delivery_class=outcome.delivery_class, first_rank=before, hit_ranks=hit_ranks,
-                                 finished_at=finished_at)
+                                 # A request that failed after the provider had already returned passages keeps them:
+                                 # what it found is not undone by what the next request could not do.
+                                 finished_at=finished_at, snippets=outcome.snippets)
         reason = "provider_quota_exhausted" if outcome.error_kind == "quota_exhausted" else f"provider_{outcome.status}"
         return reason, {"provider": provider, "http_status": outcome.http_status,
                                               "error_kind": outcome.error_kind,

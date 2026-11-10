@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deixis.workflow.search import prisma_s
+from deixis.workflow.search import completion, prisma_s
 from deixis.workflow.screen import queue
 from deixis.workflow.run.store import Store
 
@@ -103,6 +103,9 @@ def _search(store: Store, research_id: str, revision: int, until: str) -> dict[s
         "planned": len(planned),
         "planned_not_sent": sum((q.get("provider_id"), q.get("query_text")) not in sent for q in planned),
         "chaining": {"ran": bool(chain), "requests": len(chain), "records_read": sum(g["rows_returned"] for g in chain)},
+        # A source searched in another's place after a failure is recorded and shown, so the box says what the
+        # completion arm observed and whether its request went out. None: this revision froze no arm.
+        "completion": completion.view(store, research_id, revision, until),
     }
 
 

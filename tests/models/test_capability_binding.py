@@ -46,7 +46,8 @@ def test_declared_capabilities_and_bindings():
         assert set(connector.capabilities) == expected.get(pid, set())
     assert not hasattr(registry, "UNBOUND_HELPERS") and not hasattr(facade, "UNBOUND_HELPERS")
     assert {pid: registry.CONNECTORS[pid].adapter_revision for pid in expected} == {
-        "openalex": 3, "semantic_scholar": 2, "crossref": 2, "scopus": 2}
+        # Semantic Scholar went to 3 with its snippet endpoint, whose search sends a second request of its own.
+        "openalex": 3, "semantic_scholar": 3, "crossref": 2, "scopus": 2}
     assert contract.CONTRACT_ID == "deixis.scholarly_connector.v1"
     check_coverage(FIXTURES)
 

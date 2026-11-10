@@ -507,9 +507,11 @@ def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versio
     by work. Every discovery run of the revision is read, so the same query sent again by a later run is the same
     list and votes once.
 
-    A focused query is marked, so the window can tell a record only that query found. The roles are read from the
-    search plan each of those runs froze, not only this run's: a query of an earlier run keeps the role it was
-    written with, and a run whose protocol holds no plan marks none.
+    A focused query is marked, so the window can tell a record only that query found; every snippet query of the
+    completion arm is marked the same way, for the same reason, whether it asks about a concept the plan named or
+    about the question's own terms. The roles are read from the search plan each of those runs
+    froze, not only this run's: a query of an earlier run keeps the role it was written with, and a run whose
+    protocol holds no plan marks none.
     """
     from deixis.providers import registry
     from deixis.workflow.search import search as fast_search
@@ -531,6 +533,10 @@ def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versio
             query = entry.get("query") or {}
             if query.get("role") == "focused":
                 focused.add((query["provider_id"], query["query_text"]))
+        # A snippet query asks for the same unmet part of the question as the focused query whose gate sent it, so a
+        # record only it found is marked the same way.
+        for spec in plan.get("s2_snippet") or []:
+            focused.add((spec["provider_id"], spec["query_text"]))
     hits = []
     for row in rows:
         work = (versions.get(row["source_version_id"]) or {}).get("work_id")

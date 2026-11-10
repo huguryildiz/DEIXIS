@@ -998,4 +998,36 @@ CREATE INDEX research_branches_from ON research_branches(from_research_id);
 -- it went on to answer. Written once, by whichever stage first sees the moment pass.
 ALTER TABLE fast_path_ledgers ADD COLUMN handover_passed_at TEXT;
 """),
+    31: Step("0031_provider_snippets.sql", False, """-- Passages a provider said it found, from Semantic Scholar's
+-- snippet search. Finding a passage is not reading the full text, so these are not `passages` rows: nothing here can
+-- become a cited anchor, an answer passage or a reading depth above what the work's own stored text reaches.
+-- `source_version_id` is the record the snippet's work was linked to, NULL where the second request could not reach
+-- it, so a snippet is never lost to a failure of that request.
+CREATE TABLE provider_snippets (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  search_run_id TEXT NOT NULL REFERENCES search_runs(id),
+  provider TEXT NOT NULL,
+  corpus_id TEXT NOT NULL,
+  source_version_id TEXT REFERENCES source_versions(id),
+  snippet_kind TEXT CHECK (snippet_kind IS NULL OR snippet_kind IN ('title', 'abstract', 'body')),
+  section TEXT,
+  text TEXT NOT NULL,
+  text_sha256 TEXT NOT NULL,
+  char_start INTEGER,
+  char_end INTEGER,
+  score REAL,
+  ref_mentions_json TEXT NOT NULL,
+  sentences_json TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  -- The same passage of the same work in the same request, so a retry of that request writes it once. SQLite
+  -- counts NULLs as different, so a passage the provider sent with no place of its own is kept as it came
+  -- instead of being collapsed into another one; a later request records its own rows, as every search does.
+  UNIQUE (search_run_id, corpus_id, text_sha256, snippet_kind, section, char_start)
+);
+
+CREATE INDEX provider_snippets_source ON provider_snippets(source_version_id);
+
+CREATE INDEX provider_snippets_research ON provider_snippets(research_id);
+"""),
 }

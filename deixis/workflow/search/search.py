@@ -12,7 +12,8 @@ from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex, query_compiler
-from deixis.workflow.search import english_question, search_page, search_plan, search_query, seed_match, user_plan
+from deixis.workflow.search import (completion, english_question, search_page, search_plan, search_query, seed_match,
+                                    user_plan)
 from deixis.workflow.run import fast_path
 from deixis.workflow.search.search_page import Page
 from deixis.workflow.search.expansion import queried_form
@@ -101,6 +102,13 @@ def sent_plan(body):
     if plan.get("s2_bulk"):
         sent.append(dict(plan["s2_bulk"], key="search:fast:s2_bulk", arm="s2_bulk", watchable=True,
                          compiled_index=plan["s2_bulk_index"]))
+    # The completion arm, when the run froze one: a planned request that goes out only if its own condition holds, so
+    # it is listed here (the PRISMA reader marks a cancelled step `not_sent`) and no watch follows it.
+    if plan.get("s2_relevance"):
+        sent.append(dict(plan["s2_relevance"], key=completion.RELEVANCE_KEY, arm="s2_relevance", watchable=False))
+    sent += [{k: v for k, v in spec.items() if k not in ("index", "focused")}
+             | {"key": completion.snippet_key(position), "arm": "s2_snippet", "watchable": False}
+             for position, spec in enumerate(plan.get("s2_snippet") or [])]
     return sent
 
 
@@ -196,9 +204,31 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
                      if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"
                      and "semantic_scholar" not in excluded), None)
     s2 = queries[s2_index] if s2_index is not None else None
+    # The completion arm's own records, taken off the keyword cap so that every arm of the measurement reads the same
+    # total. A run whose policy froze no arm, and one whose saved plan leaves the provider out, reserves nothing and
+    # keeps the whole cap.
+    arm = fast_path.completion(run["budget"])
+    completing = arm is not None and "semantic_scholar" not in excluded
+    reserved = arm["records"] if completing else 0
     return {"version": 1, "semantic": semantic_spec(scope, policy, seed_context),
             **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
-            "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (S2_RESERVED_RECORDS if deep else 0),
+            **({"completion": {"rule": arm["rule"], "arm": arm["arm"], "records": reserved,
+                               # Where each request of the arm is admitted: the fallback waits for the keyword pages
+                               # of the round, while a snippet request is admitted at its own concept's gate, which
+                               # is inside the loop. The frozen plan says both, so neither is read as the other.
+                               "order": {"relevance": "after_keywords", "snippet": "at_concept_gate"},
+                               "snippet_requests": arm["snippet_requests"] if completing else 0,
+                               **({"skipped": user_plan.EXCLUDED} if not completing else {})},
+                "s2_relevance": completion.relevance_spec(scope["question"], reserved) if completing else None,
+                # One snippet request per focused concept the plan named, each decided by that concept's own gate;
+                # the control arm, which sends on every question, also asks about the question's own terms where the
+                # plan named no concept. Quick writes neither, since its snippet budget is nothing.
+                "s2_snippet": completion.snippet_specs(
+                    queries, search_plan.main_terms(vocabulary) if vocabulary else [],
+                    arm["snippet_requests"] if completing else 0, reserved, arm["arm"])}
+               if arm is not None else {}),
+            "keywords": keyword,
+            "keyword_cap": policy["keyword_record_cap"] - (S2_RESERVED_RECORDS if deep else 0) - reserved,
             "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
             "s2_reserved": S2_RESERVED_RECORDS if deep else 0,
@@ -287,12 +317,14 @@ def stored_plan(store, run):
     return body["fast_path_search"]
 
 
-def cancel_step(store, run_id, key, kind, reason, statuses=("pending",)):
+def cancel_step(store, run_id, key, kind, reason, statuses=("pending",), extra=None):
     """Finish the step at `key` as cancelled with `reason` as its stop reason, when its status is one of `statuses`
-    (any status when None); it sent no request and brought no record."""
+    (any status when None); it sent no request and brought no record. `extra` is written into the step's output beside
+    the reason, for a step whose own record says more than why it stopped."""
     step = store.step(run_id, key, kind)
     if statuses is None or step["status"] in statuses:
-        store.finish_step(step["id"], "cancelled", error_code=reason, output={"stop_reason": reason, "result_count": 0})
+        store.finish_step(step["id"], "cancelled", error_code=reason,
+                          output={"stop_reason": reason, "result_count": 0} | (extra or {}))
     return step
 
 
@@ -583,6 +615,102 @@ async def execute(flow, run, scope, plan, retry_failed):
     # Its transport overlaps the first keyword page; writes keep admission order.
     shared["s2_task"] = asyncio.create_task(s2_page()) if plan["s2_reserved"] else None
     request_index += int(bool(plan["s2_reserved"]))
+    # The completion arm's own sender, with its own failure slot: an arm that is sent only when OpenAlex could not
+    # complete must not itself fail the search stage. Its failure is recorded on its own step and the run goes on with
+    # what it has.
+    arm_shared = {"failure": None, "s2_task": None}
+    arm_send = page_sender(flow, run, scope, plan, retry_failed, arm_shared)
+    # What the arm has read of its own reservation, counting what an earlier attempt of this run already read. Every
+    # request of the arm shares it, so a run where the fallback and its snippet queries all fire cannot read more
+    # records than the depth took off its keyword cap.
+    arm_spent = {"records": completion.spent(store, run_id, plan) if plan.get("completion") else 0}
+    snippet_specs = {spec["index"]: (position, spec) for position, spec in enumerate(plan.get("s2_snippet") or [])
+                     if spec["index"] is not None}
+
+    async def send_arm(spec, key, record):
+        """Send one request of the completion arm inside its own reservation, and record what it found."""
+        arm = plan["completion"]
+        room = arm["records"] - arm_spent["records"]
+        if room <= 0:
+            cancel_step(store, run_id, key, "provider_search:semantic_scholar", completion.BUDGET, None, record)
+            return
+        result, _ = await arm_send(spec, key, limit=min(spec["limit"], room), klass=0, index=request_index,
+                                   terminal="single_page")
+        if result is None:
+            cancel_step(store, run_id, key, "provider_search:semantic_scholar", completion.DEADLINE, None, record)
+            return
+        arm_spent["records"] += result.get("result_count") or 0
+        store.set_step_output(store.existing_step(run_id, key)["id"], result | record)
+        consumer = flow._fast_consumers.get(run_id)
+        if consumer:
+            consumer.notify()
+
+    async def snippet_for(index, covered):
+        """The snippet request of the concept whose focused query is at `index`, decided by that query's own gate."""
+        if index not in snippet_specs:
+            return
+        position, spec = snippet_specs[index]
+        key = completion.snippet_key(position)
+        existing = store.existing_step(run_id, key)
+        if existing is not None and existing["status"] != "pending":
+            return
+        arm_name = plan["completion"]["arm"]
+        record = {"arm": arm_name, "focused": spec["focused"],
+                  # What the gate read and decided, so the measurement can say whether the gate, and not the source,
+                  # is what kept the request from going out. The control arm records the same reading and sends.
+                  "gate": {"covered": covered, "query_index": index, "held": covered and arm_name != completion.ALWAYS}}
+        if covered and arm_name != completion.ALWAYS:
+            cancel_step(store, run_id, key, "provider_search:semantic_scholar", search_plan.GAP_ALREADY_MET,
+                        None, record)
+            return
+        await send_arm(spec, key, record)
+
+    async def resolve_completion(forced):
+        """Record what this run observed about its OpenAlex requests and, when that observation allows it, send the
+        fallback. Called at each ordinary end of the keyword loop, so the decision not to send is recorded too; a
+        stop the person asked for ends the loop by raising, and that run is resumed, not completed.
+
+        `forced` is the stage's own reason when the loop ended before the arm could be considered.
+        """
+        arm = plan.get("completion")
+        if arm is None:
+            return  # a run whose policy froze no arm has no step of its own and nothing to record
+        # The fallback is settled first, and so reads the reservation first: a run where OpenAlex brought nothing at
+        # all has more need of it than a passage query the control arm would send anyway.
+        key = completion.RELEVANCE_KEY
+        existing = store.existing_step(run_id, key)
+        # Settled already: a replayed run reads its own decision back instead of deciding again.
+        if existing is None or existing["status"] == "pending":
+            observed = completion.openalex_outcome(store, run_id)
+            record = {"openalex": observed, "arm": arm["arm"]}
+            reason = arm.get("skipped") or forced
+            if reason is None and observed["state"] != "technical_failure":
+                reason = completion.OPENALEX_ANSWERED
+            if reason is None and fast_path.past_deadline(store, run, "search"):
+                reason = completion.DEADLINE
+            if reason is None:
+                await send_arm(plan["s2_relevance"], key, record)
+            else:
+                cancel_step(store, run_id, key, "provider_search:semantic_scholar", reason, None, record)
+        # Each snippet request still open ends here: the question's own request of the control arm is sent now, since
+        # no concept's gate decides it, and a concept's request whose gate the loop never reached stops with the
+        # stage's own reason. Either way no step of the arm is left pending and the decision is readable.
+        for position, spec in enumerate(plan.get("s2_snippet") or []):
+            key = completion.snippet_key(position)
+            step = store.existing_step(run_id, key)
+            if step is not None and step["status"] != "pending":
+                continue
+            reason = arm.get("skipped") or forced
+            if reason is None and fast_path.past_deadline(store, run, "search"):
+                reason = completion.DEADLINE
+            record = {"arm": arm["arm"], "focused": spec["focused"],
+                      "gate": {"covered": None, "query_index": spec["index"], "held": reason is not None}}
+            if spec["index"] is None and reason is None:
+                await send_arm(spec, key, record)
+                continue
+            cancel_step(store, run_id, key, "provider_search:semantic_scholar",
+                        reason or completion.DEADLINE, None, record)
+
     specs = plan["keywords"]
     states = {s["index"]: {"number": 0, "cursor": FIRST_PAGE, "before": 0, "total": None, "ended": False} for s in specs}
     # The main Boolean query's own pages: the plan the model wrote, or the person's saved one. A record only
@@ -609,13 +737,18 @@ async def execute(flow, run, scope, plan, retry_failed):
                 reason = "deadline" if fast_path.past_deadline(store, run, "search") else "record_cap" if slots >= plan["keyword_cap"] else None
                 if reason and not written:
                     close_queries(flow, run, specs, reason)
+                    await resolve_completion(reason)
                     return shared["failure"]
                 if focused and state["number"] == 0 and not written:
                     # The recorded condition, read once and only for a query no page of which has been sent: a
                     # concept the main query's own records already carry is no gap, so the depth's plan is not spent
                     # on it. More terms in the plan never send a query by themselves, and a replayed run reads its
                     # own first page back instead of deciding again.
-                    if search_plan.main_query_covers(store, run, spec["query"]["focused"]["term"], main_indexes):
+                    covered = search_plan.main_query_covers(store, run, spec["query"]["focused"]["term"], main_indexes)
+                    # The completion arm's snippet request reads the same gate: a part of the question the main
+                    # query's own records already carry is no gap, for either query.
+                    await snippet_for(spec["index"], covered)
+                    if covered:
                         cancel_step(store, run_id, key, f"provider_search:{spec['query']['provider_id']}",
                                     search_plan.GAP_ALREADY_MET)
                         state["ended"] = True
@@ -632,6 +765,7 @@ async def execute(flow, run, scope, plan, retry_failed):
                 if result is None:
                     flow._checkpoint(run_id, run["scope_revision"])
                     close_queries(flow, run, specs, "deadline")
+                    await resolve_completion("deadline")
                     return shared["failure"]
                 slots += reserved
                 consumer = flow._fast_consumers.get(run_id)
@@ -648,6 +782,7 @@ async def execute(flow, run, scope, plan, retry_failed):
             close_queries(flow, run, specs, "record_cap")
         elif fast_path.past_deadline(store, run, "search"):
             close_queries(flow, run, specs, "deadline")
+        await resolve_completion(None)
     finally:
         if shared["s2_task"] and not shared["s2_task"].done():
             await shared["s2_task"]

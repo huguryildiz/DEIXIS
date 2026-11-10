@@ -2161,7 +2161,7 @@ def create_app(
             budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
             budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(
                 budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS,
-                method=settings.search_method, deep_screening=deep,
+                method=settings.search_method, deep_screening=deep, completion_arm=settings.completion_arm,
                 lexical_exclusion=settings.lexical_gate == "on",
                 candidate_embedding=settings.effective_candidate_embedding() == "on"),
                                                         store.research(research_id)["intent"])

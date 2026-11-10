@@ -70,6 +70,11 @@ class Settings:
     # until M1's gates pass; `m1` (chain admission v2) for the M1 measurement arm;
     # `m2` for the arm whose plan the model writes from the first semantic page.
     search_method: str = "legacy"
+    # Which Semantic Scholar completion arm a discovery run is queued with, frozen in its fast-path policy
+    # (`fast_path.COMPLETION_ARMS`): `conditional` is the product's behaviour and sends a request only in the state the
+    # design names; `always` sends the snippet query on every question and is a measurement arm; `off` freezes no arm.
+    # This dataclass stays `off` so a Settings built by hand in a test queues no extra request.
+    completion_arm: str = "off"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
     # equation reader (Marker) is not installed (slice 22). `load_settings` defaults to `auto`, which turns
     # the route on (POSIX only); this dataclass stays `off` so tests that build Settings by hand request no source. With
@@ -186,6 +191,9 @@ def load_settings() -> Settings:
     search_method = os.environ.get("DEIXIS_SEARCH_METHOD", "legacy")
     if search_method not in ("legacy", "m1", "m2"):
         raise ValueError("DEIXIS_SEARCH_METHOD must be legacy, m1 or m2")
+    completion_arm = os.environ.get("DEIXIS_COMPLETION_ARM", "conditional")
+    if completion_arm not in ("off", "conditional", "always"):
+        raise ValueError("DEIXIS_COMPLETION_ARM must be off, conditional or always")
     benchmark_list_barrier = os.environ.get("DEIXIS_BENCHMARK_LIST_BARRIER", "off")
     if benchmark_list_barrier not in ("on", "off"):
         raise ValueError("DEIXIS_BENCHMARK_LIST_BARRIER must be on or off")
@@ -204,6 +212,7 @@ def load_settings() -> Settings:
         study_table=study_table,
         fulltext_adjudication=fulltext_adjudication,
         search_method=search_method,
+        completion_arm=completion_arm,
         arxiv_source=arxiv_source,
         benchmark_list_barrier=benchmark_list_barrier == "on",
         lexical_gate=lexical_gate,

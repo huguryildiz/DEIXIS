@@ -46,11 +46,14 @@ def deny_network(*args, **kwargs):
 
 
 def response_spec(provider, endpoint, page=1, fetch=False):
-    stem = "pubmed_fetch" if fetch else provider + ("_bulk" if endpoint == "bulk" else "")
+    stem = "pubmed_fetch" if fetch else provider + ("_bulk" if endpoint == "bulk" else
+                                                    "_snippet" if endpoint == "snippet" else "")
     suffix = "xml" if fetch or provider == "arxiv" else "json"
     # This is a closed script derived from checked-in native response files, not a fallback transport.
     urls = {"openalex": registry.openalex.WORKS_URL, "biorxiv": registry.openalex.WORKS_URL,
-            "semantic_scholar": semantic_scholar.BULK_URL if endpoint == "bulk" else semantic_scholar.SEARCH_URL,
+            "semantic_scholar": (semantic_scholar.SNIPPET_URL if endpoint == semantic_scholar.SNIPPET_ENDPOINT
+                                 else semantic_scholar.BULK_URL if endpoint == "bulk"
+                                 else semantic_scholar.SEARCH_URL),
             "crossref": registry.crossref.WORKS_URL, "arxiv": arxiv.QUERY_URL,
             "pubmed": registry.pubmed.FETCH_URL if fetch else registry.pubmed.SEARCH_URL,
             "ieee_xplore": registry.ieee_xplore.SEARCH_URL, "scopus": registry.scopus.SEARCH_URL,

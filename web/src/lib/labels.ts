@@ -34,6 +34,32 @@ export const lateRevisionReasons: Record<string, string> = {
   answer_run_completed: 'The late answer run completed without publishing a revision.',
 }
 
+// Why OpenAlex could not complete, named by the status the search run recorded: the sentence says what happened
+// rather than the catch-all "could not be reached", which would be wrong for a refused quota or an unreadable answer.
+const openAlexFailures: Record<string, string> = {
+  rate_limited: 'OpenAlex refused any more requests for now',
+  timeout: 'OpenAlex did not answer in time',
+  parse_error: 'OpenAlex answered in a form DEIXIS could not read',
+  auth_required: 'OpenAlex did not accept the key',
+  entitlement_missing: 'OpenAlex did not allow the request',
+  partial: 'OpenAlex answered only in part',
+  failed: 'OpenAlex could not answer',
+}
+
+// A fixed order, so a run whose requests failed in more than one way always reads the same way.
+const OPENALEX_FAILURE_ORDER = ['auth_required', 'entitlement_missing', 'rate_limited', 'timeout', 'parse_error', 'partial', 'failed']
+
+export function openAlexFailure(failures: Record<string, number> | null | undefined): string {
+  const named = OPENALEX_FAILURE_ORDER.find(status => (failures ?? {})[status])
+  return t(named ? openAlexFailures[named] : 'OpenAlex could not answer')
+}
+
+// A request that went out and did not answer is not a request that brought records: the two states are written
+// apart, so the box never says a search returned nothing when the search itself was refused.
+export function completionAnswered(status: string | null | undefined): boolean {
+  return status === 'completed' || status === 'zero_results'
+}
+
 export const serviceErrors: Record<string, string> = {
   quota_exhausted: '{service} usage quota is used up.',
   rate_limited: '{service} is receiving too many requests right now.',

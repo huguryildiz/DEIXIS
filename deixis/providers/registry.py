@@ -37,6 +37,11 @@ class Endpoint:
     page_gap: float | None = None
     query_syntax: QuerySyntax | None = None
     retry: dict[str, Any] | None = None  # this endpoint's own retry fields over the connector's
+    # Requests one search of this endpoint may send, over the connector's own count: Semantic Scholar's snippet
+    # search looks the works its snippets came from up in a second request. It is an upper bound, not a promise — a
+    # snippet search that finds nothing sends no lookup — and every reader that goes through `reading()` sees it, so
+    # the request allowance and the quota reserve are both counted for the endpoint the query names.
+    requests_per_search: int | None = None
 
 
 @dataclass(frozen=True)
@@ -159,12 +164,18 @@ CONNECTORS = {c.provider_id: c for c in (
     # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. A search query
     # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token.
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
-              host=_host(semantic_scholar.SEARCH_URL), adapter_revision=2,
+              host=_host(semantic_scholar.SEARCH_URL), adapter_revision=3,
               capabilities={"doi_lookup": CapabilityBinding(_s2_lookup, 500)},
               sw_query={"endpoint": semantic_scholar.BULK_ENDPOINT, "sort": semantic_scholar.BULK_SORT},
               endpoints={semantic_scholar.BULK_ENDPOINT: Endpoint("cursor", semantic_scholar.BULK_MAX_RESULTS,
                                                                total="estimated", options=("sort",),
-                                                               query_syntax=QuerySyntax("bulk"))},
+                                                               query_syntax=QuerySyntax("bulk")),
+                         # Passages this provider found, and the works they came from: one search, then one batch
+                         # lookup. The reply is one page and names no cursor, and its `provider_total` is how many
+                         # snippets came back, not an estimate of a result set.
+                         semantic_scholar.SNIPPET_ENDPOINT: Endpoint(
+                             "single_page", semantic_scholar.SNIPPET_MAX_RESULTS, requests_per_search=2,
+                             query_syntax=QuerySyntax("plain"))},
               retry={"unstated_wait": semantic_scholar.UNSTATED_RATE_LIMIT_WAIT,
                      "min_interval": pacing.SEMANTIC_SCHOLAR_PACER.interval_seconds,
                      "shared_gate": "SEMANTIC_SCHOLAR_PACER"},
@@ -256,7 +267,9 @@ def reading(query: dict[str, Any]) -> Connector:
     if endpoint is None:
         return connector
     shape = connector.endpoints[endpoint]
-    return replace(connector, paging=shape.paging, max_results=shape.max_results, max_reachable=shape.max_reachable)
+    return replace(connector, paging=shape.paging, max_results=shape.max_results, max_reachable=shape.max_reachable,
+                   requests_per_search=shape.requests_per_search if shape.requests_per_search is not None
+                   else connector.requests_per_search)
 
 
 def endpoint_options(query: dict[str, Any]) -> dict[str, Any]:

@@ -48,6 +48,14 @@ FULLTEXT_SEARCH_RULE = "fulltext_search_v1"
 # question's submission, so the queue and any pause are inside them. Frozen in the policy under this name; a run
 # queued before the rule carries no handover and keeps its stage deadlines alone.
 HANDOVER_RULE = "answer_handover_v1"
+# Completing OpenAlex with Semantic Scholar: three observable states, three actions. The abstract lookup of a work
+# whose DOI is known runs as it always has; the other two are this arm. `conditional` sends a request only when the
+# state the design names is observed — OpenAlex could not complete for a technical reason, or a part of the question
+# the plan named is not met in what the main query found. `always` sends the snippet query on every question and is a
+# measurement arm only. `off` freezes nothing, so a run of that arm carries the policy frozen before the rule, hash
+# included.
+COMPLETION_RULE = "s2_completion_v1"
+COMPLETION_ARMS = ("off", "conditional", "always")
 # A run in one of these states will send nothing more, so whether it met its target is settled.
 TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
@@ -69,6 +77,8 @@ class Mode(NamedTuple):
     rerank_point: str  # "before_list": the list waits for the reranker; "after_list": it is frozen first (Quick)
     file_asks: int  # the most works this depth asks the person for a file for, over the research's whole life
     fulltext_searches: int  # the most works this depth sends an open-web full-text search for, over the same life
+    completion_records: int  # records the completion arm may read, taken off the keyword cap while the arm is frozen
+    snippet_requests: int  # snippet queries this depth may send; Quick names no focused concept, so none
 
 
 # The stage seconds are the delivery-time targets split across the stages: the four pre-answer stages sum to the
@@ -83,14 +93,20 @@ MODES = {
                   # Quick shows its list without waiting for the reranker, so the reranker does not order that list:
                   # it reads a small group after the list is frozen, and the run keeps its scores to be measured.
                   # Quick asks for no file at all: it is the depth that answers from what it can reach itself.
-                  rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0),
+                  # Quick sends no snippet query: it writes no focused concept, so there is no recorded gap to ask
+                  # about, and its first list waits for no extra search. The records are for the fallback alone,
+                  # which is the only thing that stands between a technical OpenAlex failure and an empty Quick run.
+                  rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0,
+                  completion_records=50, snippet_requests=0),
     "standard": Mode((8, 12, 17, 33, 50), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
                      backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
-                     rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3),
+                     rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3,
+                     completion_records=100, snippet_requests=1),
     "detailed": Mode((18, 36, 48, 108, 90), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
                      backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
                      # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
-                     rerank_pool=8.0, rerank_point="before_list", file_asks=5, fulltext_searches=5),
+                     rerank_pool=8.0, rerank_point="before_list", file_asks=5, fulltext_searches=5,
+                     completion_records=200, snippet_requests=2),
 }
 
 
@@ -123,7 +139,8 @@ def elapsed(start: str, end: str) -> int:
 
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
                   method: str = "legacy", deep_screening: bool = False,
-                  lexical_exclusion: bool = True, candidate_embedding: bool = True) -> dict[str, Any]:
+                  lexical_exclusion: bool = True, candidate_embedding: bool = True,
+                  completion_arm: str = "off") -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -140,9 +157,16 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
 
     `lexical_exclusion` off records that the abstract stage may not close a record for naming neither gate block
     (`flow._abstract_code_stage`); on adds nothing and leaves the policy as it was. The arm is frozen here, so a
-    resumed run screens the way it was queued and the two arms of the measurement stay apart."""
+    resumed run screens the way it was queued and the two arms of the measurement stay apart.
+
+    `completion_arm` is which Semantic Scholar completion arm this run may send (`COMPLETION_ARMS`), and it is the
+    default here so that a policy frozen without it is byte for byte the one frozen before the rule, hash included:
+    the absence of the key **is** the `off` arm, and `completion()` reads it that way. The other two arms name
+    themselves, the records the arm may read and how many snippet queries the depth may send."""
     if method not in SEARCH_METHODS:
         raise ValueError(f"unknown search method {method!r}")
+    if completion_arm not in COMPLETION_ARMS:
+        raise ValueError(f"unknown completion arm {completion_arm!r}")
     mode = MODES[effort]
     bases = mode.stage_seconds
     policy = {
@@ -183,6 +207,11 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         from deixis.domain.rules import ABSTRACT_BATCH
         policy["deep_screening"] = {"rule": DEEP_SCREENING_RULE, "first": mode.read_top + 1,
                                     "last": mode.read_top + DEEP_SCREENING_WORKS, "runs": 1, "batch": ABSTRACT_BATCH}
+    if completion_arm != "off":
+        # The records come off the keyword cap (`search.build_plan`), so every arm of the measurement reads the same
+        # total; what the arm did not spend is recorded, which is how the pilot sees the cost of the reservation.
+        policy["completion"] = {"rule": COMPLETION_RULE, "arm": completion_arm, "records": mode.completion_records,
+                                "snippet_requests": mode.snippet_requests}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
     if not candidate_embedding:
@@ -257,6 +286,12 @@ def enabled(budget: dict[str, Any]) -> bool:
 def search_method(budget: dict[str, Any]) -> str:
     """The search method a run was queued with: `legacy` for every policy that does not name one."""
     return (budget.get("fast_path") or {}).get("search_method", "legacy")
+
+
+def completion(budget: dict[str, Any]) -> dict[str, Any] | None:
+    """The Semantic Scholar completion arm this run froze, or None for a run of the `off` arm and for every run
+    queued before the rule."""
+    return (budget.get("fast_path") or {}).get("completion")
 
 
 def candidate_embedding_on(budget: dict[str, Any]) -> bool:

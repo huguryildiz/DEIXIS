@@ -2342,6 +2342,1407 @@
           ]
         ]
       }
+    },
+    {
+      "endpoint_id": "snippet",
+      "body": {
+        "data": [
+          {
+            "paper": {
+              "corpusId": 42,
+              "title": "SYNTHETIC passage work"
+            },
+            "score": 0.5,
+            "snippet": {
+              "annotations": {
+                "refMentions": [
+                  {
+                    "end": 14,
+                    "matchedPaperCorpusId": 7,
+                    "start": 12
+                  }
+                ],
+                "sentences": [
+                  {
+                    "end": 32,
+                    "start": 10
+                  }
+                ]
+              },
+              "section": "Results",
+              "snippetKind": "body",
+              "snippetOffset": {
+                "end": 32,
+                "start": 10
+              },
+              "text": "SYNTHETIC passage text"
+            }
+          }
+        ],
+        "retrievalVersion": "SYNTHETIC-1"
+      },
+      "fetch_url": "https://api.semanticscholar.org/graph/v1/paper/batch",
+      "fetch_method": "POST",
+      "fetch_body": [
+        {
+          "abstract": "SYNTHETIC evidence",
+          "authors": [
+            {
+              "name": "Synthetic Author"
+            }
+          ],
+          "corpusId": 42,
+          "externalIds": {
+            "DOI": "10.9999/synthetic.1"
+          },
+          "paperId": "synthetic1",
+          "title": "SYNTHETIC passage work",
+          "year": 2021
+        }
+      ],
+      "max_reachable": 25,
+      "request_params": {
+        "first_page": [
+          [
+            "fields",
+            "snippet.text,snippet.snippetKind,snippet.section,snippet.snippetOffset,snippet.annotations.refMentions,snippet.annotations.sentences"
+          ],
+          [
+            "limit",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ]
+        ],
+        "kill_search": [
+          [
+            "fields",
+            "snippet.text,snippet.snippetKind,snippet.section,snippet.snippetOffset,snippet.annotations.refMentions,snippet.annotations.sentences"
+          ],
+          [
+            "limit",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ]
+        ],
+        "next_page": [
+          [
+            "fields",
+            "snippet.text,snippet.snippetKind,snippet.section,snippet.snippetOffset,snippet.annotations.refMentions,snippet.annotations.sentences"
+          ],
+          [
+            "limit",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ]
+        ]
+      },
+      "cases": [
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              }
+            ],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "provider_total": 1,
+            "records": [
+              {
+                "abstract_origin": "provider_semantic_scholar",
+                "doi": "10.9999/synthetic.1",
+                "provider_record_id": "synthetic1"
+              }
+            ],
+            "status": "completed"
+          },
+          "group": 3,
+          "name": "positive"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              }
+            ],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 4,
+          "name": "unpaged"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              }
+            ],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "cursor": "*",
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 4,
+          "name": "first_page"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              }
+            ],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "cursor": "1",
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 4,
+          "name": "second_page"
+        },
+        {
+          "body": {
+            "data": [],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "cursor": "*",
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "zero_results"
+          },
+          "group": 4,
+          "name": "empty"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              }
+            ],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "cursor": "*",
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 4,
+          "limit": 2,
+          "name": "short_page"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              },
+              {
+                "paper": {
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC second passage"
+                }
+              }
+            ]
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 3,
+          "limit": 2,
+          "name": "identity_missing"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              },
+              {
+                "paper": {
+                  "corpusId": null,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC second passage"
+                }
+              }
+            ]
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 3,
+          "limit": 2,
+          "name": "identity_null"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              },
+              {
+                "paper": {
+                  "corpusId": "",
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC second passage"
+                }
+              }
+            ]
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 3,
+          "limit": 2,
+          "name": "identity_empty"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              },
+              {
+                "paper": {
+                  "corpusId": 17,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC second passage"
+                }
+              }
+            ]
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 3,
+          "limit": 2,
+          "name": "identity_number"
+        },
+        {
+          "body": {
+            "data": [
+              {
+                "paper": {
+                  "corpusId": 42,
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC passage text"
+                }
+              },
+              {
+                "paper": {
+                  "corpusId": {
+                    "SYNTHETIC": "id"
+                  },
+                  "title": "SYNTHETIC passage work"
+                },
+                "score": 0.5,
+                "snippet": {
+                  "annotations": {
+                    "refMentions": [
+                      {
+                        "end": 14,
+                        "matchedPaperCorpusId": 7,
+                        "start": 12
+                      }
+                    ],
+                    "sentences": [
+                      {
+                        "end": 32,
+                        "start": 10
+                      }
+                    ]
+                  },
+                  "section": "Results",
+                  "snippetKind": "body",
+                  "snippetOffset": {
+                    "end": 32,
+                    "start": 10
+                  },
+                  "text": "SYNTHETIC second passage"
+                }
+              }
+            ]
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 1,
+            "status": "completed"
+          },
+          "group": 3,
+          "limit": 2,
+          "name": "identity_object"
+        },
+        {
+          "body": [],
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "root_array"
+        },
+        {
+          "body": null,
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "root_null"
+        },
+        {
+          "body": "SYNTHETIC root",
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "root_string"
+        },
+        {
+          "body": 17,
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "root_number"
+        },
+        {
+          "body": {
+            "data": null,
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "zero_results"
+          },
+          "group": 5,
+          "name": "container_null"
+        },
+        {
+          "body": {
+            "data": {},
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "container_object"
+        },
+        {
+          "body": {
+            "data": "SYNTHETIC",
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "container_string"
+        },
+        {
+          "body": {
+            "data": 17,
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "container_number"
+        },
+        {
+          "body": {
+            "data": [
+              17
+            ],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "container_item_number"
+        },
+        {
+          "body": {
+            "data": [
+              "SYNTHETIC"
+            ],
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "container_item_string"
+        },
+        {
+          "body": {},
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "zero_results"
+          },
+          "group": 5,
+          "name": "empty_object"
+        },
+        {
+          "body": {
+            "retrievalVersion": "SYNTHETIC-1"
+          },
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "zero_results"
+          },
+          "group": 5,
+          "name": "absent_container"
+        },
+        {
+          "body": "<SYNTHETIC not json",
+          "expected": {
+            "next_cursor": null,
+            "record_count": 0,
+            "status": "parse_error"
+          },
+          "group": 5,
+          "name": "non_json_200"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "http_status": 400,
+          "mode": "configured",
+          "name": "http_400",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "record_count": 0,
+            "retries": 0,
+            "status": "entitlement_missing"
+          },
+          "group": 5,
+          "http_status": 401,
+          "mode": "configured",
+          "name": "http_401",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "record_count": 0,
+            "retries": 0,
+            "status": "entitlement_missing"
+          },
+          "group": 5,
+          "http_status": 403,
+          "mode": "configured",
+          "name": "http_403",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "http_status": 500,
+          "mode": "configured",
+          "name": "http_500",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "http_status": 503,
+          "mode": "configured",
+          "name": "http_503",
+          "stage": "search"
+        },
+        {
+          "exception": "connect",
+          "expected": {
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "mode": "configured",
+          "name": "connect",
+          "stage": "search"
+        },
+        {
+          "exception": "read_timeout",
+          "expected": {
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0,
+            "status": "timeout"
+          },
+          "group": 5,
+          "mode": "configured",
+          "name": "read_timeout",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 2,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_unstated",
+          "retry_after": null,
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 2,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_one",
+          "retry_after": "1",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_long",
+          "retry_after": "99",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_malformed",
+          "retry_after": "soon",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_negative",
+          "retry_after": "-5",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_nan",
+          "retry_after": "nan",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_inf",
+          "retry_after": "inf",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "rate_minus_inf",
+          "retry_after": "-inf",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "quota_exhausted",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "configured",
+          "name": "quota",
+          "quota": true,
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "http_status": 400,
+          "mode": "keyless",
+          "name": "http_400_keyless",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "record_count": 0,
+            "retries": 0,
+            "status": "auth_required"
+          },
+          "group": 5,
+          "http_status": 401,
+          "mode": "keyless",
+          "name": "http_401_keyless",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "record_count": 0,
+            "retries": 0,
+            "status": "auth_required"
+          },
+          "group": 5,
+          "http_status": 403,
+          "mode": "keyless",
+          "name": "http_403_keyless",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "http_status": 500,
+          "mode": "keyless",
+          "name": "http_500_keyless",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "http_status": 503,
+          "mode": "keyless",
+          "name": "http_503_keyless",
+          "stage": "search"
+        },
+        {
+          "exception": "connect",
+          "expected": {
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0,
+            "status": "failed"
+          },
+          "group": 5,
+          "mode": "keyless",
+          "name": "connect_keyless",
+          "stage": "search"
+        },
+        {
+          "exception": "read_timeout",
+          "expected": {
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0,
+            "status": "timeout"
+          },
+          "group": 5,
+          "mode": "keyless",
+          "name": "read_timeout_keyless",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 2,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_unstated_keyless",
+          "retry_after": null,
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 2,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_one_keyless",
+          "retry_after": "1",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_long_keyless",
+          "retry_after": "99",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_malformed_keyless",
+          "retry_after": "soon",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_negative_keyless",
+          "retry_after": "-5",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_nan_keyless",
+          "retry_after": "nan",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_inf_keyless",
+          "retry_after": "inf",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "rate_limited",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "rate_minus_inf_keyless",
+          "retry_after": "-inf",
+          "stage": "search"
+        },
+        {
+          "echo": true,
+          "expected": {
+            "delivery_class": "rejected_not_executed",
+            "error_kind": "quota_exhausted",
+            "http_status": 429,
+            "record_count": 0,
+            "retries": 0,
+            "status": "rate_limited"
+          },
+          "group": 5,
+          "http_status": 429,
+          "mode": "keyless",
+          "name": "quota_keyless",
+          "quota": true,
+          "stage": "search"
+        }
+      ]
     }
   ],
   "identity_shapes": [

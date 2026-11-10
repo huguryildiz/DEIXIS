@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronRight, FileText } from 'lucide-react'
 import { api, type Answer, type AnswerMethod } from '../lib/api'
 import { t, uiLocale } from '../lib/i18n'
-import { providerName } from '../lib/labels'
+import { completionAnswered, openAlexFailure, providerName } from '../lib/labels'
 import { AnswerFlowNote } from './FlowReport'
 import './MethodBox.css'
 
@@ -43,6 +43,9 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
         : <>{queries === 0 ? t('No search was recorded for this question revision.')
         : <>{t(queries === 1 ? 'One search was sent to {providers}' : '{n} searches were sent to {providers}', { n: num(queries), providers: providers.join(', ') })}{search.chaining.ran ? t(', and citation chaining ran.') : t('; citation chaining did not run.')}</>}{' '}
       {followups && followups.length > 0 && <>{t(followups.length === 1 ? 'One follow-up search ran before this answer.' : '{n} follow-up searches ran before this answer.', { n: num(followups.length) })}{' '}</>}
+      {search.completion?.sent && <>{completionAnswered(search.completion.request_status)
+        ? t('{reason}, so Semantic Scholar was searched in its place and returned {n} records.', { reason: openAlexFailure(search.completion.failures), n: num(search.completion.records ?? 0) })
+        : t('{reason}, so Semantic Scholar was searched in its place, and that request did not answer either.', { reason: openAlexFailure(search.completion.failures) })}{' '}</>}
       {readingsUnknown ? t('How many abstracts and full texts the model read was not recorded when this answer started.')
         : <>{selection.abstract_read !== null && selection.abstract_read > 0
         ? <>{found !== null ? t('The model read the abstracts of {read} of {found} works against the criterion', { read: num(selection.abstract_read), found: num(found) }) : t('The model read the abstracts of {read} works against the criterion', { read: num(selection.abstract_read) })}

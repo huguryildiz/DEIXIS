@@ -150,6 +150,10 @@ class SearchOutcome:
     error_kind: str | None = None
     # UI classification is independent of the connector's quota-only retry contract.
     service_kind: str | None = None
+    # Passages a provider returned beside the records (Semantic Scholar's snippet search). Finding a passage is not
+    # reading the full text, so these are never stored as passages of a source version: they are kept as what the
+    # provider said it found, with the record they belong to when one was reached. None: this endpoint returns none.
+    snippets: list[dict[str, Any]] | None = None
 
 
 def page_offset(cursor: str | None) -> int:

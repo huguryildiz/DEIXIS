@@ -254,9 +254,19 @@ export type Run = {
 // `given` supplied with the run by a measurement. `planned` counts the requests the frozen plan holds — not what
 // was sent — by what each can do with the bound: `applied` carries it with the request, `not_supported` its route
 // takes none so it goes out unbounded, `not_applied` a plan frozen before the years were read.
+// `records` counts what this run's own requests decided, by where each record's own year stands to those years;
+// `outside_span` how many of those decisions were negative, and `set_aside` how many of the versions they name are
+// really set aside, which keeps them as records of the research and out of this revision's candidates, so nothing
+// ranks, screens or reads them. The two differ where a negative decision does not stand: a reply after the stage
+// cutoff, a version a later request found inside the span, and a record the person included. `by_provider` is the
+// same numbers per provider with the bound its own requests carried. `year_disagreed` counts decisions whose
+// provider named a year the record does not store.
 export type DateScope = {
   rule: string; from_year: number | null; to_year: number | null; basis: string; origin: 'question' | 'given'
   planned: Partial<Record<'applied' | 'not_supported' | 'not_applied', number>>
+  records: Record<'in_span' | 'before_span' | 'after_span' | 'year_unknown', number>
+  outside_span: number; set_aside: number; year_disagreed: number
+  by_provider: Record<string, { records: number; outside_span: number; set_aside: number; date_bound: string[] }>
 }
 // One row per source the routing table names. state: `searched` a reply came back (a search that found nothing
 // answered too), `planned` the plan held the request and nothing was recorded for it, `request_failed` its request

@@ -68,7 +68,7 @@ def dispatch(records=(), *, status='completed', raw=None, error_kind=None):
 def scripted(monkeypatch, handler):
     async def back(provider, http, operation_ids, ids, *args):
         return await handler('backward', ids)
-    async def forward(provider, http, oid, cursor, limit, *args):
+    async def forward(provider, http, oid, cursor, limit, *args, **kwargs):
         assert cursor == '*'
         return await handler('forward', oid)
     monkeypatch.setattr(facade, 'dispatch_lookup', back)

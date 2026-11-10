@@ -474,6 +474,7 @@ EMPTY_BECAUSE = {
         "citation_drafts", "citation_markers", "citation_bib_entries", "citation_pairs", "citation_checks")},
     **{table: "written only by a statement check, which only a research with the statement intent runs"
        for table in ("statement_checks", "statement_check_items")},
+    "date_scope_admissions": "written only by a run bounded to a span, and the builder's question names no years",
     "equation_model_requests": "written only by the answer model's equation reading, which needs a default answer model that accepts images; none is set",
     "fast_path_background_fetches": "written by fast-path background PDF fetches; full-text fetch is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",

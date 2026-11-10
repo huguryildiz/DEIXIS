@@ -6154,6 +6154,7 @@ export const tr: Record<string, string> = {
   'Bounded to {years}': '{years} ile sınırlandı',
   'Bounded to {years}, from “{basis}” in your question': '{years} ile sınırlandı, sorunuzdaki “{basis}” ifadesinden',
   '{n} planned requests use routes that take no year bound': 'planlanan {n} istek, yıl sınırı kabul etmeyen yolları kullanıyor',
+  '{n} records set aside for their year': 'yılı nedeniyle {n} kayıt ayrı tutuldu',
   '{year} onwards': '{year} ve sonrası',
   'up to {year}': '{year} ve öncesi',
   'this depth sends no sub-topic search': 'bu derinlik alt başlık araması göndermiyor',

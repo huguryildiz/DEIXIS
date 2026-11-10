@@ -23,9 +23,10 @@ from pathlib import Path
 import httpx
 
 try:
-    from . import harness, litsearch
+    from . import bioasq, harness, litsearch
     from .bioasq_run import Deixis, done_ids, measured_run, read_jsonl, secret, write_query
 except ImportError:
+    import bioasq
     import harness
     import litsearch
     from bioasq_run import Deixis, done_ids, measured_run, read_jsonl, secret, write_query
@@ -246,7 +247,7 @@ def score(args):
             if row.get('error'):
                 per[q['id']] = None
                 continue
-            records = [r for r in row['records'] if r.get('year') is None or r['year'] <= q['year']]
+            records = [r for r in row['records'] if bioasq.in_time(r, q['year'])]  # the shared year rule
             per[q['id']] = litsearch.recall(q, records, meta)
         systems[path.stem] = per
     ids = sorted({c for q in questions for c in q['gold']})

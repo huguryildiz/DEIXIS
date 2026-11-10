@@ -1,9 +1,9 @@
--- The whole library schema at version 32. A new library is made from this file in one transaction and
--- records versions 1 to 32; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 33. A new library is made from this file in one transaction and
+-- records versions 1 to 33; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 32
+-- deixis:schema-version 33
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -165,7 +165,7 @@ CREATE TABLE search_runs (
   error_json TEXT,
   raw_payload_path TEXT,
   retrieved_at TEXT NOT NULL
-, scope_revision INTEGER, payload_sha256 TEXT, page_number INTEGER, read_limit INTEGER, read_total INTEGER, stop_reason TEXT, unread_count INTEGER, connector_json TEXT, sort TEXT, request_class INTEGER, request_index INTEGER, returned_count INTEGER, works_new INTEGER, works_found_removed INTEGER);
+, scope_revision INTEGER, payload_sha256 TEXT, page_number INTEGER, read_limit INTEGER, read_total INTEGER, stop_reason TEXT, unread_count INTEGER, connector_json TEXT, sort TEXT, request_class INTEGER, request_index INTEGER, returned_count INTEGER, works_new INTEGER, works_found_removed INTEGER, date_bound TEXT);
 
 CREATE TABLE candidates (
   id TEXT PRIMARY KEY,
@@ -2649,3 +2649,31 @@ CREATE TABLE provider_snippets (
 CREATE INDEX provider_snippets_source ON provider_snippets(source_version_id);
 
 CREATE INDEX provider_snippets_research ON provider_snippets(research_id);
+
+-- What the run's own date scope decided about each record one request wrote, written in that request's
+-- transaction instead of derived later. `year` is the year stored on the version after that write, which is the
+-- year the ranking, the screening and the person's own screen show; `sent_year` is the year this arriving record
+-- named when it is not that one, so a disagreement between two providers is kept rather than resolved silently.
+-- `year_eligible` is the year verdict alone, and `late` marks a reply written after the stage cutoff,
+-- which admits nothing: its verdict is recorded but never rescues a version an earlier request set
+-- aside. `became_candidate` says whether this identity became the candidate,
+-- which is a different fact: an eligible record of a work that already has a candidate is found again as that
+-- candidate. Rows exist only for a run bounded to a span; an unbounded run writes none.
+CREATE TABLE date_scope_admissions (
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  scope_revision INTEGER NOT NULL,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  search_run_id TEXT NOT NULL REFERENCES search_runs(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  year INTEGER,
+  sent_year INTEGER,
+  year_class TEXT NOT NULL CHECK (year_class IN ('in_span', 'before_span', 'after_span', 'year_unknown')),
+  year_eligible INTEGER NOT NULL,
+  became_candidate INTEGER NOT NULL,
+  late INTEGER NOT NULL,
+  PRIMARY KEY (search_run_id, source_version_id)
+);
+
+CREATE INDEX date_scope_admissions_research ON date_scope_admissions (research_id, scope_revision);
+
+CREATE INDEX date_scope_admissions_version ON date_scope_admissions (research_id, scope_revision, source_version_id);

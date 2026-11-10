@@ -252,9 +252,12 @@ def test_the_run_view_says_which_years_were_searched_and_what_could_not_carry_th
     queries = [*QUERIES, {"provider_id": "semantic_scholar", "query_text": "SYNTHETIC delta", "origin": "model",
                           "endpoint": "bulk"}]
     plan = fast_search.build_plan(lib.store, lib.run, lib.store.scope(lib.rid), queries)
-    view = views.date_scope_view(lib.run, {"fast_path_search": plan, "compiled_queries": queries})
+    view = views.date_scope_view(lib.store, lib.run, {"fast_path_search": plan, "compiled_queries": queries})
     assert (view["from_year"], view["to_year"], view["origin"]) == (2020, None, "question")
     assert view["planned"]["applied"] >= 3
+    # Nothing was searched yet, so the record counts are all zero rather than absent: a reader can tell "none
+    # found" from "not recorded".
+    assert view["records"] == dict.fromkeys(date_scope.CLASSES, 0) and view["set_aside"] == 0
     # The words the scope was read from are shown, so a person can check the reading against their own question.
     assert view["basis"] == "since 2020"
 
@@ -471,3 +474,247 @@ def test_a_follow_up_search_stays_inside_the_question_s_years():
     # And a question that bounds no years sends what it always sent.
     plain = followup_search.request_plan("SYNTHETIC follow-up question", blocks, ["openalex"], None)
     assert all("works_filter" not in r for r in plain["requests"])
+
+
+# --- which records a bounded run may rank, screen and read ------------------------------------------------------
+
+@pytest.mark.parametrize("year, expected", [
+    (2020, date_scope.IN_SPAN),      # the year the bound names is inside it
+    (2026, date_scope.IN_SPAN),
+    (2019, date_scope.BEFORE_SPAN),
+    (1900, date_scope.BEFORE_SPAN),
+    (None, date_scope.YEAR_UNKNOWN),
+])
+def test_a_record_is_judged_by_its_own_year_and_an_unknown_year_is_outside_the_bound(year, expected):
+    """A provider that applies the bound itself answers the same way — OpenAlex's `publication_year:>2019` returns
+    no work without a year — so a record whose year nobody recorded is outside a bounded span here too, and the two
+    arms of a comparison are read under one condition."""
+    scope = date_scope.read(QUESTION, THIS_YEAR)
+    assert date_scope.year_class(scope, year) == expected
+    assert date_scope.eligible(scope, year) is (expected == date_scope.IN_SPAN)
+
+
+def test_an_upper_bound_puts_a_later_year_after_the_span():
+    scope = date_scope.given(None, 2015)
+    assert date_scope.year_class(scope, 2016) == date_scope.AFTER_SPAN
+    assert date_scope.year_class(scope, 2015) == date_scope.IN_SPAN
+    # A run that bounds no years judges nothing: every record is in its span.
+    assert all(date_scope.year_class(None, year) == date_scope.IN_SPAN for year in (None, 1900, 2030))
+
+
+def _record(number, year, title=None):
+    from deixis.providers.common import ProviderRecord
+    return ProviderRecord(
+        provider_record_id=f"W{number}", title=title or f"SYNTHETIC record {number}", authors=[], year=year,
+        venue=None, publication_type=None, doi=f"10.1/synth.{number}", landing_url=None, oa_pdf_url=None,
+        oa_pdf_version=None, version_label="publishedVersion", abstract="SYNTHETIC abstract.",
+        abstract_origin="provider", identifiers={}, raw={}, references=None, merge_by_doi=True)
+
+
+def _search(lib, records, key="search:0", provider="openalex", date_bound="not_supported"):
+    """Write one answered request of this run, as the flow writes one."""
+    step = lib.store.step(lib.run["id"], key, f"provider_search:{provider}")
+    lib.store.record_search(
+        dict(research_id=lib.rid, run_id=lib.run["id"], step_id=step["id"],
+             scope_revision=lib.run["scope_revision"], provider=provider,
+             query_text="SYNTHETIC query", request_description="GET SYNTHETIC", access_mode="keyless",
+             status="completed", delivery_class=None, result_count=len(records), provider_total=len(records),
+             page_limit=200, error_json=None, raw_payload_path=None, date_bound=date_bound),
+        provider, records, None, step["id"], "succeeded", step_output={"status": "completed"})
+    return step
+
+
+def test_a_record_outside_the_years_joins_the_research_and_is_not_a_candidate_of_it(tmp_path):
+    """An unbounded route answers with every year, so the condition is applied to what it brought. The record is
+    kept — nothing the question paid for is thrown away — but it takes no place in this revision's candidates, so
+    no reader of them ranks, screens or reads it."""
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021), _record(2, 2015), _record(3, None)])
+    candidates = {c["source_version_id"] for c in lib.store.candidates(lib.rid, 1)}
+    inside, before, unknown = (lib.store.find_source_by_identifier("openalex", f"W{i}") for i in (1, 2, 3))
+    assert inside in candidates and before not in candidates and unknown not in candidates
+    # Still records of the research, with their own membership: the person can find them in Sources.
+    members = {row[0] for row in lib.conn.execute(
+        "SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NULL", (lib.rid,))}
+    assert {inside, before, unknown} <= members
+    # And no hit row for a record that is not a candidate, so the query lists the window is chosen from hold none.
+    hits = {row[0] for row in lib.conn.execute(
+        "SELECT source_version_id FROM candidate_hits WHERE research_id = ?", (lib.rid,))}
+    assert hits == {inside}
+
+
+def test_the_run_writes_down_what_its_years_decided_about_each_record(tmp_path):
+    """Written in the request's own transaction rather than worked out later: a reading of the library afterwards
+    would judge these records against the years they store then, and an earlier run's decisions must not move."""
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021), _record(2, 2015), _record(3, None)])
+    rows = {row["source_version_id"]: row for row in lib.store.date_scope_admissions(lib.rid, 1)}
+    classes = {row["year_class"] for row in rows.values()}
+    assert classes == {date_scope.IN_SPAN, date_scope.BEFORE_SPAN, date_scope.YEAR_UNKNOWN}
+    assert sum(row["year_eligible"] for row in rows.values()) == 1
+    assert {row["date_bound"] for row in rows.values()} == {"not_supported"}  # the route took no bound
+    assert all(row["sent_year"] is None for row in rows.values())  # no provider disagreed with a stored year
+    assert lib.store.set_aside_for_year(lib.rid, 1) == {
+        lib.store.find_source_by_identifier("openalex", f"W{i}") for i in (2, 3)}
+    # A run that bounds no years writes none of this and sets nothing aside.
+    plain = _library(tmp_path / "b", question="SYNTHETIC routing question", years=None)
+    _search(plain, [_record(1, 2015)], date_bound=None)
+    assert plain.store.date_scope_admissions(plain.rid, 1) == []
+    assert plain.store.set_aside_for_year(plain.rid, 1) == set()
+
+
+def test_a_record_set_aside_for_its_year_is_not_ranked_and_not_offered_for_reading(tmp_path):
+    """The bound must not come back in through the work: the version map every signal, batch item, abstract read
+    and full-text read is built from leaves it out."""
+    from deixis.workflow.search import ranking
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021), _record(2, 2015)])
+    inside, before = (lib.store.find_source_by_identifier("openalex", f"W{i}") for i in (1, 2))
+    versions, _, pool = ranking.pool_rows(lib.store, lib.rid, 1)
+    assert inside in versions and before not in versions
+    assert [row["id"] for row in pool] == [inside]
+    # Without a question revision the map is every record, because a caller comparing it against a frozen map has
+    # to see them all to tell whether a source changed.
+    assert before in ranking._versions(lib.store, lib.rid)
+
+
+def test_a_source_the_person_added_is_never_set_aside_for_its_year(tmp_path):
+    """The person's own authority outranks the run's years: a record no request judged is not in the set aside, so
+    an upload, a seed PDF and anything they included stay where they are."""
+    from deixis.workflow.search import ranking
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021)])
+    their_own, _ = lib.store.upsert_provider_source("openalex", _record(9, 1999), None)
+    lib.store.add_to_corpus(lib.rid, their_own, "user_upload", selection_state="included", selection_origin="user")
+    assert their_own not in lib.store.set_aside_for_year(lib.rid, 1)
+    assert their_own in ranking._versions(lib.store, lib.rid, 1)
+
+
+def test_a_record_one_request_admitted_is_not_taken_back_by_another(tmp_path):
+    """A second provider reporting the same record is not a second chance to drop it: once a request made it a
+    candidate, the pool it was ranked in is the pool the run froze."""
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021)])
+    # The same work from another route, whose own answer carries no year; the version keeps the year it stores.
+    _search(lib, [_record(1, None)], key="search:1", provider="semantic_scholar")
+    svid = lib.store.find_source_by_identifier("openalex", "W1")
+    assert svid not in lib.store.set_aside_for_year(lib.rid, 1)
+    rows = [row for row in lib.store.date_scope_admissions(lib.rid, 1) if row["source_version_id"] == svid]
+    # Both requests' decisions are kept, and the one that disagreed with the stored year says so.
+    assert {row["year_class"] for row in rows} == {date_scope.IN_SPAN}
+    assert len(rows) == 2
+
+
+def test_the_run_view_counts_the_records_its_years_set_aside(tmp_path):
+    """The cost of bounding a search after the fact instead of in the request, per provider: a route that took the
+    bound should set nothing aside, and one that could not shows what its unbounded pages brought."""
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021), _record(2, 2015), _record(3, None)])
+    view = views.date_scope_view(lib.store, lib.run, None)
+    assert view["records"] == {date_scope.IN_SPAN: 1, date_scope.BEFORE_SPAN: 1, date_scope.AFTER_SPAN: 0,
+                               date_scope.YEAR_UNKNOWN: 1}
+    assert view["outside_span"] == 2 and view["set_aside"] == 2 and view["year_disagreed"] == 0
+    assert view["by_provider"]["openalex"] == {"records": 3, "outside_span": 2, "set_aside": 2,
+                                                "date_bound": ["not_supported"]}
+
+
+def test_a_set_aside_version_is_not_read_and_is_not_the_answer_s_version(tmp_path):
+    """One work, two versions: the published record inside the span and the preprint outside it. The reading, the
+    PDF fetch and the answer all work through the work's versions, so a version the years exclude would come back
+    into the evidence through its work."""
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021), _record(2, 2015)])
+    head = lib.store.find_source_by_identifier("openalex", "W1")
+    other = lib.store.find_source_by_identifier("openalex", "W2")
+    # Setup, not the subject: the two records are put in one work the way the identity rule would, after both
+    # have been judged by the search — the published record inside the span, the preprint outside it.
+    lib.conn.execute("UPDATE source_versions SET work_id = ?, version_label = 'submittedVersion' WHERE id = ?",
+                     (lib.store.source(head)["work_id"], other))
+    # Not offered for reading, and not a version the answer may read.
+    assert other not in lib.store.work_versions(lib.rid, head)
+    assert lib.store.answer_version(lib.rid, head) == head
+    assert lib.store.answer_versions(lib.rid)[head] == head
+    # Removing the work still takes it: a version left behind would belong to a work nobody holds.
+    assert other in lib.store.work_versions(lib.rid, head, every=True)
+
+
+def test_a_reply_after_the_cutoff_does_not_rescue_a_record_set_aside_for_its_year(tmp_path):
+    """A late reply admits nothing, so its own year verdict is recorded and changes no list: otherwise a late arm
+    could put a version back into the signals of a list the cutoff had already frozen."""
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, None)])                      # no year: set aside
+    svid = lib.store.find_source_by_identifier("openalex", "W1")
+    assert svid in lib.store.set_aside_for_year(lib.rid, 1)
+    step = lib.store.step(lib.run["id"], "search:late", "provider_search:openalex")
+    lib.store.record_search(
+        dict(research_id=lib.rid, run_id=lib.run["id"], step_id=step["id"], scope_revision=1, provider="openalex",
+             query_text="SYNTHETIC late", request_description="GET SYNTHETIC", access_mode="keyless",
+             status="completed", delivery_class=None, result_count=1, provider_total=1, page_limit=200,
+             error_json=None, raw_payload_path=None, date_bound="applied"),
+        "openalex", [_record(1, 2021)], None, step["id"], "succeeded",
+        step_output={"status": "completed", "fast_path_request": {"late": True, "class": 1, "request_index": 1}})
+    assert svid in lib.store.set_aside_for_year(lib.rid, 1)
+    late = [row for row in lib.store.date_scope_admissions(lib.rid, 1) if row["late"]]
+    assert len(late) == 1 and late[0]["year_eligible"] == 1  # its verdict is on the record, and changes nothing
+
+
+def test_a_record_the_person_includes_is_no_longer_set_aside(tmp_path):
+    """Their choice outranks the run's years: once they include a record the search set aside, it ranks and is
+    read like any other."""
+    from deixis.workflow.search import ranking
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021), _record(2, 2015)])
+    before = lib.store.find_source_by_identifier("openalex", "W2")
+    assert before in lib.store.set_aside_for_year(lib.rid, 1)
+    lib.conn.execute("UPDATE selections SET state = 'included', origin = 'user' WHERE source_version_id = ?",
+                     (before,))
+    assert lib.store.set_aside_for_year(lib.rid, 1) == set()
+    assert before in ranking._versions(lib.store, lib.rid, 1)
+    # And it heads its own work, so it reaches the lists that are read by work: without that the record would be
+    # included and still invisible, because a record the years kept out of the candidates heads nothing.
+    work_id = lib.store.source(before)["work_id"]
+    assert lib.store.work_heads(lib.rid)[work_id] == before
+    assert work_id in {lib.store.source(svid)["work_id"] for svid in lib.store.included_works(lib.rid)}
+    assert lib.store.answer_versions(lib.rid)[before] == before
+
+
+def test_an_earlier_wider_revision_s_record_does_not_head_the_work_this_question_asked_about(tmp_path):
+    """The run that bounds its years leaves the earlier revision's out-of-span record out of its candidates, so
+    that record must not head the work either: the pool is read by head, and the work would drop out of it."""
+    from deixis.workflow.search import ranking
+    lib = _library(tmp_path, question="SYNTHETIC routing question", years=None)
+    _search(lib, [_record(1, 2015)], date_bound=None)            # revision 1 asked about every year
+    published = lib.store.find_source_by_identifier("openalex", "W1")
+    # The same question asked again, now bounded, and a run of its own.
+    lib.store.update_run(lib.run["id"], status="completed")
+    revision = lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], QUESTION, None)
+    assert revision == 2
+    run = lib.store.create_run(lib.rid, "discovery", _budget("standard", date_scope.read(QUESTION, THIS_YEAR)), None)
+    lib.store.update_run(run["id"], status="running")
+    lib.run = lib.store.run(run["id"])
+    preprint = _record(2, 2021)
+    _search(lib, [preprint], key="search:1")
+    inside = lib.store.find_source_by_identifier("openalex", "W2")
+    # Two versions of one work, as the identity rule would leave them.
+    lib.conn.execute("UPDATE source_versions SET work_id = ? WHERE id = ?",
+                     (lib.store.source(published)["work_id"], inside))
+    work_id = lib.store.source(published)["work_id"]
+    assert lib.store.work_heads(lib.rid)[work_id] == inside
+    _, _, pool = ranking.pool_rows(lib.store, lib.rid, 2)
+    assert [row["id"] for row in pool] == [inside]
+
+
+def test_the_person_s_own_inclusion_heads_the_work_even_beside_another_version(tmp_path):
+    """Their choice outranks code, including the published-record-first rule: otherwise the version they chose
+    would be included and still never read, because the lists that are read go by the work's head."""
+    lib = _library(tmp_path, years=date_scope.read(QUESTION, THIS_YEAR))
+    _search(lib, [_record(1, 2021), _record(2, 2015)])
+    published, before = (lib.store.find_source_by_identifier("openalex", f"W{i}") for i in (1, 2))
+    lib.conn.execute("UPDATE source_versions SET work_id = ?, version_label = 'submittedVersion', doi = NULL"
+                     " WHERE id = ?", (lib.store.source(published)["work_id"], before))
+    work_id = lib.store.source(published)["work_id"]
+    assert lib.store.work_heads(lib.rid)[work_id] == published     # the published record heads it to begin with
+    lib.conn.execute("UPDATE selections SET state = 'included', origin = 'user' WHERE source_version_id = ?",
+                     (before,))
+    assert lib.store.work_heads(lib.rid)[work_id] == before
+    assert lib.store.included_works(lib.rid) == [before]

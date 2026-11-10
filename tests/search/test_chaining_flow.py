@@ -18,7 +18,7 @@ from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.providers.common import SearchOutcome
 from deixis.storage import db
 from deixis.workflow.run import fast_path
-from deixis.workflow.search import ranking, small_batch
+from deixis.workflow.search import date_scope, ranking, small_batch
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.store import Store
 from test_fast_path_chain import dispatch, scripted, search, setup as chain_setup
@@ -464,3 +464,37 @@ def test_a_work_the_quota_already_rescued_takes_no_second_place(lib, tmp_path, m
              and step["status"] == "succeeded"]
     # Two places, two works: the repeat is written again (it gains its link) but spends no place.
     assert sum(step["output"]["rescued"] for step in steps) == 2
+
+
+def test_a_chained_record_outside_the_run_s_years_is_not_carried_into_the_pool(tmp_path, monkeypatch):
+    """`chain_links` keeps every link the chain wrote, so a record the run's years set aside would still reach the
+    pool through the chain although it is no candidate. The step says how many works that cost, and the link's own
+    counts are left alone: what the chain found and what the word gate decided are records of their own."""
+    conn = db.connect(tmp_path / "bounded.sqlite")
+    db.migrate(conn)
+    clock = FakeClock()
+    store = Store(conn, clock)
+    clock.store = store
+    rid = store.create_research("SYNTHETIC queue delay since 2020", "academic", "quick", ["openalex"], "fake",
+                                "fake-model", "en")
+    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick",
+                                                  date_scope=date_scope.given(2020, None))
+    run = store.create_run(rid, "discovery", budget, None)
+    store.update_run(run["id"], status="running")
+    lib = SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run["id"]))
+    flow, _, round_ = chain_setup(lib, tmp_path)
+    (w1,) = [lib.store.find_source_by_identifier("openalex", r.provider_record_id)
+             for r in search(flow, lib, "search:fast:semantic", ["W1"])]
+    ranked(lib, [w1])
+    # One chained record inside the years and one outside them, both admitted by the word gate.
+    chain(round_, monkeypatch, forward=[replace(record("W801"), year=2024), replace(record("W802"), year=2015)])
+    chained = flow._chain_filter(lib.run)
+    output = lib.store.existing_step(lib.run["id"], "chain_filter")["output"]
+    inside = lib.store.find_source_by_identifier("openalex", "W801")
+    outside = lib.store.find_source_by_identifier("openalex", "W802")
+    assert chained == [inside] and outside is not None
+    assert output["set_aside_for_year"] == 1
+    # The link the chain wrote is still there and still counted as having passed the word gate.
+    assert {row["linked_openalex_id"] for row in links(lib) if row["passed_filter"]} == {"W801", "W802"}
+    conn.close()

@@ -83,7 +83,7 @@ def per_question(name, questions, rows, depths):
             records = [r for r in row['records'] if bioasq.in_time(r, q['year'])]
             out[q['id']] = bioasq.recall(q, records, meta, depths)
         else:
-            records = [r for r in row['records'] if r.get('year') is None or r['year'] <= q['year']]
+            records = [r for r in row['records'] if bioasq.in_time(r, q['year'])]  # one rule for both sets
             out[q['id']] = litsearch.recall(q, records, meta, depths)
     return out
 

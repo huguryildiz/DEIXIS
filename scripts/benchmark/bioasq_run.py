@@ -16,6 +16,7 @@ import json
 import sqlite3
 import time
 import uuid
+from collections import defaultdict
 from contextlib import closing
 from pathlib import Path
 
@@ -358,13 +359,25 @@ def preflight(args):
         raise SystemExit(f'preflight failed: {exc}')
 
 
+LOSS_CLASSES = ('top200', 'deeper_in_list', 'after_question_year', 'year_unknown', 'set_aside_for_year',
+                'not_in_list')
+
+
 def loss(args):
-    """Where DEIXIS lost each gold paper: top 200, deeper in the frozen list, cut by the year filter, or never found."""
+    """Where DEIXIS lost each gold paper, each paper counted once under the first class that holds it.
+
+    `top200` and `deeper_in_list` are places in the frozen list after the year rule; `after_question_year` and
+    `year_unknown` are the two reasons that rule drops a listed record, kept apart because one is a record the
+    search should not have spent a place on and the other is a record whose year the provider never gave;
+    `set_aside_for_year` is a record the run's own date scope kept out of its candidates, read from that run's
+    own admissions rather than worked out from the list; `not_in_list` is never found at all. A gold paper is
+    matched by PMID, then DOI, then normalized title, which is the order every other count here uses.
+    """
     questions = json.loads((HOME / 'sample.json').read_text())['questions']
     meta = json.loads((HOME / 'gold_meta.json').read_text())
     rows = {r['id']: r for r in read_jsonl(HOME / 'runs/deixis.jsonl')}
     library = Deixis(None, args.data_dir)
-    counts = dict.fromkeys(('top200', 'deeper_in_list', 'after_question_year', 'not_in_list'), 0)
+    counts = dict.fromkeys(LOSS_CLASSES, 0)
     with closing(library.db()) as conn:
         for q in questions:
             row = rows.get(q['id'])
@@ -374,21 +387,44 @@ def loss(args):
                                 "operation_key='small_batch:v1:list'", (row['run_id'],)).fetchone()
             listed = library.records(json.loads(step[0])['order'])
             timed = [r for r in listed if bioasq.in_time(r, q['year'])]
+            unknown = [r for r in listed if r.get('year') is None]
+            # The app's own effective rule, not the negative decisions: a reply after the stage cutoff decides
+            # nothing, a version a later request of the same revision found inside the span keeps its place, and
+            # a record the person included is theirs. Read per research revision, as the app reads it.
+            aside = library.records([r['source_version_id'] for r in conn.execute(
+                "SELECT a.source_version_id FROM date_scope_admissions a WHERE a.late = 0"
+                " AND (a.research_id, a.scope_revision) IN"
+                "  (SELECT research_id, scope_revision FROM date_scope_admissions WHERE run_id = ?)"
+                " AND NOT EXISTS (SELECT 1 FROM selections s WHERE s.source_version_id = a.source_version_id"
+                "  AND s.research_id = a.research_id AND s.origin = 'user')"
+                " GROUP BY a.source_version_id HAVING MAX(a.year_eligible) = 0",
+                (row['run_id'],))]) if _has_admissions(conn) else []
             gold = {p: meta.get(p, {}) for p in q['gold']}
-            top, deeper, everything = (bioasq.matched(gold, timed[:200]), bioasq.matched(gold, timed),
-                                       bioasq.matched(gold, listed))
+            top, deeper = bioasq.matched(gold, timed[:200]), bioasq.matched(gold, timed)
+            no_year, set_aside = bioasq.matched(gold, unknown), bioasq.matched(gold, aside)
+            everything = bioasq.matched(gold, listed)
             for p in gold:
                 key = ('top200' if p in top else 'deeper_in_list' if p in deeper else
-                       'after_question_year' if p in everything else 'not_in_list')
+                       'year_unknown' if p in no_year else 'after_question_year' if p in everything else
+                       'set_aside_for_year' if p in set_aside else 'not_in_list')
                 counts[key] += 1
     print(json.dumps(counts))
     (HOME / 'loss.json').write_text(json.dumps(counts, indent=1))
+
+
+def _has_admissions(conn):
+    """Whether this library records date-scope admissions at all: a run measured before it did has none."""
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'date_scope_admissions'"
+                        ).fetchone() is not None
 
 
 def score(args):
     questions = json.loads((HOME / 'sample.json').read_text())['questions']
     meta = json.loads((HOME / 'gold_meta.json').read_text())
     systems, arms = {}, {}
+    # Why each arm dropped the records it dropped, so two arms can be seen to have been read under the same
+    # condition rather than assumed to have been.
+    dropped = defaultdict(lambda: dict.fromkeys(('records', 'after_question_year', 'year_unknown'), 0))
     for path in sorted((HOME / 'runs').glob('*.jsonl')):
         raw = read_jsonl(path)
         arms[path.stem] = harness.check_arm(path.stem, raw)  # every row, also those a rerun replaced
@@ -402,13 +438,19 @@ def score(args):
                 per[q['id']] = None
                 continue
             records = [r for r in row['records'] if bioasq.in_time(r, q['year'])]
+            for name, held in (('after_question_year', [r for r in row['records']
+                                                        if r.get('year') is not None and r['year'] > q['year']]),
+                               ('year_unknown', [r for r in row['records'] if r.get('year') is None])):
+                dropped[path.stem][name] += len(held)
+            dropped[path.stem]['records'] += len(row['records'])
             per[q['id']] = bioasq.recall(q, records, meta)
         systems[path.stem] = per
     report = {}
     for name, per in systems.items():
         report[name] = {'questions': len(per), 'failed': sum(v is None for v in per.values()),
                         'mean_over': 'questions without failure; the paired differences count a failure as 0',
-                        **{f'@{k}': bioasq.macro(per, k) for k in bioasq.DEPTHS}, **arms[name]}
+                        **{f'@{k}': bioasq.macro(per, k) for k in bioasq.DEPTHS},
+                        'dropped': dict(dropped[name]), **arms[name]}
         print(name, json.dumps({k: v for k, v in report[name].items() if k != 'settings'}))
     for name, diff in harness.comparisons(systems, bioasq.paired_bootstrap, bioasq.DEPTHS).items():
         report[name] = diff

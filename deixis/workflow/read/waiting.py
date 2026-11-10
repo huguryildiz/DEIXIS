@@ -25,6 +25,7 @@ from deixis.domain.reason_codes import reason
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import now, transaction
 from deixis.workflow.read import fulltext
+from deixis.workflow.run import store as store_rules
 from deixis.workflow.search import small_batch
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.store import NotFound, Store
@@ -89,9 +90,14 @@ def _works(store: Store, research_id: str) -> list[dict[str, Any]]:
     stale_key = decisions.staleness_key(research_id)
     heads = store.work_heads(research_id)
     by_work: dict[str, list[str]] = {}
+    revision = store.research(research_id)["current_scope_revision"]
     for row in store.conn.execute(
             "SELECT v.id, v.work_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
-            " WHERE m.research_id = ? AND m.removed_at IS NULL", (research_id,)):
+            " WHERE m.research_id = ? AND m.removed_at IS NULL"
+            # The same versions the reading works through, so a version the years set aside is not counted as a
+            # work still waiting for a file nobody will fetch.
+            f" AND NOT ({store_rules.SET_ASIDE_SQL})",
+            (research_id, research_id, revision, research_id)):
         by_work.setdefault(row["work_id"], []).append(row["id"])
     with_text = {row[0] for row in store.conn.execute(
         "SELECT DISTINCT p.source_version_id FROM passages p"

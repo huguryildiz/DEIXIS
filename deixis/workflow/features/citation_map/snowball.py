@@ -494,6 +494,9 @@ def _write(flow: Any, run: dict[str, Any], step: dict[str, Any], spec: dict[str,
                   connector_json=dumps(dispatched.connector),
                   # The forward read asks for the provider's own order; the backward read names no sorting setting.
                   sort=SORT if direction == "forward" else None,
+                  # The bound this request itself carried: the forward read takes the run's years, the backward
+                  # read is a read by identifier and no date search at all.
+                  **({"date_bound": spec["date_bound"]} if spec.get("date_bound") else {}),
                   **({"page_number": spec["page"]} if direction == "forward" else {}))
     with transaction(store.conn):
         if not ok:

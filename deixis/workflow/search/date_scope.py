@@ -307,3 +307,35 @@ def provider_bound(form: str | None, scope: dict[str, Any] | None, endpoint: str
 # The keyword argument names `provider_bound` can return, so a reader can tell a request's own bound from the
 # other options it carries.
 BOUND_KEYS = ("works_filter", "year_range")
+
+
+# ---------------------------------------------------------------------------
+# Whether a record the search found belongs to the years the run is bounded to.
+#
+# A route that takes no bound answers with records of every year, so the condition is applied here instead, after
+# the search. Two rules hold it together. A record is judged by its **own** publication year, never by another
+# version of its work: a work whose preprint is outside the span and whose published record is inside it enters
+# through the record that is inside, which arrives as its own record. And a record whose year is not known is
+# **outside** a bounded span, because a provider that applies the bound itself answers the same way — OpenAlex's
+# `publication_year:>2019` returns no work without a year — so admitting it here would give a run whose provider
+# could not filter candidates the bounded run cannot have.
+IN_SPAN, BEFORE_SPAN, AFTER_SPAN, YEAR_UNKNOWN = "in_span", "before_span", "after_span", "year_unknown"
+CLASSES = (IN_SPAN, BEFORE_SPAN, AFTER_SPAN, YEAR_UNKNOWN)
+
+
+def year_class(scope: dict[str, Any] | None, year: int | None) -> str:
+    """Where one record's own year stands to the span: the four classes are exhaustive and do not overlap."""
+    if not scope:
+        return IN_SPAN
+    if year is None:
+        return YEAR_UNKNOWN
+    if scope["from_year"] is not None and year < scope["from_year"]:
+        return BEFORE_SPAN
+    if scope["to_year"] is not None and year > scope["to_year"]:
+        return AFTER_SPAN
+    return IN_SPAN
+
+
+def eligible(scope: dict[str, Any] | None, year: int | None) -> bool:
+    """Whether a record of this year may be a candidate of a run bounded to `scope`. No span: every record may."""
+    return year_class(scope, year) == IN_SPAN

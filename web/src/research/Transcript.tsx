@@ -682,6 +682,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           {run.date_scope.planned.not_supported
             ? ` · ${t('{n} planned requests use routes that take no year bound', { n: run.date_scope.planned.not_supported })}`
             : ''}
+          {run.date_scope.set_aside
+            ? ` · ${t('{n} records set aside for their year', { n: run.date_scope.set_aside })}`
+            : ''}
         </span></p>
         if (!totals && !perSource && !arms && !notFound && !fields && !broad && !scope) return null
         return <>{scope}{totals}{perSource}{fields}{broad}{arms}{notFound}</>

@@ -32,6 +32,7 @@ from deixis.providers.common import collect_transport, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import now, transaction
 from deixis.workflow.features.citation_map import citation_map
+from deixis.workflow.run import store as store_rules
 from deixis.workflow.search import lookups
 from deixis.workflow.features.lineage.lineage_edges import normalize_openalex_id
 
@@ -54,11 +55,16 @@ def _valid_list(record: Any) -> bool:
 def _versions(store: Any, research_id: str) -> list[dict[str, Any]]:
     """The live member versions of the research's works, with what the map needs to know about each."""
     heads = store.work_heads(research_id)
+    revision = store.research(research_id)["current_scope_revision"]
     rows = store.conn.execute(
         "SELECT v.id, v.work_id, v.origin, v.doi, v.record_match_json, v.references_read, r.status AS resolution,"
         " r.openalex_id AS resolved_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
         " LEFT JOIN citation_map_resolutions r ON r.source_version_id = v.id"
-        " WHERE m.research_id = ? AND m.removed_at IS NULL ORDER BY v.created_at, v.id", (research_id,))
+        " WHERE m.research_id = ? AND m.removed_at IS NULL"
+        # A version the question's years set aside is not asked about: a request for its bibliography would
+        # spend the map's budget on a record nothing else in this research reads.
+        f" AND NOT ({store_rules.SET_ASIDE_SQL})"
+        " ORDER BY v.created_at, v.id", (research_id, research_id, revision, research_id))
     return [dict(row) for row in rows if row["work_id"] in heads]
 
 

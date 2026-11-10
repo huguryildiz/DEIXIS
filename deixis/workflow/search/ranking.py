@@ -323,12 +323,20 @@ def fuse(ranks: dict[str, dict[str, tuple[float, bool]]], signals: tuple[str, ..
 
 # ---- the pool, the seeds and the one store-driven entry point ----------------------------------
 
-def _versions(store: Any, research_id: str) -> dict[str, dict[str, Any]]:
+def _versions(store: Any, research_id: str, revision: int | None = None) -> dict[str, dict[str, Any]]:
     """Every record still in the research, with its own text, its own provider identifiers and its own references.
 
     Read in a few whole-research queries rather than one query per record: `held_from_screening` cost a second on
     2,000 candidates when it asked per record (slice 05 review).
+
+    With `revision`, the records a run bounded to a span set aside for their year are left out. One filter here is
+    what keeps the bound from leaking back in through the work: the signals, the batch items' versions, the
+    abstract stage and the full-text stage all read their versions from this map, so without it an excluded
+    version's abstract or reference list would still rank and be read beside the record that is in the span.
+    A caller comparing this map against a frozen one passes no revision: it has to see every record to tell
+    whether a source changed, and a frozen map holds only the versions the run allowed anyway.
     """
+    set_aside = store.set_aside_for_year(research_id, revision) if revision is not None else frozenset()
     rows = {row["id"]: {"id": row["id"], "work_id": row["work_id"], "title": row["title"],
                         # The abstract stage reads the same pool and needs what `record_kind` reads (slice 09).
                         "doi": row["doi"], "version_label": row["version_label"],
@@ -339,7 +347,8 @@ def _versions(store: Any, research_id: str) -> dict[str, dict[str, Any]]:
                 " (SELECT group_concat(p.text, ' ') FROM passages p WHERE p.source_version_id = v.id"
                 "  AND p.kind = 'abstract') AS abstract"
                 " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
-                " WHERE m.research_id = ? AND m.removed_at IS NULL", (research_id,))}
+                " WHERE m.research_id = ? AND m.removed_at IS NULL", (research_id,))
+            if row["id"] not in set_aside}
     member = ("JOIN corpus_memberships m ON m.source_version_id = r.source_version_id"
               " AND m.research_id = ? AND m.removed_at IS NULL")
     for field, query in (
@@ -452,7 +461,7 @@ def pool_rows(store: Any, research_id: str, revision: int) -> tuple[dict[str, di
     search offered, the records slice 05 holds back from screening included. A work only an earlier run's citation
     chaining found is not a keyword record and stays out."""
     heads = set(store.work_heads(research_id).values())
-    versions = _versions(store, research_id)
+    versions = _versions(store, research_id, revision)
     chained = store.chain_only_works(research_id, revision)
     by_work: dict[str, list[dict[str, Any]]] = {}
     for version in versions.values():

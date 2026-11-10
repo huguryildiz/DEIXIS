@@ -26,6 +26,21 @@ from deixis.workflow.run import links, spend
 from deixis.workflow.read import recovery
 from deixis.workflow.run.source_keys import key_stem, suffixes
 from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
+from deixis.workflow.search import date_scope
+
+# A version a bounded run set aside for its year, written as a condition on a row that already names `v.id`.
+# Two things make a version set aside: every request that could admit it judged its year outside the span — a
+# reply written after the stage cutoff admits nothing, so its verdict never rescues one — and the person has made
+# no choice of their own about it, because their choice outranks the run's years. A version nobody judged gives
+# NULL here, which is false, so an upload, a seed PDF and a record of an unbounded revision are never set aside.
+# The placeholders are the research, the question revision and the research again, in that order.
+SET_ASIDE_SQL = (
+    # COALESCE, because a version nobody judged has no row at all and `MAX` of nothing is NULL: left as NULL the
+    # whole condition would be NULL, and `NOT NULL` is not true, so every unjudged version would be dropped.
+    "COALESCE((SELECT MAX(a.year_eligible) FROM date_scope_admissions a WHERE a.source_version_id = v.id"
+    "  AND a.research_id = ? AND a.scope_revision = ? AND a.late = 0), 1) = 0"
+    " AND NOT EXISTS (SELECT 1 FROM selections s WHERE s.source_version_id = v.id"
+    "  AND s.research_id = ? AND s.origin = 'user')")
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 # `step`'s default: let the research's current protocol decide which protocol the new step belongs to. A caller that
@@ -188,6 +203,24 @@ def is_preprint(source: dict[str, Any]) -> bool:
 def is_published(source: dict[str, Any]) -> bool:
     """A record under its own registered DOI that is not a preprint's."""
     return bool(source.get("doi")) and not is_preprint(source)
+
+
+def _heads_before(candidate: dict[str, Any], held: dict[str, Any]) -> bool:
+    """Whether `candidate` takes the work's head from `held`, the rows arriving in found order.
+
+    In order: a version the person included, then — between two records a search brought — one the question
+    being asked now has as a candidate, then a published record over a preprint. The found order decides the
+    rest, so it is kept by returning False on a tie.
+
+    The question revision decides only between search records. A version the person added keeps the place their
+    own order gave it, so a later search that finds another version of the same work does not move the head.
+    """
+    if bool(candidate.get("person_included")) != bool(held.get("person_included")):
+        return bool(candidate.get("person_included"))
+    if candidate.get("added_by") == held.get("added_by") == "search":
+        if bool(candidate.get("asked_now")) != bool(held.get("asked_now")):
+            return bool(candidate.get("asked_now"))
+    return is_published(candidate) and not is_published(held)
 
 
 # The history reason a new head writes when it takes over another version's selection. It is reserved: a person's own
@@ -558,6 +591,8 @@ class Store:
             for table in ("person_pdf_requests", "pdf_skips", "answer_reviews", "answers", "model_sessions", "step_inputs",
                           # The provider's own passages name a search run and a record, so they go before both.
                           "provider_snippets",
+                          # The date scope's own decisions name a search run and a record too.
+                          "date_scope_admissions",
                           "candidate_hits", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "human_selection_links", "stage_decisions",
@@ -3019,15 +3054,32 @@ class Store:
             # froze is then exactly the set the cutoff record names, and a late arm cannot slip into it by answering
             # while the pool was being read.
             late = bool(admission.get("late"))
-            found = []
-            for rank, record in enumerate(records, start=first_rank):
-                svid, _ = self.upsert_provider_source(provider, record, payload_path)
-                found.append(svid)
-                if late:
+            # Every record is normalized first, so the years the date scope judges can be read in one query
+            # instead of one per record (`_versions` and the abstract stage read whole-research for the same
+            # reason). The admissions below keep the order they always had.
+            found = [self.upsert_provider_source(provider, record, payload_path)[0] for record in records]
+            years = self._stored_years(found)
+            scope = self._run_date_scope(search_fields)
+            traced = []
+            for rank, (record, svid) in enumerate(zip(records, found), start=first_rank):
+                # Judged by this record's own year, and by the year the version stores now, which is the year the
+                # ranking, the screening and the person's own screen show. A record outside the span joins the
+                # research like a late reply's record — a member, not a candidate of this question revision — so
+                # no reader of the candidates ranks, screens or reads it, and nothing the question paid for is
+                # thrown away.
+                in_scope = date_scope.eligible(scope, years.get(svid))
+                if late or not in_scope:
                     self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
+                    became = False
                 else:
-                    # A version of a work that already has a candidate here is found again as that candidate.
-                    record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
+                    # A version of a work that already has a candidate here is found again as that candidate —
+                    # unless that candidate's own year is outside this run's span. An earlier, wider revision can
+                    # have left one there, and taking it over would make a record this run excludes the candidate
+                    # of the work and leave the record that is in the span a member only.
+                    held = self._work_candidate(search_fields["research_id"], svid)
+                    if held is not None and not date_scope.eligible(scope, self._stored_years([held]).get(held)):
+                        held = None
+                    record_svid = held or svid
                     # The score the provider gave this record for this query, kept with the place on the hit row. A
                     # record from a provider that scores nothing carries none, and that is NULL, not zero.
                     self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank,
@@ -3036,8 +3088,20 @@ class Store:
                                        hit_rank=rank if hit_ranks is None else hit_ranks[rank - first_rank])
                     if record_svid != svid:
                         self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
+                    became = record_svid == svid
+                if scope:
+                    traced.append((svid, years.get(svid), record.year, in_scope, became))
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
+                    if scope:
+                        # A location the provider named for this one record, stored with no year of its own. It
+                        # takes the record's year decision rather than reading as a version of unknown year: it
+                        # is the same bibliographic item, and the work is read through it when the record's own
+                        # copy is closed. So a record inside the span keeps its other copies readable, and a
+                        # record outside it takes them with it.
+                        traced.append((other, years.get(svid), None, in_scope, False))
+            if traced:
+                self._record_date_scope(search_fields, srid, scope, traced, late)
             links.link_records(self, search_fields["research_id"], found)  # the narrow rule widens to SW6
             self._count_works_added(search_fields["research_id"], srid, before, found)
             if snippets:
@@ -3066,6 +3130,76 @@ class Store:
                 output["accepted_source_version_ids"] = list(dict.fromkeys(found))
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid
+
+    def _stored_years(self, svids: list[str]) -> dict[str, int | None]:
+        """The publication year each of these versions stores now, read in one query."""
+        if not svids:
+            return {}
+        ids = list(dict.fromkeys(svids))
+        return {row["id"]: row["year"] for row in self.conn.execute(
+            f"SELECT id, year FROM source_versions WHERE id IN ({','.join('?' * len(ids))})", tuple(ids))}
+
+    def _run_date_scope(self, search_fields: dict[str, Any]) -> dict[str, Any] | None:
+        """The years this request's run is bounded to, or None when its question revision bounded none.
+
+        One span per question revision, read back from the discovery runs that froze it, so a follow-up search, a
+        citation map walk and a watch search judge their records by the years the question's own search used.
+        """
+        from deixis.workflow.run import fast_path
+
+        return fast_path.scope_years(self, search_fields["research_id"], search_fields["scope_revision"])
+
+    def _record_date_scope(self, search_fields: dict[str, Any], srid: str, scope: dict[str, Any],
+                           traced: list[tuple[str, int | None, int | None, bool, bool]], late: bool) -> None:
+        """What the run's date scope decided about each record this request wrote, in the request's own transaction.
+
+        Written rather than derived, for the same reason `snowball_admissions` is: a later reading of the library
+        would judge these records against the years they store then, and an earlier run's decisions must not move
+        under it. `sent_year` is kept only where this record named a year the version does not store, so a
+        disagreement between two providers stays on the record.
+        """
+        self.conn.executemany(
+            "INSERT OR IGNORE INTO date_scope_admissions (research_id, scope_revision, run_id, search_run_id,"
+            " source_version_id, year, sent_year, year_class, year_eligible, became_candidate, late)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(search_fields["research_id"], search_fields["scope_revision"], search_fields["run_id"], srid, svid,
+              year, sent if sent != year else None, date_scope.year_class(scope, year), int(eligible), int(became),
+              int(late))
+             for svid, year, sent, eligible, became in traced])
+
+    def date_scope_admissions(self, research_id: str, scope_revision: int,
+                              run_id: str | None = None) -> list[dict[str, Any]]:
+        """The date-scope decisions recorded for this question revision, with the request each belongs to.
+
+        With `run_id`, only that run's own decisions, which is what a run's own view reports: a follow-up search
+        or a citation-map walk of the same question records its own, and those are not the discovery run's
+        numbers. One row per version per request, so two records of one request that resolve to the same version
+        are one decision, which is what was decided.
+        """
+        held = " AND a.run_id = ?" if run_id is not None else ""
+        return [dict(row) for row in self.conn.execute(
+            "SELECT a.*, s.provider, s.date_bound FROM date_scope_admissions a"
+            " JOIN search_runs s ON s.id = a.search_run_id"
+            f" WHERE a.research_id = ? AND a.scope_revision = ?{held}"
+            " ORDER BY a.search_run_id, a.source_version_id",
+            (research_id, scope_revision, *((run_id,) if run_id is not None else ())))]
+
+    def set_aside_for_year(self, research_id: str, scope_revision: int) -> set[str]:
+        """The versions a bounded run set aside for their year, so no reader of this research ranks or reads them.
+
+        The same rule as `SET_ASIDE_SQL`, for a caller that wants the set rather than a condition. A version no
+        request judged — a source the person added, a seed PDF, a record of an unbounded revision — is not here,
+        nor is one the person has decided about themselves. A version one request judged outside the span and a
+        later one judged inside it is not here either: the request that admitted it made it a candidate, and a
+        record once admitted is not taken back. A reply after the stage cutoff admits nothing, so its own verdict
+        never rescues a version.
+        """
+        return {row[0] for row in self.conn.execute(
+            "SELECT a.source_version_id FROM date_scope_admissions a"
+            " WHERE a.research_id = ? AND a.scope_revision = ? AND a.late = 0"
+            "  AND NOT EXISTS (SELECT 1 FROM selections s WHERE s.source_version_id = a.source_version_id"
+            "   AND s.research_id = a.research_id AND s.origin = 'user')"
+            " GROUP BY a.source_version_id HAVING MAX(a.year_eligible) = 0", (research_id, scope_revision))}
 
     def _insert_snippets(self, research_id: str, srid: str, provider: str, records: list[Any], found: list[str],
                          snippets: list[dict[str, Any]]) -> int:
@@ -3191,18 +3325,37 @@ class Store:
         A record added other than by search keeps the time it was added, whether or not a search finds it later.
         The order decides only between versions that are each a candidate here: a second version of a work that
         already has a candidate is found again as that candidate and heads nothing (`_work_candidate`).
+
+        Two things come before "published first". A version the person included themselves heads its work, because
+        their choice outranks code and otherwise the work they chose would not reach the lists that are read by
+        work. Then a version that is a candidate of the question being asked now comes before one that is only an
+        older revision's: a question bounded to years of its own can leave an earlier, wider revision's record
+        out of its candidates, and a work headed by that record would drop out of this revision's pool entirely.
         """
         heads: dict[str, dict[str, Any]] = {}
+        revision = self.research(research_id)["current_scope_revision"]
         for row in self.conn.execute(
-            "SELECT v.id, v.work_id, v.doi, v.version_label FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            "SELECT v.id, v.work_id, v.doi, v.version_label,"
+            " EXISTS (SELECT 1 FROM selections s WHERE s.research_id = m.research_id"
+            "          AND s.source_version_id = m.source_version_id AND s.origin = 'user'"
+            "          AND s.state = 'included') AS person_included,"
+            " EXISTS (SELECT 1 FROM candidates d WHERE d.research_id = m.research_id"
+            f"          AND d.source_version_id = m.source_version_id AND d.scope_revision = {int(revision)}) AS asked_now,"
+            " m.added_by AS added_by"
+            " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
-            f" WHERE m.research_id = ?{'' if include_removed else ' AND m.removed_at IS NULL'} AND (c.id IS NOT NULL OR m.added_by != 'search')"
+            # A record the person decided about themselves heads its work like a candidate: a run's years can
+            # keep a search record out of the candidates, and their own inclusion has to outrank that.
+            f" WHERE m.research_id = ?{'' if include_removed else ' AND m.removed_at IS NULL'}"
+            " AND (c.id IS NOT NULL OR m.added_by != 'search'"
+            "      OR EXISTS (SELECT 1 FROM selections s WHERE s.research_id = m.research_id"
+            "                  AND s.source_version_id = m.source_version_id AND s.origin = 'user'))"
             " ORDER BY CASE WHEN m.added_by = 'search' THEN"
             f"   {_FIRST_FOUND % ('m.research_id', 'm.source_version_id', 'm.created_at')}"
             "  ELSE m.created_at END, c.rank, v.id", (research_id,)
         ):
             current = heads.get(row["work_id"])
-            if current is None or (is_published(dict(row)) and not is_published(current)):
+            if current is None or _heads_before(dict(row), current):
                 heads[row["work_id"]] = dict(row)
         return {wid: row["id"] for wid, row in heads.items()}
 
@@ -3258,13 +3411,23 @@ class Store:
         heads = set(self.work_heads(research_id).values())
         return [svid for svid in self.included_sources(research_id) if svid in heads]
 
-    def work_versions(self, research_id: str, svid: str) -> list[str]:
-        """The research's other versions of svid's work, those with a PDF in use first, then in the order found."""
+    def work_versions(self, research_id: str, svid: str, *, every: bool = False) -> list[str]:
+        """The research's other versions of svid's work, those with a PDF in use first, then in the order found.
+
+        A version a bounded run set aside for its year is left out, because this is the list the reading, the PDF
+        fetch and the answer's version choice work through: fetching and reading a version the run's years
+        exclude would put it back into the evidence through the work. `every` asks for the work's versions
+        whatever their year, which is what removing a work needs — a version left behind would still be a member
+        of a work nobody holds any more.
+        """
+        condition = "" if every else f" AND NOT ({SET_ASIDE_SQL})"
+        scope = () if every else (research_id, self.research(research_id)["current_scope_revision"], research_id)
         return [r[0] for r in self.conn.execute(
             "SELECT v.id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NULL AND v.id != ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+            f"{condition}"
             " ORDER BY EXISTS (SELECT 1 FROM source_assets a WHERE a.source_version_id = v.id AND a.removed_at IS NULL) DESC, m.created_at",
-            (research_id, svid, svid)
+            (research_id, svid, svid, *scope)
         )]
 
     def answer_version(self, research_id: str, head: str) -> str | None:
@@ -3306,8 +3469,10 @@ class Store:
         for row in self.conn.execute(
             "SELECT v.id, v.work_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NULL"
+            # The same condition `work_versions` applies, so one work's versions are the same list either way.
+            f" AND NOT ({SET_ASIDE_SQL})"
             " ORDER BY EXISTS (SELECT 1 FROM source_assets a WHERE a.source_version_id = v.id AND a.removed_at IS NULL) DESC, m.created_at",
-            (research_id,)
+            (research_id, research_id, self.research(research_id)["current_scope_revision"], research_id)
         ):
             versions.setdefault(row["work_id"], []).append(row["id"])
         person = self.person_files(research_id)
@@ -3540,7 +3705,7 @@ class Store:
             for svid in dict.fromkeys(svids):
                 if not self.is_active_member(research_id, svid):
                     continue
-                chosen += [svid] + (self.work_versions(research_id, svid) if svid in heads else [])
+                chosen += [svid] + (self.work_versions(research_id, svid, every=True) if svid in heads else [])
             chosen = list(dict.fromkeys(chosen))
             if not chosen:
                 return []

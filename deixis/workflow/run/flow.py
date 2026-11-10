@@ -2046,7 +2046,7 @@ class ResearchFlow:
         _, blocks = ranking_rules.query_vocabulary(scope, vocabulary)
         # One read of the whole research, as the ranking does: asking per record cost a second on 2,000 candidates
         # on the thread the API answers from (slice 05 and 07 reviews).
-        versions = ranking_rules._versions(self.store, rid)
+        versions = ranking_rules._versions(self.store, rid, revision)
         current = self._abstract_decisions(rid)
         links = self._artifact_links(rid)
         candidates = {c["source_version_id"]: c for c in self.store.candidates(rid)}
@@ -2284,6 +2284,7 @@ class ResearchFlow:
             # A chain read filters by identifier and names no sorting setting, so the row keeps none; the records
             # arrive in the provider's own order for that filter, which is not a relevance order.
             sort=None,
+            **({"date_bound": date_bound} if date_bound else {}),
             **({"connector_json": dumps(dispatched.connector)} if dispatched is not None else {}),
             **({"page_number": page} if page is not None else {}),
         )
@@ -2379,7 +2380,12 @@ class ResearchFlow:
         # The gate decided about the records a citation request brought; a link read inside one page was never put to
         # it, and counting such a link among the works the gate admitted would say more than was checked.
         asked = [row for row in linked if row["origin"] == "request"]
-        written = sorted({row["source_version_id"] for row in linked if row["source_version_id"]})
+        # A record the run's date scope set aside for its year is a member of the research and not a candidate of
+        # this question revision, so the chain does not carry it into the pool either: the link itself stays
+        # written and counted, and the step says how many works it cost.
+        set_aside = self.store.set_aside_for_year(rid, run["scope_revision"])
+        written = sorted({row["source_version_id"] for row in linked
+                          if row["source_version_id"] and row["source_version_id"] not in set_aside})
         heads = self.store.work_heads(rid)
         work_of = self.store.work_ids(written)
         ranked = DecisionStore(self.store).ranking_order(self.store.step(run_id, "ranking", "code:ranking")["id"])
@@ -2400,7 +2406,11 @@ class ResearchFlow:
                   # Links the first page of results showed on its own, which cost no request and faced no gate.
                   "pool_links": len(linked) - len(asked),
                   "records": len(written), "in_keyword_pool": len(linked_heads & keyword_pool),
-                  "new_works": len(chained)}
+                  "new_works": len(chained),
+                  # Records the chain wrote that the run's years set aside, so the difference between what the
+                  # gate admitted and what the pool holds is on the step rather than left to be worked out.
+                  **({"set_aside_for_year": len({row["source_version_id"] for row in linked
+                                                 if row["source_version_id"] in set_aside})} if set_aside else {})}
         self.store.finish_step(step["id"], "succeeded", output=output)
         return chained
 
@@ -2634,6 +2644,7 @@ class ResearchFlow:
         run_id, rid = run["id"], run["research_id"]
         settings = self.deps.settings
         provider = CONNECTORS[query["provider_id"]].provider_id
+        from deixis.workflow.search import search as fast_search  # the date-bound rule, imported where the flow is
         if isinstance(outcome, facade.Dispatched):
             dispatched, outcome = outcome, outcome.outcome
         transport_output = {"transport": transport} if transport and transport.get("dispatches") else {}
@@ -2677,6 +2688,10 @@ class ResearchFlow:
             # later reader can tell a relevance-ordered list from one ordered by date or citation count. NULL: neither
             # named one and the provider answered in its own order.
             sort=effective_sort(query),
+            # How this request stood to the run's years, read from the request itself: `applied` only where the
+            # request really carries the bound. The field describes the request, not its answer, so a request that
+            # carried the bound and then failed still says so; a run that bounds no years records none.
+            **fast_search.date_bound(fast_path.scope_years(self.store, rid, run["scope_revision"]), query),
         )
         if admission is not None:
             # The place this request was admitted at, on the row itself: the merge reads it, so it cannot depend on
@@ -3362,7 +3377,10 @@ class ResearchFlow:
         """
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(research_id)
-        versions = ranking_rules._versions(self.store, research_id)
+        # The research's current question revision: the full text is read for the question being asked, so a
+        # record its span set aside is not read either.
+        versions = ranking_rules._versions(self.store, research_id,
+                                           self.store.research(research_id)["current_scope_revision"])
         heads = self.store.work_heads(research_id)
         with_text = {row[0] for row in self.store.conn.execute(
             "SELECT DISTINCT p.source_version_id FROM passages p"

@@ -2,7 +2,8 @@
 
 Gold sets are the expert "documents" lists of the 2b–13b golden enriched test sets. A system's ranked records are
 matched to gold papers by PMID, then DOI, then normalized title; recall is per question, then averaged (macro).
-Records published after the question's challenge year are dropped before cutting at k.
+A record outside the question's challenge year is dropped before cutting at k, and so is a record with no year
+(`in_time`), so every arm is read under the same condition.
 """
 from __future__ import annotations
 
@@ -50,7 +51,14 @@ def sample(questions, n, seed):
 
 
 def in_time(record, year):
-    return record.get('year') is None or record['year'] <= year
+    """Whether this one record belongs to the years the question is read for: its own year, at or before `year`.
+
+    A record with no year is **out**. The arm that cuts at the provider answers the same way — OpenAlex's
+    `to_publication_date` returns no work without a date — so admitting it here would give the arm that filters
+    afterwards records the bounded arm cannot have. How many were dropped for each reason is reported beside the
+    scores rather than lost here.
+    """
+    return record.get('year') is not None and record['year'] <= year
 
 
 def matched(gold_meta, records):

@@ -22,6 +22,7 @@ from deixis.workflow.search import probes as probe_rules
 from deixis.workflow.answer import answer as answer_input, source_mentions
 from deixis.workflow.screen import screen_more
 from deixis.workflow.search.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
+from deixis.workflow.search import date_scope
 from deixis.workflow.search import search as fast_search
 from deixis.workflow.search import vocabulary as vocabulary_rules
 from deixis.workflow.read.equations import chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
@@ -214,15 +215,27 @@ def field_search_view(store: Store, run: dict[str, Any], body: dict[str, Any] | 
     return {"rule": rule.get("rule"), "sources": rule.get("sources"), "records": rule.get("records"), "rows": rows}
 
 
-def date_scope_view(run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
-    """The years this run is bounded to, and how the requests its plan froze stand to them.
+def date_scope_view(store: Store, run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The years this run is bounded to, how the requests its plan froze stand to them, and what they brought.
 
     The years are the person's own date condition, read from their question, or the cutoff a measurement supplied
-    with the run (`origin`); `basis` quotes the words they were read from. The counts are of **planned** requests,
+    with the run (`origin`); `basis` quotes the words they were read from. `planned` counts **planned** requests,
     read from the frozen plan and not from what was sent: `applied` carries the bound with the request, so that
     provider never answered outside it; `not_supported` is a route that takes no bound, so it was searched
     unbounded; `not_applied` a plan frozen before the years were read. Whether a planned request was really sent is
-    its own step's business, which the steps below it report. A run that bounds no years has nothing to report.
+    its own step's business, which the steps below it report.
+
+    `records` counts what this run's own requests decided, by where each record's own year stands to the span,
+    `outside_span` how many of those decisions were negative, and `set_aside` how many of the versions they name
+    are really set aside — kept as records of the research, not candidates of this revision, so nothing ranks,
+    screens or reads them. The two differ by the three ways a negative decision does not stand: a reply after the
+    stage cutoff decides nothing, a version a later request found inside the span keeps its place, and a record
+    the person included is theirs. The unit of `records` and `outside_span` is one decision per version per
+    request, so two records of one request that are the same version count once and a later search of the same
+    question counts under its own run; `set_aside` counts versions. `by_provider` is the same three numbers per
+    provider with the bound its own requests carried, which is the cost of bounding a search after the fact
+    instead of in the request. `year_disagreed` counts the decisions whose provider named a year the version does
+    not store. A run that bounds no years has nothing to report.
     """
     years = fast_path.date_scope(run["budget"])
     if years is None:
@@ -232,7 +245,30 @@ def date_scope_view(run: dict[str, Any], body: dict[str, Any] | None) -> dict[st
         state = request.get("date_bound")
         if state:
             counts[state] = counts.get(state, 0) + 1
-    return {key: years[key] for key in ("rule", "from_year", "to_year", "basis", "origin")} | {"planned": counts}
+    rows = store.date_scope_admissions(run["research_id"], run["scope_revision"], run["id"])
+    # What is really set aside, by the rule the rest of the research reads, rather than by counting the negative
+    # decisions: the three ways such a decision does not stand are in the docstring above.
+    aside = store.set_aside_for_year(run["research_id"], run["scope_revision"])
+    records = {name: sum(row["year_class"] == name for row in rows) for name in date_scope.CLASSES}
+    providers: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        held = providers.setdefault(row["provider"], {"records": 0, "outside_span": 0, "set_aside": set(),
+                                                      "date_bound": set()})
+        held["records"] += 1
+        held["outside_span"] += not row["year_eligible"]
+        # Versions, as the total is: a version two of this provider's requests both set aside is one version.
+        if row["source_version_id"] in aside:
+            held["set_aside"].add(row["source_version_id"])
+        if row["date_bound"]:
+            held["date_bound"].add(row["date_bound"])
+    return {key: years[key] for key in ("rule", "from_year", "to_year", "basis", "origin")} | {
+        "planned": counts, "records": records,
+        "outside_span": sum(not row["year_eligible"] for row in rows),
+        "set_aside": len({row["source_version_id"] for row in rows if row["source_version_id"] in aside}),
+        "year_disagreed": sum(row["sent_year"] is not None for row in rows),
+        "by_provider": {name: held | {"set_aside": len(held["set_aside"]),
+                                      "date_bound": sorted(held["date_bound"])}
+                        for name, held in sorted(providers.items())}}
 
 
 def broad_index_view(store: Store, run: dict[str, Any], body: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -864,7 +900,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # The second independent index this run searched beside the field source, or why it searched none.
         run["broad_index"] = broad_index_view(store, run, frozen) if run["kind"] == "discovery" else None
         # The years this run searched in, where its question or a measurement bounded them.
-        run["date_scope"] = date_scope_view(run, frozen) if run["kind"] == "discovery" else None
+        run["date_scope"] = date_scope_view(store, run, frozen) if run["kind"] == "discovery" else None
         # What became of the fast chain's requests, by the one rule the report's method section uses too.
         run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).

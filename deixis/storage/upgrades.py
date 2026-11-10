@@ -1047,4 +1047,30 @@ ALTER TABLE search_runs ADD COLUMN works_new INTEGER;
 
 ALTER TABLE search_runs ADD COLUMN works_found_removed INTEGER;
 """),
+    33: Step("0033_date_scope_admissions.sql", False, """-- What a run bounded to a span decided about each
+-- record one request wrote, and which bound that request itself carried. `date_bound` describes the request, not
+-- its answer, so a request that carried the bound and then failed still says `applied`; NULL means the run
+-- bounded no years. The admissions rows are written in the transaction that writes the request's records, so a
+-- later reading of the library cannot re-decide what an earlier run admitted.
+ALTER TABLE search_runs ADD COLUMN date_bound TEXT;
+
+CREATE TABLE date_scope_admissions (
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  scope_revision INTEGER NOT NULL,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  search_run_id TEXT NOT NULL REFERENCES search_runs(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  year INTEGER,
+  sent_year INTEGER,
+  year_class TEXT NOT NULL CHECK (year_class IN ('in_span', 'before_span', 'after_span', 'year_unknown')),
+  year_eligible INTEGER NOT NULL,
+  became_candidate INTEGER NOT NULL,
+  late INTEGER NOT NULL,
+  PRIMARY KEY (search_run_id, source_version_id)
+);
+
+CREATE INDEX date_scope_admissions_research ON date_scope_admissions (research_id, scope_revision);
+
+CREATE INDEX date_scope_admissions_version ON date_scope_admissions (research_id, scope_revision, source_version_id);
+"""),
 }

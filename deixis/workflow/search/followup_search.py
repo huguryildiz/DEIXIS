@@ -36,6 +36,7 @@ from deixis.providers.common import OtherVersion, ProviderRecord, SearchOutcome
 from deixis.providers.registry import CONNECTORS, effective_sort
 from deixis.storage.db import dumps, now, transaction
 from deixis.workflow.run import fast_path
+from deixis.workflow.search import search as fast_search
 from deixis.workflow.screen import abstract_stage
 from deixis.workflow.screen.decisions import DecisionStore
 
@@ -399,7 +400,9 @@ def _admit(flow: Any, run: dict[str, Any], position: int, request_: dict[str, An
                   raw_payload_path=out.get("raw_payload_path"), payload_sha256=out.get("payload_sha256"),
                   connector_json=dumps(out["connector"]) if out.get("connector") else None,
                   # The sorting setting the stored request named, or the one its connector always sends.
-                  sort=effective_sort(request_))
+                  sort=effective_sort(request_),
+                  # How this request stood to the years the question's own search was bounded to.
+                  **fast_search.date_bound(fast_path.scope_years(store, rid, run["scope_revision"]), request_))
     with transaction(store.conn):
         before = _memberships(store, rid)
         # What the research held when this run first admitted (R3.2): later admissions and the found step classify

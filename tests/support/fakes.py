@@ -333,6 +333,19 @@ def valid_response(si: dict[str, Any]) -> str:
     })
 
 
+def reviewable(si: dict[str, Any]) -> str:
+    """A valid grounded answer that states a numerical comparison, so the rule sends it to a reviewer.
+
+    Every other step answers as usual. A test of the review path uses this rather than an answer that happens to
+    qualify: whether an answer is read a second time is a condition of the draft, not a given.
+    """
+    if si["task_type"] != "grounded_answer":
+        return valid_response(si)
+    draft = json.loads(valid_response(si))
+    draft["claims"][0]["text"] = "It has been reported that the first passage reports 30 % higher recall than the baseline."
+    return json.dumps(draft)
+
+
 class FakeAdapter:
     connection = "fake"
 

@@ -1031,6 +1031,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             # never today's counts in its place. Beside `inputs_given`, not instead of it.
             "start_snapshot": _start_snapshot(store, a),
             "review": review,
+            # Whether an extra model read this answer, is about to, or never will, and on what grounds.
+            "review_status": _review_status(store, a, review),
             **({"abstract_only_sources": len({e["source_version_id"] for c in claims for e in c["evidence"]
                 if e["kind"] == "abstract"} - {e["source_version_id"] for c in claims for e in c["evidence"]
                 if e["kind"] != "abstract"})} if fast_answer else {}),
@@ -1700,6 +1702,61 @@ def _review_view(store: Store, answer_id: str) -> dict[str, Any] | None:
             "reviews": review["review"]["reviews"] if completed else [], "notes": review["review"]["notes"] if completed else "",
             "issues": (review["review"] or {}).get("issues", []) if not completed else [],
             "model": dict(session) if session else None}
+
+
+def _review_status(store: Store, answer: dict[str, Any], review: dict[str, Any] | None) -> dict[str, Any]:
+    """Where this answer's second reading stands: its result, the run still to come, or why there is none.
+
+    A result is read from the review record; everything else is read from the frozen decision and the run that was
+    opened for it. The two are kept apart on purpose: the decision says why a review was or was not called for, and
+    never implies one finished.
+
+    The state covers the automatic reading alone. A review the person asked for is a record of its own with its own
+    surface, so it is reported here only as `person_requested`: without it, an answer the person had reviewed would
+    still read "no second reading".
+    """
+    decision = store.review_decision(answer["id"])
+    asked = store.conn.execute(
+        "SELECT COUNT(*) FROM answer_review_decisions WHERE answer_id = ? AND occasion = 'person'",
+        (answer["id"],)).fetchone()[0]
+    if review is not None:
+        state = review["status"]  # 'completed' or 'failed'
+    elif decision is None:
+        state = "not_recorded"  # saved before the rule, or nothing was stored for it
+    elif decision["decision"] != "review":
+        state = decision["decision"]  # 'not_triggered' or 'no_reviewer'
+    else:
+        run = store.conn.execute("SELECT status FROM runs WHERE idempotency_key = ?",
+                                 (f"answer_review:{answer['id']}",)).fetchone()
+        if run is None:
+            # No run of its own: either the review runs inside the answer run (the stage is not enforced), or the
+            # person changed the selection and that answer is rerun instead of reviewed.
+            own = store.run(answer["run_id"])
+            inline = not fast_path.enforces(own["budget"], "answer")
+            if own["status"] in ("queued", "running", "pause_requested"):
+                # The answer run has not ended, so neither path has opened the reading yet: inline it happens inside
+                # this run, and on the fast path a run of its own is opened when this one completes.
+                state = "inline_pending" if inline else "queued"
+            elif own["status"] != "completed":
+                state = _RUN_STATES.get(own["status"], "not_recorded")  # it stopped before it could open one
+            elif inline:
+                state = "not_recorded"  # it ran inside the completed answer run and stored nothing
+            else:
+                state = "skipped_rerun"  # it completed and opened none: the selection changed and an answer is queued
+        else:
+            state = _RUN_STATES.get(run["status"], "not_recorded")
+    return {"state": state, "person_requested": asked > 0,
+            "rule": (decision or {}).get("rule"), "triggers": (decision or {}).get("triggers", []),
+            "separate_family": (decision or {}).get("separate_family"),
+            "family_rule": (decision or {}).get("family_rule"),
+            "reviewer": {"connection": decision["reviewer_connection"], "model": decision["reviewer_model"],
+                         "reasoning_effort": decision["reviewer_effort"]} if decision and decision["reviewer_model"] else None}
+
+
+# A run's status, said as the reading's state. A run still to start, out or stopped is not a result; a run that ended
+# with nothing stored says nothing either.
+_RUN_STATES = {"queued": "queued", "running": "running", "pause_requested": "running", "paused": "paused",
+               "cancelled": "cancelled", "failed": "failed", "completed": "not_recorded"}
 
 
 def occurrence_view(store: Store, asset: dict, extraction: dict | None, *, extraction_version=None) -> dict:

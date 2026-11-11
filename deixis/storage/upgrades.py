@@ -1073,4 +1073,50 @@ CREATE INDEX date_scope_admissions_research ON date_scope_admissions (research_i
 
 CREATE INDEX date_scope_admissions_version ON date_scope_admissions (research_id, scope_revision, source_version_id);
 """),
+    34: Step("0034_answer_review_decisions.sql", False, """-- Why one answer was read by an extra model, or
+-- was not: the conditions code read (review_trigger_v1), the reviewer chosen at that moment and the two models'
+-- families. The row is written in the transaction that saves the answer, or that opens the person's own review,
+-- and never again, so a setting changed afterwards does not move the reviewer an earlier answer was given. The
+-- decision is not the result: whether the review finished is read from answer_reviews and the targeting run.
+CREATE TABLE answer_review_decisions (
+  id TEXT PRIMARY KEY,
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  occasion TEXT NOT NULL CHECK (occasion IN ('automatic', 'person')),
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  rule TEXT NOT NULL,
+  triggers TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('review', 'not_triggered', 'no_reviewer')),
+  answer_connection TEXT,
+  answer_model TEXT,
+  reviewer_connection TEXT,
+  reviewer_model TEXT,
+  reviewer_effort TEXT,
+  family_rule TEXT NOT NULL,
+  separate_family TEXT NOT NULL CHECK (separate_family IN ('yes', 'no', 'unknown')),
+  owner_review_id TEXT REFERENCES owner_reviews(id),
+  decided_at TEXT NOT NULL,
+  CHECK ((occasion = 'person') = (owner_review_id IS NOT NULL)),
+  -- An automatic decision to review names the model it froze; the person's request names a connection, whose
+  -- default model is resolved when the review runs.
+  CHECK (occasion = 'person' OR decision <> 'review' OR reviewer_model IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX answer_review_decisions_auto ON answer_review_decisions (answer_id) WHERE occasion = 'automatic';
+
+CREATE UNIQUE INDEX answer_review_decisions_owner ON answer_review_decisions (owner_review_id);
+
+CREATE INDEX answer_review_decisions_answer ON answer_review_decisions (answer_id);
+
+CREATE TRIGGER answer_review_decisions_no_update BEFORE UPDATE ON answer_review_decisions
+BEGIN SELECT RAISE(ABORT, 'answer_review_decisions rows are immutable'); END;
+
+CREATE TRIGGER answer_review_decisions_no_conflicting_insert BEFORE INSERT ON answer_review_decisions
+WHEN EXISTS (SELECT 1 FROM answer_review_decisions WHERE id = NEW.id)
+BEGIN SELECT RAISE(ABORT, 'answer_review_decisions already exists'); END;
+
+CREATE TRIGGER answer_review_decisions_no_delete BEFORE DELETE ON answer_review_decisions
+WHEN NOT EXISTS (SELECT 1 FROM research_purge_authorizations WHERE research_id = OLD.research_id)
+BEGIN SELECT RAISE(ABORT, 'answer_review_decisions requires research purge authorization'); END;
+"""),
 }

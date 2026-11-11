@@ -159,6 +159,21 @@ export type AnswerReview = {
   reviews: { claim_label: string; verdict: Verdict; reason: string }[]; notes: string; issues: ValidationIssue[]
   model: { connection: string; requested_model: string | null; resolved_model: string | null } | null
 }
+// Why an answer was read again by a second model, or why it was not. The grounds and the reviewer are frozen when
+// the answer is saved, so a reviewer changed later does not move an answer already decided.
+export type ReviewTrigger = 'person_asked' | 'numeric_comparison' | 'conflicting_evidence' | 'abstract_only_support'
+// completed/failed: a reading that ran. queued/running/paused/cancelled/inline_pending: one still to come or stopped.
+// not_triggered/no_reviewer/skipped_rerun/not_recorded: no reading, with the reason.
+export type AnswerReviewState = 'completed' | 'failed' | 'queued' | 'running' | 'paused' | 'cancelled' | 'inline_pending'
+  | 'not_triggered' | 'no_reviewer' | 'skipped_rerun' | 'not_recorded'
+export type AnswerReviewStatus = {
+  state: AnswerReviewState; rule: string | null; triggers: ReviewTrigger[]
+  // The state covers the automatic reading alone; a review the person asked for has its own card.
+  person_requested: boolean
+  // Whether the reviewer came from another maker's model family; 'unknown' where either model is unrecognised.
+  separate_family: 'yes' | 'no' | 'unknown' | null; family_rule: string | null
+  reviewer: { connection: string; model: string; reasoning_effort: string | null } | null
+}
 export type ModelRole = 'answer' | 'literature' | 'reviewer'
 // The Settings defaults: the three step roles and the equations model, which no research stores.
 export type DefaultRole = ModelRole | 'equations'
@@ -668,6 +683,8 @@ export type Answer = {
   // Where the flow stood when this answer's run started (slice 20); null when that run kept none.
   start_snapshot: AnswerStartSnapshot | null
   review: AnswerReview | null
+  // Whether a second model read this answer, is about to, or never will, and on what grounds.
+  review_status: AnswerReviewStatus
 }
 // A given work as the ledger names it: title and key from the stored record. `passage_id` is the passage to open (where
 // the backend located the entry's quote, else the work's first given passage); `anchor_text` is that located span.

@@ -516,6 +516,8 @@ class Store:
                 " AND raw_payload_path IS NOT NULL", (research_id,),
             ))
             self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
+            # The frozen review decisions name owner reviews and answers deleted below, so they go first.
+            self.conn.execute("DELETE FROM answer_review_decisions WHERE research_id = ?", (research_id,))
             from deixis.workflow.features.candidates.candidates_store import purge_candidates
             purge_candidates(self.conn, research_id)
             from deixis.workflow.features.review.review_store import purge_owner_reviews
@@ -4238,6 +4240,10 @@ class Store:
                         "UPDATE researches SET title = ? WHERE id = ? AND current_scope_revision = ?",
                         (draft["title"], research_id, scope_revision),
                     )
+                # Why this answer is read by an extra model, or is not, decided here and never again: the conditions
+                # are code's, and the reviewer is the one in effect at this moment, so a setting changed later does
+                # not move it. The review step reads this row rather than the setting.
+                self._record_review_decision(aid, research_id, run_id, scope_revision, step_input_id, draft)
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)
             from deixis.workflow.run import fast_path
@@ -4246,6 +4252,60 @@ class Store:
                                   if validation.get("reason") == "no_evidence_at_cutoff" else status)
             late_revision.published(self, self.run(run_id), aid, status)
         return aid
+
+    def _record_review_decision(self, answer_id: str, research_id: str, run_id: str, scope_revision: int,
+                                step_input_id: str | None, draft: dict[str, Any]) -> None:
+        """Freeze whether an extra model reads this answer, why, and which reviewer does it.
+
+        Written once, inside the transaction that saves the answer. Both review paths read this row instead of
+        recomputing the conditions and re-reading the setting, so a reviewer changed afterwards cannot move an answer
+        already decided and a resumed run repeats the decision rather than making a new one.
+        """
+        from deixis.models import family
+        from deixis.workflow.answer import review_trigger
+
+        # The reading depth of every cited passage, from the stored records: a draft never states its own depth.
+        passage_ids = {pid for claim in draft.get("claims") or [] for pid in claim.get("passage_ids") or []}
+        kinds: dict[str, str] = {}
+        if passage_ids:
+            ids = tuple(passage_ids)
+            kinds = {row["id"]: row["kind"] for row in self.conn.execute(
+                f"SELECT id, kind FROM passages WHERE id IN ({','.join('?' * len(ids))})", ids)}
+        triggers = review_trigger.fired(draft, kinds)
+        # Which model wrote the answer, so the families can be compared; one connection can serve several makers.
+        session = self.conn.execute(
+            "SELECT connection, requested_model, resolved_model FROM model_sessions WHERE step_input_id = ?"
+            " ORDER BY started_at DESC LIMIT 1", (step_input_id,)).fetchone() if step_input_id else None
+        answer_model = (session["resolved_model"] or session["requested_model"]) if session else None
+        reviewer = effective_reviewer(self.scope(research_id, scope_revision), self.setting("reviewer")) if triggers else None
+        if reviewer is not None and not reviewer[1]:
+            reviewer = None  # a reviewer setting without a model names nothing to send to
+        if not triggers:
+            decision = "not_triggered"
+        elif reviewer is None:
+            decision = "no_reviewer"  # a condition was met but nothing reviews this research
+        else:
+            decision = "review"
+        self.conn.execute(
+            "INSERT INTO answer_review_decisions (id, answer_id, occasion, research_id, run_id, rule, triggers, decision,"
+            " answer_connection, answer_model, reviewer_connection, reviewer_model, reviewer_effort, family_rule,"
+            " separate_family, owner_review_id, decided_at)"
+            " VALUES (?, ?, 'automatic', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+            (new_id("ard"), answer_id, research_id, run_id, review_trigger.RULE, dumps(list(triggers)), decision,
+             session["connection"] if session else None, answer_model,
+             reviewer[0] if reviewer else None, reviewer[1] if reviewer else None, reviewer[2] if reviewer else None,
+             family.FAMILY_RULE, family.separate_family(answer_model, reviewer[1] if reviewer else None), now()),
+        )
+
+    def review_decision(self, answer_id: str) -> dict[str, Any] | None:
+        """The frozen automatic decision for this answer, or None for an answer saved before the rule existed."""
+        row = self.conn.execute(
+            "SELECT * FROM answer_review_decisions WHERE answer_id = ? AND occasion = 'automatic'", (answer_id,)).fetchone()
+        if row is None:
+            return None
+        decision = dict(row)
+        decision["triggers"] = json.loads(decision["triggers"])
+        return decision
 
     def answer_review(self, answer_id: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM answer_reviews WHERE answer_id = ?", (answer_id,)).fetchone()

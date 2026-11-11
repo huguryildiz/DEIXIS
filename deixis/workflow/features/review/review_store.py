@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from deixis.domain.canonical import canonical_json, sha256_hex
 from deixis.domain.contracts import locate_anchor
 from deixis.domain.rules import RevisionConflict
-from deixis.storage.db import new_id, now, transaction
+from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.run.store import NotFound
 
 TARGET_KINDS = ("answer", "report", "candidate")
@@ -210,7 +210,40 @@ class ReviewStore:
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (review_id, *fields.values(), idempotency_key, now()),
             )
+            self._record_person_decision(review_id, research_id, run_id, snapshot_id,
+                                         (requested_connection, requested_model, requested_effort))
             return dict(self.conn.execute("SELECT * FROM owner_reviews WHERE id = ?", (review_id,)).fetchone())
+
+    def _record_person_decision(self, review_id, research_id, run_id, snapshot_id, reviewer):
+        """Record the person's own request to read an answer again, beside the decisions code makes.
+
+        The person asking is one of the four grounds for a second reading, so a request is recorded the same way an
+        automatic decision is, and the two can be counted together. Only a review of an answer is recorded: a report
+        or a candidate review reads something else. Nothing here decides anything; the person already did.
+        """
+        from deixis.models import family
+        from deixis.workflow.answer import review_trigger
+
+        target = self.conn.execute("SELECT target_kind, target_id FROM owner_review_snapshots WHERE id = ?",
+                                   (snapshot_id,)).fetchone()
+        if target is None or target["target_kind"] != "answer":
+            return
+        # The model that wrote the answer, so the two families can be compared; the answer's own session holds it.
+        wrote = self.conn.execute(
+            "SELECT s.connection, s.requested_model, s.resolved_model FROM answers a"
+            " LEFT JOIN model_sessions s ON s.step_input_id = a.step_input_id WHERE a.id = ?",
+            (target["target_id"],)).fetchone()
+        answer_model = (wrote["resolved_model"] or wrote["requested_model"]) if wrote else None
+        self.conn.execute(
+            "INSERT INTO answer_review_decisions (id, answer_id, occasion, research_id, run_id, rule, triggers, decision,"
+            " answer_connection, answer_model, reviewer_connection, reviewer_model, reviewer_effort, family_rule,"
+            " separate_family, owner_review_id, decided_at)"
+            " VALUES (?, ?, 'person', ?, ?, ?, ?, 'review', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (new_id("ard"), target["target_id"], research_id, run_id, review_trigger.RULE,
+             dumps([review_trigger.PERSON_ASKED]), wrote["connection"] if wrote else None, answer_model,
+             reviewer[0], reviewer[1], reviewer[2], family.FAMILY_RULE,
+             family.separate_family(answer_model, reviewer[1]), review_id, now()),
+        )
 
     def _review(self, review_id):
         row = self.conn.execute("SELECT * FROM owner_reviews WHERE id = ?", (review_id,)).fetchone()

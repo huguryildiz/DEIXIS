@@ -517,9 +517,8 @@ class ResearchFlow:
                     self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
                     if run["kind"] == "answer":
                         fast_answer.after_answer(self, run)
-                    elif (self.deps.settings.study_table == "auto"
-                          and self.store.run(run["target"]["answer_run_id"])["budget"].get("trigger") != "late_fulltext"):
-                        report_pipeline.after_answer(self.store, self.store.run(run["target"]["answer_run_id"]))
+                    else:
+                        fast_answer.study_table_after(self, self.store.run(run["target"]["answer_run_id"]))
                 return
             if run["kind"] == "followup_search":
                 # The search the person asked for with their question has answered: the second answer of the same
@@ -3162,7 +3161,16 @@ class ResearchFlow:
     async def _review(self, run: dict[str, Any], scope: dict[str, Any], answer_id: str, draft: dict[str, Any]) -> None:
         """Ask the reviewer model whether each claim's cited passages support it; the answer itself is never changed."""
         run_id = run["id"]
-        reviewer = effective_reviewer(scope, self.store.setting("reviewer"))
+        # The reviewer and the grounds were frozen when the answer was saved; a setting changed since does not move
+        # this answer, and a resumed run repeats the same decision. An answer saved before the rule has no decision
+        # row and keeps the unconditional behaviour it was written under.
+        decision = self.store.review_decision(answer_id)
+        if decision is None:
+            reviewer = effective_reviewer(scope, self.store.setting("reviewer"))
+        elif decision["decision"] != "review":
+            return
+        else:
+            reviewer = (decision["reviewer_connection"], decision["reviewer_model"], decision["reviewer_effort"])
         if reviewer is None or not draft["claims"] or self.store.answer_review(answer_id) is not None:
             return
         self._checkpoint(run_id)

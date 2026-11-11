@@ -9,12 +9,12 @@ from deixis.workflow.run import views
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.flow import RunStopped
 from deixis.workflow.run.worker import Worker
-from test_fast_path_answer import setup, cutoff, answer_run, user
+from test_fast_path_answer import setup, cutoff, answer_run, reviewed, user
 from test_criterion_passage_flow import body_with, TOPIC_PAGE, page_source
 
 
 def prepared(tmp_path, *, old=False, no_evidence=False, pdfs=1, last_code="runs_agree_candidate"):
-    lib = setup(tmp_path, pdf=True)
+    lib = reviewed(setup(tmp_path, pdf=True))
     for n in range(1, pdfs):
         svid = page_source(lib.store, lib.rid, f"late-{n}", [TOPIC_PAGE] * 3, "SYNTHETIC exercise improves fatigue.", included=False)
         lib.sources.append(svid)

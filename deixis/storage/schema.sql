@@ -1,9 +1,9 @@
--- The whole library schema at version 33. A new library is made from this file in one transaction and
--- records versions 1 to 33; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 34. A new library is made from this file in one transaction and
+-- records versions 1 to 34; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 33
+-- deixis:schema-version 34
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -2677,3 +2677,53 @@ CREATE TABLE date_scope_admissions (
 CREATE INDEX date_scope_admissions_research ON date_scope_admissions (research_id, scope_revision);
 
 CREATE INDEX date_scope_admissions_version ON date_scope_admissions (research_id, scope_revision, source_version_id);
+-- Why one answer was read by an extra model, or was not. The conditions are code's (review_trigger_v1): the
+-- person's own request, a claim that compares numbers, a draft that records conflicting evidence, and a claim
+-- whose every cited passage is an abstract. The row is written in the transaction that saves the answer (the
+-- automatic occasion) or that opens the person's own review, and is never written again: a later reading of the
+-- library cannot re-decide what an answer was reviewed for, and a setting changed afterwards does not move the
+-- reviewer an earlier answer was given. The reviewer chosen at that moment is held here, so the review runs on
+-- it rather than on whatever the setting says when the step starts. The decision is not the result: whether the
+-- review finished is read from answer_reviews and from the run that targets the answer.
+-- `separate_family` is model_family_v1's reading of the two model ids; 'unknown' is never a separate family.
+-- One automatic row per answer; the person may ask more than once, so their rows are one per owner review.
+CREATE TABLE answer_review_decisions (
+  id TEXT PRIMARY KEY,
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  occasion TEXT NOT NULL CHECK (occasion IN ('automatic', 'person')),
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  rule TEXT NOT NULL,
+  triggers TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('review', 'not_triggered', 'no_reviewer')),
+  answer_connection TEXT,
+  answer_model TEXT,
+  reviewer_connection TEXT,
+  reviewer_model TEXT,
+  reviewer_effort TEXT,
+  family_rule TEXT NOT NULL,
+  separate_family TEXT NOT NULL CHECK (separate_family IN ('yes', 'no', 'unknown')),
+  owner_review_id TEXT REFERENCES owner_reviews(id),
+  decided_at TEXT NOT NULL,
+  CHECK ((occasion = 'person') = (owner_review_id IS NOT NULL)),
+  -- An automatic decision to review names the model it froze; the person's request names a connection, whose
+  -- default model is resolved when the review runs.
+  CHECK (occasion = 'person' OR decision <> 'review' OR reviewer_model IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX answer_review_decisions_auto ON answer_review_decisions (answer_id) WHERE occasion = 'automatic';
+
+CREATE UNIQUE INDEX answer_review_decisions_owner ON answer_review_decisions (owner_review_id);
+
+CREATE INDEX answer_review_decisions_answer ON answer_review_decisions (answer_id);
+
+CREATE TRIGGER answer_review_decisions_no_update BEFORE UPDATE ON answer_review_decisions
+BEGIN SELECT RAISE(ABORT, 'answer_review_decisions rows are immutable'); END;
+
+CREATE TRIGGER answer_review_decisions_no_conflicting_insert BEFORE INSERT ON answer_review_decisions
+WHEN EXISTS (SELECT 1 FROM answer_review_decisions WHERE id = NEW.id)
+BEGIN SELECT RAISE(ABORT, 'answer_review_decisions already exists'); END;
+
+CREATE TRIGGER answer_review_decisions_no_delete BEFORE DELETE ON answer_review_decisions
+WHEN NOT EXISTS (SELECT 1 FROM research_purge_authorizations WHERE research_id = OLD.research_id)
+BEGIN SELECT RAISE(ABORT, 'answer_review_decisions requires research purge authorization'); END;

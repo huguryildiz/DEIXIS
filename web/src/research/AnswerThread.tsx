@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowUp, ArrowUpRight, BadgeCheck, ChevronRight, SearchCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, type Answer, type Claim, type EvidenceLedger, type Limitation, type Source, type ValidationIssue, type Verdict } from '../lib/api'
+import { api, type Answer, type AnswerReviewState, type Claim, type EvidenceLedger, type Limitation, type ReviewTrigger, type Source, type ValidationIssue, type Verdict } from '../lib/api'
 import { equationReaderName, locatorText, pauseReasonText, retractionNote, verdictLabels, versionText, versionTones } from '../lib/labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../lib/labels'
 import { MathText } from '../components/MathText'
@@ -336,7 +336,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     <p className="legacy-mini-note check">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model && <>{t('Model')}: <ModelName connection={answer.model.connection} text={modelText(answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown'))} />.</>} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}
       {refs.size > 0 && <> <ExportLinks researchId={researchId} sources="cited" answerId={answer.id} /></>}</p>
     <AnswerFlowNote answer={answer} />
-    <ReviewNote review={answer.review} />
+    <ReviewNote review={answer.review} status={answer.review_status} />
     <ReviewSummary reviews={reviewList.reviews} open={openReviews} />
     <ChecksNote warnings={answer.validation.warnings} />
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
@@ -515,13 +515,48 @@ function ChecksNote({ warnings }: { warnings?: ValidationIssue[] }) {
 }
 
 
-function ReviewNote({ review }: { review: Answer['review'] }) {
+// Why this answer was read a second time, in the person's words. The order follows the stored trigger order.
+const triggerLabels: Record<ReviewTrigger, string> = {
+  person_asked: 'you asked for it',
+  numeric_comparison: 'it states a numerical comparison',
+  conflicting_evidence: 'the sources disagree',
+  abstract_only_support: 'a claim rests on abstracts alone',
+}
+// What stands when no reading has been written: one sentence per state, never a state left unsaid. 'not_recorded'
+// has no sentence: nothing stored says anything about it, and a guess would claim more than was checked.
+const reviewStateText: Partial<Record<AnswerReviewState, string>> = {
+  not_triggered: 'No automatic second reading: this answer meets none of the conditions for one.',
+  no_reviewer: 'No automatic second reading: no reviewer model is set.',
+  skipped_rerun: 'No automatic second reading: the selection changed and a new answer was queued instead.',
+  queued: 'Waiting for a second model to read the claims.',
+  running: 'A second model is reading the claims.',
+  inline_pending: 'Waiting for a second model to read the claims.',  // it is read inside the answer run, which is still out
+  paused: 'The second reading is paused.',
+  cancelled: 'The second reading was stopped.',
+  failed: 'The second reading did not run.',
+}
+// A reading still to come has not read anything yet, and one that never happens read nothing at all, so only a
+// finished reading is spoken of in the past. The conditions are named in every case: they are what was decided.
+const WILL_BE_READ: AnswerReviewState[] = ['queued', 'running', 'inline_pending', 'paused']
+
+
+function ReviewNote({ review, status }: { review: Answer['review']; status: Answer['review_status'] }) {
   const modelText = useModelText()
-  if (!review) return null
+  // Why the reading was called for, in the tense the state allows.
+  const reasons = status.triggers.map(x => t(triggerLabels[x])).join(', ')
+  const why = status.triggers.length === 0 ? null
+    : review ? <> {t('Read again because {reasons}.', { reasons })}</>
+    : WILL_BE_READ.includes(status.state) ? <> {t('It will be read again because {reasons}.', { reasons })}</>
+    : <> {t('It meets a condition for a second reading: {reasons}.', { reasons })}</>
+  if (!review) {
+    const sentence = reviewStateText[status.state]
+    if (!sentence) return null
+    return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span>{t(sentence)}{why}</span></p>
+  }
   const model = review.model ? <> · <ModelName connection={review.model.connection} text={modelText(review.model.resolved_model ?? review.model.requested_model)} /></> : null
   if (review.status === 'failed') {
     return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span>{model && <strong>{t('Claim check (automatic)')}{model}:</strong>} {t('The reviewer did not produce a usable review.')} {pauseReasonText(review.failure_reason)} {t('The answer is unchanged.')}</span></p>
   }
   const counts = (Object.keys(verdictLabels) as Verdict[]).map(v => [v, review.reviews.filter(r => r.verdict === v).length] as const).filter(([, n]) => n > 0)
-  return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Claim check (automatic)')}{model}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}</span></p>
+  return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Claim check (automatic)')}{model}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}{why}{status.separate_family === 'yes' && ` ${t('The reviewer is from another model family.')}`}{status.separate_family === 'no' && ` ${t('The reviewer is from the same model family as the answer.')}`}</span></p>
 }

@@ -17,7 +17,7 @@ from deixis.workflow.search import small_batch
 from deixis.workflow.features.report import report_pipeline
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.flow import FlowDeps, ResearchFlow, RunStopped
-from fakes import FakeAdapter, valid_response
+from fakes import FakeAdapter, reviewable, valid_response
 from test_criterion_passage_flow import library, page_source, TOPIC_PAGE
 from test_fast_path_clock import FakeClock
 from test_small_batch_flow import client_of
@@ -76,6 +76,16 @@ def setup(tmp_path, n=1, codes=("runs_agree_candidate",), pdf=False, abstract="S
                                  {"fake": FakeAdapter(valid_response)}, skill.load_skill_package(), None))
     return SimpleNamespace(store=store, rid=rid, sources=sources, discovery=store.run(discovery["id"]),
                            listing=listing, flow=flow)
+
+
+def reviewed(lib):
+    """Give this library a reviewer and an answer that meets a condition for a second reading.
+
+    Both are needed: with no reviewer, or with an answer that meets no condition, the rule opens no review run.
+    """
+    lib.store.set_setting("reviewer", {"model_connection": "fake", "model": "fake-model", "reasoning_effort": None})
+    lib.flow.deps.adapters["fake"] = FakeAdapter(reviewable)
+    return lib
 
 
 def cutoff(lib, unread=()):
@@ -143,7 +153,7 @@ def test_no_evidence_does_not_call_model_and_records_terminal_outcome(tmp_path):
 
 
 def test_answer_avoids_inspection_embedding_and_in_run_review(tmp_path, monkeypatch):
-    lib = setup(tmp_path)
+    lib = reviewed(setup(tmp_path))
     cutoff(lib)
     run = answer_run(lib)
     async def forbidden(*args, **kwargs):
@@ -416,7 +426,8 @@ def test_code_selection_revision_during_generation_is_ignored_but_source_change_
     run = answer_run(lib)
     def responder(si):
         lib.store.conn.execute("UPDATE researches SET selection_revision = selection_revision + 1 WHERE id = ?", (lib.rid,))
-        return valid_response(si)
+        return reviewable(si)
+    reviewed(lib)
     lib.flow.deps.adapters["fake"] = FakeAdapter(responder)
     asyncio.run(lib.flow.execute(run["id"]))
     assert lib.store.conn.execute("SELECT status FROM answers").fetchone()[0] == "structurally_valid"
@@ -470,12 +481,13 @@ def test_mixed_claim_basis_comes_from_links_and_review_failure_leaves_answer_int
     def mixed(si):
         if si["task_type"] != "grounded_answer":
             return valid_response(si)
-        draft = json.loads(valid_response(si))
+        draft = json.loads(reviewable(si))
         passages = [next(p for p in si["passages"] if p["locator"]["kind"] == kind) for kind in ("abstract", "pdf_page")]
         draft["claims"][0].update(support_type="analyst_inference", passage_ids=[p["passage_id"] for p in passages])
         draft["citation_anchors"] = [{"claim_label": "c1", "passage_id": p["passage_id"], "quote": p["text"][:300]}
                                      for p in passages]
         return json.dumps(draft)
+    reviewed(lib)
     lib.flow.deps.adapters["fake"] = FakeAdapter(mixed)
     asyncio.run(lib.flow.execute(run["id"]))
     answer = views.research_view(lib.store, lib.rid)["answers"][0]
@@ -844,7 +856,7 @@ HANDLE = re.compile(r"\b(?:psg_P|srv_S)\d+\b")
 
 def reviewer(si):
     if si["task_type"] != "answer_review":
-        return valid_response(si)
+        return reviewable(si)  # the answer must meet a condition, or no reviewer is asked
     passage, source = si["passages"][0]["passage_id"], si["sources"][0]["source_id"]
     padded = passage.replace("_P", "_P0")
     return json.dumps(envelope(si, "deixis.answer_review.v1") | {

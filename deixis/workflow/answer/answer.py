@@ -883,8 +883,26 @@ def after_answer(flow: Any, run: dict[str, Any]) -> None:
     row = store.conn.execute("SELECT id FROM answers WHERE run_id = ? AND status = 'structurally_valid'", (run["id"],)).fetchone()
     if not row:
         return
+    # Whether an extra model reads this answer was decided when the answer was saved and is not reconsidered here.
+    # Where nothing reads it, no review run opens, so the study table is chained off this run instead of that one.
+    decision = store.review_decision(row["id"])
+    if decision is not None and decision["decision"] != "review":
+        study_table_after(flow, run)
+        return
     store.create_run(run["research_id"], "answer_review", {"max_model_calls": ANSWER_REVIEW_MODEL_CALLS, "max_provider_requests": 0},
                      f"answer_review:{row['id']}", target={"answer_id": row["id"], "answer_run_id": run["id"]})
+
+
+def study_table_after(flow: Any, answer_run: dict[str, Any]) -> None:
+    """Open the automatic study table for a finished answer run, where the setting asks for one.
+
+    A late-full-text revision opens none: the table belongs to the question's first answer. Called from whichever run
+    ends the answer's chain, so the table does not depend on a review having run.
+    """
+    from deixis.workflow.features.report import report_pipeline
+
+    if flow.deps.settings.study_table == "auto" and answer_run["budget"].get("trigger") != "late_fulltext":
+        report_pipeline.after_answer(flow.store, answer_run)
 
 
 async def review(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:

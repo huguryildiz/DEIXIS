@@ -72,11 +72,14 @@ def test_a_replayed_arm_takes_the_baselines_plan_and_stops_rather_than_searching
     rid, run_id = start(arm)
     stopped = wait(arm, rid, run_id)[1]
     assert (stopped["status"], stopped["error"]["reason"]) == ("paused", "model_call_failed")
-    # The baseline's plan came back for the first call and the contract refused it, because it names spans in
-    # records this library does not have; the repair the product then sent had no baseline reply left to take.
+    # The baseline's plan came back for its call and the contract refused it, because it names spans in records this
+    # library does not have; the repair the product then sent had no baseline reply left to take. The criterion's
+    # proposals are replayed before it: they read the question alone, so the run sends them beside the plan call.
     rows = [json.loads(line) for line in log.read_text().splitlines()]
-    assert [(r["task_type"], r["outcome"], r.get("reason")) for r in rows] == [
-        ("search_plan", "replayed", None), ("search_plan", "refused", "more_calls_than_baseline")]
+    taken = [(r["task_type"], r["outcome"], r.get("reason")) for r in rows]
+    assert taken[-2:] == [("search_plan", "replayed", None),
+                          ("search_plan", "refused", "more_calls_than_baseline")]
+    assert {row[:2] for row in taken[:-2]} == {("criterion_proposal", "replayed")}
 
 
 def call(digest="d", key=("search_query:1", 1), **kw):

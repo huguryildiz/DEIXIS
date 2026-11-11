@@ -1,4 +1,4 @@
-"""The study table and its columns are opened by the discovery run, before it reads anything.
+"""The study table is opened by the discovery run before it reads anything; its proposed columns come after the answer.
 
 Synthetic model output throughout, so these show workflow order, not extraction quality.
 """
@@ -69,7 +69,7 @@ def discovery_run(store, research_id):
 
 
 def test_the_table_and_its_question_columns_exist_before_the_read_stage(tmp_path):
-    """The opening step precedes the read stage, and the table carries the question's own columns plus the proposal."""
+    """The opening precedes the read stage, carries the question's own columns, and asks no model for more."""
     with TestClient(app_for(tmp_path, ColumnAdapter())) as client:
         store = client.app.state.store
         session(client)
@@ -82,18 +82,68 @@ def test_the_table_and_its_question_columns_exist_before_the_read_stage(tmp_path
         # are in place while the works are read.
         order = [row[0] for row in store.conn.execute(
             "SELECT operation_key FROM run_steps WHERE run_id = ? ORDER BY rowid", (discovery_run(store, rid)["id"],))]
-        assert order.index("study_table_open") < order.index("study_table_columns")
         assert all(order.index("study_table_open") < order.index(key) for key in order
                    if key.startswith("fulltext_adjudication"))
+        # No model is asked for columns on the way to the answer: that call is not needed to write it.
+        assert "study_table_columns" not in order
 
         table_id, columns = columns_of(store, rid)
+        # The two the question's own words make. Whether the chain after the answer has already added its proposed
+        # ones by now is its own race and its own test; what this one holds is that these two are there and first.
         assert [column["name"] for column in columns][:2] == ["Reported finding", "Condition of the finding"]
         assert [column["origin"] for column in columns][:2] == ["template", "template"]
-        # The proposal only adds to them.
-        assert [column["origin"] for column in columns][2:] == ["model_suggestion"] * (len(columns) - 2)
-        assert len(columns) == 4
         # The run names the table it opened, where every table step of it looks for it.
         assert json.loads(discovery_run(store, rid)["target_json"])["table_id"] == table_id
+
+
+def test_the_columns_a_model_proposes_are_added_after_the_answer(tmp_path):
+    """The proposal is not lost by moving: the chain that runs after the answer asks for it and accepts it."""
+    with TestClient(app_for(tmp_path, ColumnAdapter())) as client:
+        store = client.app.state.store
+        session(client)
+        rid = create(client)
+        run_to_end(client, rid, "discovery")
+        settled(client, rid)
+
+        asked = steps(store, "model:table_columns")
+        assert [step["status"] for step in asked] == ["succeeded"]
+        # Asked by a run of its own, after the answer, never by the discovery run the person is waiting on.
+        discovery = discovery_run(store, rid)["id"]
+        assert not [row for row in store.conn.execute(
+            "SELECT 1 FROM run_steps WHERE run_id = ? AND kind = 'model:table_columns'", (discovery,))]
+
+        _, columns = columns_of(store, rid)
+        assert [column["origin"] for column in columns][:2] == ["template", "template"]
+        assert [column["origin"] for column in columns][2:] == ["model_suggestion"] * (len(columns) - 2)
+        assert len(columns) == 4
+
+
+def test_the_chain_started_twice_with_one_key_returns_the_one_run(tmp_path):
+    """The same answer asks for the chain once. A second call with its key returns the run the first one started.
+
+    Which branch the chain would take is no longer fixed for a table: the proposal writes the acceptance the branch
+    reads, so a replayed call would ask for a fill where the first asked for columns.
+    """
+    from deixis.workflow.features.report import report_pipeline
+
+    with TestClient(app_for(tmp_path, ColumnAdapter())) as client:
+        store = client.app.state.store
+        session(client)
+        rid = create(client)
+        run_to_end(client, rid, "discovery")
+        settled(client, rid)
+
+        answer_id = store.conn.execute(
+            "SELECT id FROM answers WHERE research_id = ? AND status = 'structurally_valid'", (rid,)).fetchone()["id"]
+        key = f"answer:{answer_id}"
+        first = [row[0] for row in store.conn.execute(
+            "SELECT id FROM runs WHERE research_id = ? AND kind = 'table_columns'", (rid,))]
+        assert len(first) == 1
+        again = report_pipeline.start(store, rid, key)
+        assert again["id"] == first[0]
+        # And no second chain run was created by asking again.
+        assert [row[0] for row in store.conn.execute(
+            "SELECT id FROM runs WHERE research_id = ? AND kind = 'table_columns'", (rid,))] == first
 
 
 def test_the_question_is_quoted_into_the_columns_code_writes(tmp_path):
@@ -108,13 +158,18 @@ def test_the_question_is_quoted_into_the_columns_code_writes(tmp_path):
     assert len(table_open.question_columns("")) == 2
 
 
-def test_a_failed_proposal_leaves_the_question_columns_and_the_run_reads_on(tmp_path):
-    """The proposal is optional: an invalid output is recorded and the discovery run still completes with columns."""
+def test_a_failed_proposal_leaves_the_question_columns_and_the_cells_are_still_filled(tmp_path):
+    """A proposal that adds no column is not a stop: the question's own columns are there and their cells are filled.
+
+    The proposal is asked for after the answer now, so a failure lands in the chain rather than in the discovery
+    run. The chain must go on to the fill: the table's own deliverable is the cells under the columns it has.
+    """
     with TestClient(app_for(tmp_path, ColumnAdapter(invalid=True))) as client:
         store = client.app.state.store
         session(client)
         rid = create(client)
         run_to_end(client, rid, "discovery")
+        settled(client, rid)
 
         assert [step["status"] for step in steps(store, "code:study_table_open")] == ["succeeded"]
         assert [step["status"] for step in steps(store, "model:table_columns")] == ["failed"]
@@ -123,6 +178,10 @@ def test_a_failed_proposal_leaves_the_question_columns_and_the_run_reads_on(tmp_
         assert [column["origin"] for column in columns] == ["template", "template"]
         assert not [row for row in store.conn.execute(
             "SELECT 1 FROM events WHERE type = 'study_table_columns_accepted'")]
+        # The chain did not record the table as having no columns to fill.
+        stops = [json.loads(row[0]) for row in store.conn.execute(
+            "SELECT payload_json FROM events WHERE type = 'study_table_stopped'")]
+        assert [stop for stop in stops if stop.get("reason") == "no_columns"] == []
 
 
 def test_a_second_discovery_run_adopts_the_same_table_and_adds_no_column(tmp_path):

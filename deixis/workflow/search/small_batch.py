@@ -1045,9 +1045,10 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         # time left leaves the step saying so.
         await rerank_list(flow, run, scope, vocabulary)
     from deixis.workflow.read import read as fast_read
-    # A cell is written as each work is read, so the table's columns have to exist before the reading starts. They are
-    # opened while this stage's clock is still open, so the proposal's time is charged here and not to the reading.
-    await flow._study_table(run, scope, listing)
+    # A cell is written as each work is read, so the table's columns have to exist before the reading starts. Only the
+    # question's own columns are written here, by code; the columns a model proposes beside them are asked for after
+    # the answer, because no model call belongs between the person and their first answer that the answer does not need.
+    flow._study_table(run, scope)
     flow._close_clock_stage(run, "ranking")
     if run["budget"].get("benchmark_list_barrier"):
         # Benchmark only (the deeper-screening gate): the run pauses once, after its list and before any read

@@ -45,11 +45,13 @@ def start(store: Store, research_id: str, idempotency_key: str | None) -> dict[s
     The table holds the included sources and the works read from their abstracts only; either kind is enough to
     build it. `pipeline.included` keeps its name in stored runs and counts all of them.
 
-    A discovery run opens this table and its columns before it reads anything, so the chain adopts that
-    table. It then proposes no columns — the question's own are in it and a model has already added to them — and opens
-    with the fill of whatever cells the reading left empty. A table with no column yet (one whose research was searched
-    before the table came first, or whose opening failed) still begins with the proposal. A table the reading already
-    filled is recorded as ready, and the refusal says there is nothing to queue.
+    A discovery run opens this table with the question's own columns before it reads anything, so the chain adopts
+    that table. It begins with the column proposal, which the run on the way to the answer no longer asks for, and
+    goes on to fill whatever cells the reading left empty. A table that already holds a model's accepted columns —
+    one opened by a run of an earlier version, which asked for them before reading — opens with the fill instead, so
+    its columns are not proposed twice. A table with no column yet (one whose research was searched before the table
+    came first, or whose opening failed) begins with the proposal too. A table the reading already filled is recorded
+    as ready, and the refusal says there is nothing to queue.
     """
     tables = TableStore(store)
     base = f"{PIPELINE}:{idempotency_key}" if idempotency_key else None
@@ -61,10 +63,15 @@ def start(store: Store, research_id: str, idempotency_key: str | None) -> dict[s
         table_id = table_open.chain_table(store, research_id) or tables.create_table(
             research_id, table_open.TITLE, None, None, f"{base}:table" if base else None)
         rounds = min(MAX_FILL_ROUNDS, math.ceil(len(included) / MAX_FILL_SOURCES))
-        # Which run opens the chain is read from the table's history, not from the columns it holds now: a repeated
-        # start must return the same run, and a column accepted meanwhile would otherwise change the branch.
+        # A repeated start must return the same run, so the run this key already opened is returned before any
+        # branch is chosen: the branch itself reads a column accepted meanwhile and would otherwise change.
         run, round_ = None, 1
-        if _opened_before_reading(store, table_id):
+        if base and (already := _chain_run(tables, research_id, base)) is not None:
+            # The same key must return the same run. Which branch this would take now is not stable: the proposal
+            # writes the acceptance the branch below reads, so a second call with this key would otherwise ask for
+            # a fill where the first asked for columns.
+            return already
+        if _opened_before_reading(store, table_id) and _model_columns_accepted(store, table_id):
             try:
                 run = tables.request_fill(research_id, table_id, None, True, tables._table(research_id, table_id)["version"],
                                           f"{base}:fill:1" if base else None, included_only=True)
@@ -93,6 +100,32 @@ def _opened_before_reading(store: Store, table_id: str) -> bool:
     """
     return bool(store.conn.execute(
         "SELECT 1 FROM run_steps WHERE kind = 'code:study_table_open' AND status = 'succeeded'"
+        " AND json_extract(output_json, '$.table_id') = ? LIMIT 1", (table_id,)).fetchone())
+
+
+def _chain_run(tables: TableStore, research_id: str, base: str) -> dict[str, Any] | None:
+    """The run this key already started, or None.
+
+    Both branches key their run from `base`, through the table store's own key, so this asks it for either.
+    """
+    for suffix, kind in ((f"{base}:columns", "table_columns"), (f"{base}:fill:1", "table_fill")):
+        if (run := tables._replayed_run(tables._key(research_id, suffix), kind)) is not None:
+            return run
+    return None
+
+
+def _model_columns_accepted(store: Store, table_id: str) -> bool:
+    """Whether a run has already accepted a model's proposed columns into this table.
+
+    Read from what was stored, like `_opened_before_reading`: the chain's own accepted event, or the step a run of a
+    version that asked for the proposal before reading wrote. Either way the table holds those columns already and
+    the chain must not ask for them a second time.
+    """
+    if store.conn.execute("SELECT 1 FROM events WHERE type = 'study_table_columns_accepted'"
+                          " AND json_extract(payload_json, '$.table_id') = ? LIMIT 1", (table_id,)).fetchone():
+        return True
+    return bool(store.conn.execute(
+        "SELECT 1 FROM run_steps WHERE kind = 'code:study_table_columns' AND status = 'succeeded'"
         " AND json_extract(output_json, '$.table_id') = ? LIMIT 1", (table_id,)).fetchone())
 
 

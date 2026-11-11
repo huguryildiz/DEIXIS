@@ -650,8 +650,14 @@ class ResearchFlow:
         sent = asyncio.Event()
         first_request = asyncio.create_task(fast_search.first_semantic(self, run, scope, seed_context, sent))
         planning_failed = False
+        criterion_calls: asyncio.Task | None = None
         try:
             await sent.wait()  # the request is on its way before any step asks a model
+            # The criterion's proposals read the question alone, so they are sent here and not after the plan: they
+            # run while the plan call is in flight, and the person waits for the longer of the two instead of both.
+            # The vote they feed still reads the vocabulary the plan settled, so what is recorded does not change.
+            if self._criterion_asks_model(run, scope):
+                criterion_calls = asyncio.create_task(self._criterion_proposals(run, scope))
             # The Boolean queries' words come from code, so no model chooses what is searched (SW2.3).
             vocabulary = await self._vocabulary(run, scope)
             consumer = self._fast_consumers[run_id]
@@ -669,7 +675,7 @@ class ResearchFlow:
             # a plan cut in the middle leaves no query at all.
             fast_path.note_handover_passed(self.store, run)
             vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
-            criterion = await self._criterion(run, scope, vocabulary)
+            criterion = await self._criterion(run, scope, vocabulary, criterion_calls)
             vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)
             # The last step before the freeze, so what the protocol freezes is what is sent: PubMed's own headings
             # are written into the query this depth will send it, once the person's own sources and the approval
@@ -713,6 +719,17 @@ class ResearchFlow:
             except Exception:
                 if not planning_failed:
                     raise
+            # The proposals are waited for the same way: a planning step that stopped the run leaves them in flight,
+            # and each call records its own step, so a resume reads them instead of asking the model again. A
+            # proposal that failed is an optional step's failure and never replaces the stop on its way out.
+            if criterion_calls is not None:
+                try:
+                    await criterion_calls
+                except RunStopped:
+                    pass
+                except Exception:
+                    if not planning_failed:
+                        raise
 
         self._close_clock_stage(run, "plan")
         self._enter_clock_stage(run, "search")
@@ -869,7 +886,10 @@ class ResearchFlow:
         failure: dict[str, Any] | None = None
         try:
             # `optional` only so a failure is caught here and named below; the run never goes on without the sentence.
-            answer = await self._model_step(run, scope, "question_translation", "question_translation", optional=True)
+            # Through the run's limiter: the criterion's proposals are already in flight beside this call.
+            answer = await self.deps.limiter.run(
+                f"{run_id}:question_translation",
+                lambda: self._model_step(run, scope, "question_translation", "question_translation", optional=True))
         except OptionalStepFailed as exc:
             failure = {"reason": exc.reason, "detail": exc.detail}
         else:
@@ -979,8 +999,12 @@ class ResearchFlow:
         rows = [*(seed_rows or []), *search_plan_rules.record_passages(self.store, records, MAX_ABSTRACT_CHARS)]
         failure: dict[str, Any] | None = None
         try:
-            answer = await self._model_step(run, scope, f"search_query:{attempt}", task, optional=True,
-                                            source_ids=sources or None, passage_rows=rows or None)
+            # Through the run's limiter, like every other call that can be in flight beside another one: the
+            # criterion's proposals run beside this one, and the number of calls at once is the person's setting.
+            answer = await self.deps.limiter.run(
+                f"{run_id}:search_query:{attempt}",
+                lambda: self._model_step(run, scope, f"search_query:{attempt}", task, optional=True,
+                                         source_ids=sources or None, passage_rows=rows or None))
         except OptionalStepFailed as exc:
             failure = {"reason": exc.reason, "detail": exc.detail}
         else:
@@ -1214,8 +1238,38 @@ class ResearchFlow:
                    "search_plan")
         return extraction, {"runs_ok": 0, "skipped": skipped, "failures": [], "phrases": []}
 
-    async def _criterion(self, run: dict[str, Any], scope: dict[str, Any],
-                         vocabulary: dict[str, Any]) -> dict[str, Any] | None:
+    def _criterion_asks_model(self, run: dict[str, Any], scope: dict[str, Any]) -> bool:
+        """Whether this run will put the criterion to a model, read before anything has been planned.
+
+        The proposals read the question alone, so they can be sent while the first semantic request and the plan call
+        are still in flight; this says whether to send them at all. The branches are the ones `_criterion` takes for
+        itself: a step that already succeeded, a person's saved plan, and a criterion this research froze for the
+        same question and steering all answer without a model.
+        """
+        # Read, never written: `step` would create the row and move it ahead of every step that really ran first.
+        done = self.store.existing_step(run["id"], "criterion")
+        if done is not None and done["status"] == "succeeded":
+            return False
+        if user_plan_rules.of(scope) is not None:
+            return False
+        return self.store.frozen_criterion(run["research_id"], scope["question"], scope.get("steering"),
+                                           scope["revision"]) is None
+
+    async def _criterion_proposals(self, run: dict[str, Any], scope: dict[str, Any]
+                                   ) -> tuple[list[str], list[dict[str, Any] | OptionalStepFailed]]:
+        """The repeated criterion proposals and their keys, in key order.
+
+        Kept apart from `_criterion` because these calls need nothing the planning produces: their StepInput carries
+        the question and the person's steering, no record, passage or candidate. `_discovery` sends them while the
+        plan call is in flight, so their time is not added to the person's wait, and `_criterion` reads the vote with
+        the vocabulary the plan settled.
+        """
+        keys = [f"criterion_proposal_{index + 1}" for index in range(criterion_rules.PROPOSAL_RUNS)]
+        return keys, await self._optional_calls(run, keys, lambda key: self._model_step(
+            run, scope, key, "criterion_proposal", optional=True))
+
+    async def _criterion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                         proposals: Awaitable[tuple[list[str], list[Any]]] | None = None) -> dict[str, Any] | None:
         """The inclusion criterion, its parts and cue phrases, proposed from the question alone (SW15.1, SW15.2).
 
         Three optional calls, and nothing one of them said on its own is used: `consensus` keeps the phrases at least
@@ -1246,10 +1300,9 @@ class ResearchFlow:
         else:
             runs: dict[int, dict[str, Any]] = {}
             failures: list[dict[str, Any]] = []
-            keys = [f"criterion_proposal_{index + 1}" for index in range(criterion_rules.PROPOSAL_RUNS)]
-            proposals = await self._optional_calls(run, keys, lambda key: self._model_step(
-                run, scope, key, "criterion_proposal", optional=True))
-            for index, (key, proposal) in enumerate(zip(keys, proposals)):
+            # Sent by `_discovery` while the plan call was in flight; sent here for a caller that passed none.
+            keys, sent = await (proposals if proposals is not None else self._criterion_proposals(run, scope))
+            for index, (key, proposal) in enumerate(zip(keys, sent)):
                 if isinstance(proposal, OptionalStepFailed):
                     failures.append({"step": key, "reason": proposal.reason})
                     continue
@@ -4752,22 +4805,19 @@ class ResearchFlow:
             self._fail(run_id, "invalid_model_output", {"step": "table_columns", "issues": output["issues"]})
         return output
 
-    async def _study_table(self, run: dict[str, Any], scope: dict[str, Any], listing: dict[str, Any]) -> None:
-        """Open the study table and its columns before the read stage, so a cell can be written as a work is read.
+    def _study_table(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Open the study table with the question's own columns before the read stage, so a cell can be written as a
+        work is read.
 
-        The Evidence table's columns have to exist while the first answer is built. Three steps, all inside this
-        discovery run, because the engine runs one run of a research at a time and a table of its own could not run
-        beside it:
+        Only code runs here. The question's own columns are written, so the table is never without columns, and the
+        run goes straight on to reading. The columns a model proposes beside them are not asked for on the way to the
+        first answer: that call is not needed to write the answer, whose evidence comes from the answer input and
+        never from a table cell, and asking for it here puts tens of seconds of model time between the person and
+        their answer. The chain that runs after the answer asks for them instead (`report_pipeline.start`).
 
-        1. the question's own columns, written by code, so the table is never without columns;
-        2. one model call that proposes more, framed by the ranked works' abstracts (nothing is screened yet). It is
-           optional: a failure is recorded and the run reads on with the question's columns;
-        3. the proposal's columns are added beside them.
-
-        Called while the ranking stage's clock is open, so the proposal's time is charged to that stage and none of
-        the reading time. Nothing is opened for a research that asks only for a list of sources, nor for one whose
-        reading leads to an answer while the automatic study table is off; a research whose own deliverable is the
-        table opens it whatever that setting says.
+        Nothing is opened for a research that asks only for a list of sources, nor for one whose reading leads to an
+        answer while the automatic study table is off; a research whose own deliverable is the table opens it
+        whatever that setting says.
         """
         run_id, rid = run["id"], run["research_id"]
         fast = run["budget"].get("fast_path") or {}
@@ -4782,15 +4832,6 @@ class ResearchFlow:
             # The table the cell steps of this run read is named on the run itself, where every table step looks for it.
             run["target"] = {**(run.get("target") or {}), "table_id": table_id}
             self.store.update_run(run_id, target_json=dumps(run["target"]))
-        try:
-            output = await self._table_columns(run, scope, key="study_table_columns", optional=True,
-                                               rows=[item["head"] for item in listing["items"][:MAX_FILL_SOURCES]])
-        except OptionalStepFailed:
-            return  # the question's own columns stand; the reading goes on without proposed ones
-        if output.get("invalid"):
-            return  # the proposal's own step holds why; nothing is accepted and nothing is recorded as accepted
-        small_batch.save_code(self, run, "study_table_columns_accepted", "code:study_table_columns",
-                              lambda: table_open.accept_proposed(self.store, rid, table_id, run_id, f"{table_open.KEY_PREFIX}:{run_id}"))
 
     def _live_columns(self, run: dict[str, Any], tables: TableStore) -> list[dict[str, Any]]:
         try:

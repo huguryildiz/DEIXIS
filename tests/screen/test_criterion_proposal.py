@@ -24,7 +24,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_R
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.screen.abstract_stage import model_calls
 from fakes import FakeAdapter, envelope, valid_response
-from test_vocabulary_flow import CountingOpenAlex, app_for, start, store_at, wait
+from test_vocabulary_flow import TURKISH, CountingOpenAlex, app_for, no_fetch, start, store_at, wait
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
 STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["E_criterion_proposal"]
@@ -290,17 +290,60 @@ def run_with_proposals(tmp_path, monkeypatch, question=EXERCISE, **body):
     return rid, run, openalex, adapter
 
 
+@pytest.mark.parametrize("question", [EXERCISE, TURKISH])
+def test_the_proposals_and_the_calls_beside_them_keep_the_persons_concurrency_limit(tmp_path, monkeypatch, question):
+    """Every call that can be in flight beside the proposals goes through the run's limiter.
+
+    The plan call, and the translation a question in another language needs, used to be the only model call in
+    flight, so sending them outside the limiter cost nothing. With the proposals beside them, a call outside the
+    limiter would put two on a connection the person held to one.
+    """
+    import dataclasses
+
+    import httpx
+
+    from deixis.api.app import create_app
+    from deixis.runtime.config import Settings
+    from deixis.providers.registry import CONNECTORS
+
+    for connector in CONNECTORS.values():
+        if connector.key_env:
+            monkeypatch.delenv(connector.key_env, raising=False)
+    monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
+    openalex, adapter = CountingOpenAlex(), proposing()
+    adapter.delay = 0.4  # long enough that the proposals are still in flight when the plan call starts
+    app = create_app(dataclasses.replace(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off"),
+                                         model_concurrency=1),
+                     adapters={"fake": adapter},
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)),
+                     fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, question)
+        wait(client, rid, run_id)
+    assert len(criterion_calls(adapter)) == PROPOSAL_RUNS  # the proposals were sent, so the limit was under load
+    sent = [call["task_type"] for call in adapter.calls]
+    assert ("question_translation" in sent) == (question is TURKISH)
+    assert adapter.max_concurrent == 1
+
+
 def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tmp_path, monkeypatch):
     rid, run, openalex, adapter = run_with_proposals(tmp_path, monkeypatch)
     # The fast path opens its embedding step (`source_similarity`) as the run starts; it sends nothing to a provider.
     keys = [key for key in steps_of(run) if key != "source_similarity"]
-    # The question's own semantic request opens before anything plans: it needs no model and no criterion. The
-    # plan a model writes from that page follows the vocabulary, then the source routing, then the criterion.
+    # The question's own semantic request opens before anything plans: it needs no model and no criterion. The three
+    # proposals are sent next, beside the plan call and not after it, because they read the question alone. The plan a
+    # model writes from that page follows the vocabulary, then the source routing, then the vote the proposals feed.
     # PubMed's heading lookup is the last step before the freeze, so what the protocol freezes is what is sent.
-    assert keys[:12] == ["search:fast:semantic",
-                         "vocabulary", "search_query", "search_query:1", "source_routing",
-                         "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
-                         "protocol_approval", "mesh_expansion", "protocol"]
+    assert keys[0] == "search:fast:semantic"
+    assert keys[1] == "vocabulary"
+    proposals = [keys.index(f"criterion_proposal_{index}") for index in (1, 2, 3)]
+    # Opened before the plan call, and the vote that reads them after it: the person waits for the longer of the two.
+    assert max(proposals) < keys.index("search_query:1")
+    assert keys.index("search_query:1") < keys.index("criterion")
+    assert keys[keys.index("criterion") - 1] == "source_routing"
+    assert keys[keys.index("criterion") + 1:keys.index("criterion") + 4] == [
+        "protocol_approval", "mesh_expansion", "protocol"]
     # Every planned provider search was opened after the protocol step, which already held the criterion.
     searches = [i for i, key in enumerate(keys) if key.startswith("search:") and key != "search:fast:semantic"]
     assert searches and min(searches) > keys.index("protocol")

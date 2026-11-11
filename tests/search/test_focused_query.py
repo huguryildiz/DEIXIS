@@ -48,16 +48,9 @@ def issues(draft):
 
 @pytest.mark.parametrize("effort,plans,focused", [("quick", 1, 0), ("standard", 2, 1), ("detailed", 3, 2)])
 def test_each_depth_allows_one_main_query_and_spends_the_rest_on_focused_ones(effort, plans, focused):
-    budget = fast_path.freeze_budget({}, effort, method="m2")
+    budget = fast_path.freeze_budget({}, effort)
     assert budget["boolean_plans"] == plans
     assert search_plan.focused_allowance({"fast_path": budget}) == focused
-
-
-def test_a_method_that_writes_no_plan_freezes_no_budget_and_sends_no_focused_query():
-    for method in ("legacy", "m1"):
-        budget = fast_path.freeze_budget({}, "standard", method=method)
-        assert "boolean_plans" not in budget
-        assert search_plan.focused_allowance({"fast_path": budget}) == 0
 
 
 def test_a_concept_beyond_the_depths_allowance_is_recorded_as_left_out_by_the_budget():
@@ -171,7 +164,7 @@ def step_row(client, run_id, key):
     return (row[0], row[1]) if row else None
 
 
-def test_an_m2_run_compiles_the_focused_query_and_does_not_send_it_when_the_main_query_covers_it(tmp_path, monkeypatch):
+def test_a_run_compiles_the_focused_query_and_does_not_send_it_when_the_main_query_covers_it(tmp_path, monkeypatch):
     """The whole condition in one run: the plan names a concept, code compiles its query, and the main query's own
     records turn out to carry that concept, so the query is cancelled with the reason rather than sent."""
     import test_search_query
@@ -181,7 +174,7 @@ def test_an_m2_run_compiles_the_focused_query_and_does_not_send_it_when_the_main
 
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
     adapter = FakeAdapter()
-    client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter, method="m2")
+    client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
     # The main query is the round's only other plan, so Deep's budget leaves room for two focused plans; the
     # model names one (see `test_a_second_plan_in_the_round_spends_a_plan_of_the_budget`).
     rid, run_id = start(client, effort="detailed")
@@ -215,8 +208,8 @@ def test_a_second_plan_in_the_round_spends_a_plan_of_the_budget():
     assert search_plan.plans_in_round([model, author]) == 1  # a named work's lookup is no concept plan
     assert search_plan.plans_in_round([model, focused]) == 1  # the focused query is what the budget is spent on
     assert search_plan.plans_in_round([{"origin": "user", "provider_id": "openalex"}]) == 1
-    standard = fast_path.freeze_budget({}, "standard", method="m2")
-    deep = fast_path.freeze_budget({}, "detailed", method="m2")
+    standard = fast_path.freeze_budget({}, "standard")
+    deep = fast_path.freeze_budget({}, "detailed")
     # Standard allows two plans: the main query spends one and a focused query may spend the other.
     assert search_plan.focused_allowance({"fast_path": standard}, [model]) == 1
     assert search_plan.focused_allowance({"fast_path": deep}, [model]) == 2

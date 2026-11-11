@@ -25,7 +25,7 @@ from test_search_query import OpenAlex, WORK, calls, client_for, protocol_body, 
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
 STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["H_search_plan"]
-# The record the mocked OpenAlex returns for an m2 run: the plan reads its keywords beside title and abstract.
+# The record the mocked OpenAlex returns: the plan reads its keywords beside the title and the abstract.
 PLAN_WORK = WORK | {"keywords": [{"display_name": "rail freight"}, {"display_name": "timetabling"}]}
 
 
@@ -112,8 +112,7 @@ def test_the_sampling_rule_keeps_the_head_in_order_and_strides_through_the_rest(
 def test_a_forward_allowance_left_over_reads_the_next_page_of_the_same_seed():
     seeds = [{"source_version_id": "srv_a", "openalex_id": "W1", "references": []},
              {"source_version_id": "srv_b", "openalex_id": "W2", "references": []}]
-    policy = {"backward_requests": 0, "backward_page_size": 50, "forward_requests": 5, "forward_page_size": 25,
-              "search_method": "m2"}
+    policy = {"backward_requests": 0, "backward_page_size": 50, "forward_requests": 5, "forward_page_size": 25}
     requests = fast_chain.request_plan(seeds, policy, set())["requests"]
     assert [(r["cites"], r["page"]) for r in requests] == [("W1", 1), ("W2", 1), ("W1", 2), ("W2", 2), ("W1", 3)]
     # Each page past the first names the request whose cursor it continues, which is the page before it of that seed.
@@ -125,36 +124,23 @@ def test_a_forward_allowance_left_over_reads_the_next_page_of_the_same_seed():
     narrow = fast_chain.request_plan(seeds, policy | {"forward_requests": 1}, set())
     assert [(r["cites"], r["page"]) for r in narrow["requests"]] == [("W1", 1)]
     assert narrow["forward_not_requested"] == 1
-    # Every other method reads each seed once and leaves the rest of the allowance unspent, as it did before: those
-    # runs are the measurement's baseline and their requests do not move.
-    for method in ({}, {"search_method": "m1"}):
-        baseline = fast_chain.request_plan(seeds, {**policy, **{"search_method": None}, **method}, set())["requests"]
-        assert [(r["cites"], r["page"]) for r in baseline] == [("W1", 1), ("W2", 1)]
-        assert all(r["after"] is None for r in baseline)
 
 
-def test_an_m2_run_writes_one_plan_call_from_the_pages_records_instead_of_four(tmp_path, monkeypatch):
+def test_a_run_writes_one_plan_call_from_the_pages_records(tmp_path, monkeypatch):
     import test_search_query
 
-    # The mock's record carries the provider's own keywords for this run; everything else is the m1 harness.
+    # The mock's record carries the provider's own keywords for this run; everything else is the shared harness.
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
-    runs = {}
-    for method in ("legacy", "m2"):
-        adapter = FakeAdapter()
-        client = client_for(tmp_path / method, monkeypatch, OpenAlex(), adapter, method=method)
-        rid, run_id = start(client)
-        _, run = wait(client, rid, run_id)
-        assert run["status"] == "completed", run
-        runs[method] = (adapter, client, rid, run_id)
+    adapter = FakeAdapter()
+    client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert run["status"] == "completed", run
 
-    # The older methods ask four times: three labelling calls and the query call.
-    legacy = runs["legacy"][0]
-    assert (len(calls(legacy, "vocabulary_labels")), len(calls(legacy, "search_query"))) == (3, 1)
-
-    adapter, client, rid, run_id = runs["m2"]
+    # No labelling call and no query call: one plan call stands in their place.
     assert calls(adapter, "vocabulary_labels") == [] and calls(adapter, "search_query") == []
     sent = calls(adapter, "search_plan")
-    assert len(sent) == 1  # one call in their place, so the model-call count of the method did not rise
+    assert len(sent) == 1  # one call in their place, so the run's model-call count did not rise
     # It read the records the question's own request returned: their titles, abstracts and the provider's keywords.
     assert [source["index_keywords"] for source in sent[0]["sources"]] == [["rail freight", "timetabling"]]
     assert [passage["locator"]["kind"] for passage in sent[0]["passages"]] == ["abstract"]
@@ -180,15 +166,15 @@ def test_an_m2_run_writes_one_plan_call_from_the_pages_records_instead_of_four(t
     assert frozen["fingerprint"]["records"] == len(sent[0]["sources"])
 
 
-def test_a_person_who_saved_their_own_plan_is_asked_nothing_under_the_m2_method(tmp_path, monkeypatch):
+def test_a_person_who_saved_their_own_plan_is_asked_nothing(tmp_path, monkeypatch):
     """The person's plan outranks every proposal (S23a): the plan step does not run at all beside one."""
     from test_user_search_plan import Providers, client_for as plan_client, create, discover, plan, planning_calls, save
 
     adapter = FakeAdapter()
-    client = plan_client(tmp_path, monkeypatch, Providers(), adapter, method="m2")
+    client = plan_client(tmp_path, monkeypatch, Providers(), adapter)
     rid = create(client)
     assert discover(client, rid)["status"] == "completed"
-    # The first run writes its plan from the page's records, as an m2 run does.
+    # The first run writes its plan from the page's records.
     assert "search_plan" in planning_calls(adapter, 1) and "search_query" not in planning_calls(adapter, 1)
 
     assert save(client, rid, plan()).status_code == 200
@@ -222,7 +208,7 @@ def test_a_first_page_with_no_record_stops_the_run_instead_of_writing_the_questi
 
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
     openalex, adapter = FirstPageEmpty(), FakeAdapter()
-    client = client_for(tmp_path, monkeypatch, openalex, adapter, method="m2")
+    client = client_for(tmp_path, monkeypatch, openalex, adapter)
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     # Nothing was searched on the question's own words in the plan's place, and no model was asked for a query.
@@ -256,14 +242,14 @@ def test_a_backup_term_without_its_own_evidence_is_refused_with_the_chosen_terms
     assert issues(draft) == []
 
 
-def test_under_m2_the_planning_arm_sends_a_failed_or_deadline_cancelled_first_page_again(monkeypatch):
-    """The plan cannot be written without that page, so this arm retries it; the other methods do not."""
+def test_the_planning_arm_sends_a_failed_or_deadline_cancelled_first_page_again(monkeypatch):
+    """The plan cannot be written without that page, so the planning arm retries it."""
     from deixis.workflow.search import search as fast_search
 
     seen = {}
 
     def sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("budget_exhausted",)):
-        seen[run["budget"]["fast_path"].get("search_method", "legacy")] = (retry_failed, retry_cancels)
+        seen[run["id"]] = (retry_failed, retry_cancels)
         return None
 
     async def nothing(flow, run, plan, send_page):
@@ -273,15 +259,12 @@ def test_under_m2_the_planning_arm_sends_a_failed_or_deadline_cancelled_first_pa
     monkeypatch.setattr(fast_search, "page_sender", sender)
     monkeypatch.setattr(fast_search, "question_semantic", nothing)
 
-    async def call(method):
-        run = {"id": "run_x", "budget": {"fast_path": {} if method == "legacy" else {"search_method": method}}}
+    async def call():
+        run = {"id": "run_x", "budget": {"fast_path": {}}}
         store = SimpleNamespace(step=lambda *args, **kwargs: None)
         await fast_search.first_semantic(SimpleNamespace(store=store), run, {}, None, None)
-    for method in ("legacy", "m2"):
-        asyncio.run(call(method))
-    # The older methods retry nothing here, whatever the reasons list holds: it is read only where the flag is set.
-    assert seen["legacy"][0] is False
-    assert seen["m2"] == (True, ("budget_exhausted", "deadline"))
+    asyncio.run(call())
+    assert seen["run_x"] == (True, ("budget_exhausted", "deadline"))
 
 
 class NoWorkFound(OpenAlex):
@@ -302,7 +285,7 @@ def test_a_first_page_that_answered_with_no_work_does_not_offer_the_same_request
 
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
     openalex, adapter = NoWorkFound(), FakeAdapter()
-    client = client_for(tmp_path, monkeypatch, openalex, adapter, method="m2")
+    client = client_for(tmp_path, monkeypatch, openalex, adapter)
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     assert run["status"] == "paused" and run["pause_reason"] == "search_query_failed", run

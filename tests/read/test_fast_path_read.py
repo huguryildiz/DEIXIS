@@ -13,6 +13,7 @@ from deixis.workflow.search import small_batch
 from deixis.workflow.run.flow import ResearchFlow, RunStopped
 from deixis.workflow.run.worker import Worker
 from test_fast_path_clock import library, stage
+from test_fulltext_flow import plan_work
 from test_small_batch_flow import app_for, client_of
 from overlap_flow_helpers import discover, wait
 from fakes import FakeAdapter, valid_response
@@ -501,9 +502,10 @@ def test_abstract_resume_reuses_sent_step_and_excludes_downtime(tmp_path, monkey
                 iid = store.conn.execute("SELECT id FROM fast_path_intervals WHERE stage = 'read' AND closed_at IS NULL").fetchone()[0]
                 fast_path.checkpoint(store, iid)
                 holder["app"].state.worker.recover()
+
     adapter = FakeAdapter(valid_response, delay=0.01, before=before)
     app, _ = app_for(tmp_path, monkeypatch, 25, model_works=True, fetch="off", reading="off",
-                     model_concurrency=1, adapter=adapter)
+                     model_concurrency=1, adapter=adapter, plan_work=plan_work())
     holder["app"] = app
     with client_of(app) as client:
         app.state.store.clock = FakeClock()

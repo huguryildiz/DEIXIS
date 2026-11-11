@@ -122,8 +122,9 @@ def test_matched_seed_guides_query_chain_ranking_and_protocol(tmp_path, monkeypa
         step = store.conn.execute("SELECT output_json FROM run_steps WHERE run_id = ? AND operation_key = 'search_query:1'",
                                   (run_id,)).fetchone()
         given = store.step_input_payload(json.loads(step[0])["step_input_id"])
-        assert [p["source_id"] for p in given["passages"]] and {p["source_id"] for p in given["passages"]} == {svid}
-        assert [s["source_id"] for s in given["sources"]] == [svid]
+        # The seed's own passages are among what the planning call read, beside the page's records.
+        assert svid in {p["source_id"] for p in given["passages"]}
+        assert svid in [s["source_id"] for s in given["sources"]]
 
 
 def test_ranking_never_scores_the_seed_against_its_own_openalex_copy():

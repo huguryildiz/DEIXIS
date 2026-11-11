@@ -3236,6 +3236,12 @@ export const tr: Record<string, string> = {
   'Blocks are separated by “;”, synonyms of one block by “,”; a group written “claim:” is the assertion under test and one written “not:” keeps records out.': 'Bloklar “;”, bir bloğun eş anlamlıları “,” ile ayrılır; “claim:” ile yazılan grup sınanan iddiadır, “not:” ile yazılan grup kayıtları dışarıda tutar.',
   'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or revise the question above and search again.': 'Model arama sorgusunu yazamadı ve henüz hiçbir şey aranmadı. Modele bir kez daha sormak için devam ettirin ya da yukarıdaki soruyu gözden geçirip yeniden arayın.',
   'The first search brought back no record, so the model was not asked to write the search plan from one, and nothing has been searched. Resume to search again, or revise the question above.': 'İlk arama hiç kayıt getirmedi, bu yüzden modelden kayıtlardan arama planı yazması istenmedi ve henüz hiçbir şey aranmadı. Yeniden aramak için devam ettirin ya da yukarıdaki soruyu gözden geçirin.',
+  'The scholarly provider did not answer the first search in time.': 'Bilimsel kaynak ilk aramayı zamanında yanıtlamadı.',
+  'The scholarly provider answered the first search with something that could not be read.': 'Bilimsel kaynak ilk aramaya okunamayan bir yanıt verdi.',
+  'The first search did not come back from the scholarly provider.': 'İlk arama bilimsel kaynaktan geri dönmedi.',
+  'The first search was held back because too many have been sent to this provider.': 'Bu kaynağa çok fazla istek gönderildiği için ilk arama bekletildi.',
+  'The scholarly provider did not accept the key the first search carried, or there was none.': 'Bilimsel kaynak, ilk aramanın taşıdığı anahtarı kabul etmedi ya da anahtar yoktu.',
+  'The scholarly provider does not give this account the records the first search asked for.': 'Bilimsel kaynak, ilk aramanın istediği kayıtları bu hesaba vermiyor.',
   'The first search found no work for this question, so the model was not asked to write the search plan from results, and nothing has been searched. Revise the question above and search again.': 'İlk arama bu soru için hiç eser bulamadı, bu yüzden modelden sonuçlardan arama planı yazması istenmedi ve henüz hiçbir şey aranmadı. Yukarıdaki soruyu gözden geçirip yeniden arayın.',
   'other': 'diğer',
   // Source routing

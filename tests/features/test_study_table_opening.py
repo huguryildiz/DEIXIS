@@ -17,6 +17,17 @@ from test_api_flow import create, fake_fetch, openalex_client, run_to_end, sessi
 from test_report_flow import COLUMN, LIMITATIONS_COLUMN
 
 
+def settled(client, rid, seconds=10.0):
+    """Wait until no run of the research is queued or running: a second run is refused while one is active."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        runs = client.get(f"/api/researches/{rid}").json()["runs"]
+        if not [run for run in runs if run["status"] in ("queued", "running", "pause_requested")]:
+            return
+        time.sleep(0.05)
+    raise AssertionError("the research's runs did not settle")
+
+
 class ColumnAdapter(FakeAdapter):
     """Proposes two columns; everything else answers as the plain fake does."""
 
@@ -121,6 +132,7 @@ def test_a_second_discovery_run_adopts_the_same_table_and_adds_no_column(tmp_pat
         session(client)
         rid = create(client)
         run_to_end(client, rid, "discovery")
+        settled(client, rid)  # the run a finished discovery chains is still this research's run
         first_table, first_columns = columns_of(store, rid)
 
         run_to_end(client, rid, "discovery")

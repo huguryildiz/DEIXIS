@@ -33,9 +33,24 @@ def seed(n, refs=()):
 CHAIN_NUMBERS = {"chain_seeds": 10, "backward_requests": 2, "forward_requests": 2}
 
 
+def freeze_forms(lib, forms=None, digest=None):
+    """Freeze the chain's admission forms in the run's protocol, as a run does before its first request."""
+    from deixis.workflow.search import chaining
+
+    forms = {"task": ["synthetic"]} if forms is None else forms
+    body = {"citation_chaining": {"rule_version": chaining.RULE_V3, "admission_forms": forms,
+                                  "admission_forms_sha256": digest or chaining.forms_digest(forms)}}
+    record_ = lib.store.freeze_protocol(lib.rid, lib.run["scope_revision"], body)
+    step = lib.store.step(lib.run["id"], "protocol", "protocol:freeze")
+    lib.store.start_step(step["id"])
+    lib.store.finish_step(step["id"], "succeeded", output={"protocol_revision": record_["protocol_revision"]})
+
+
 def setup(lib, tmp_path, **numbers):
     lib.run["budget"]["fast_path"].update(CHAIN_NUMBERS | numbers)
     lib.store.update_run(lib.run["id"], budget_json=json.dumps(lib.run["budget"]))
+    if lib.store.existing_step(lib.run["id"], "protocol") is None:
+        freeze_forms(lib)
     settings = Settings(data_dir=tmp_path / "data")
     flow = ResearchFlow(SimpleNamespace(store=lib.store, clock=lib.clock, settings=settings,
                                        http=None, local_embedder=None))
@@ -301,7 +316,7 @@ def test_a_restart_counts_spent_attempts_and_sends_nothing_twice(effort_library,
 
 
 def plan_step(lib, named):
-    """The plan step's output as an m2 run leaves it: the works the model named for the chain to start from (P3)."""
+    """The plan step's output as a run leaves it: the works the model named for the chain to start from."""
     step = lib.store.step(lib.run["id"], "search_query", "code:search_query")
     lib.store.start_step(step["id"])
     lib.store.finish_step(step["id"], "succeeded", output={
@@ -318,9 +333,8 @@ def paged(cursor):
 def test_the_chain_starts_from_the_work_the_plan_named_and_spends_its_allowance_on_that_works_next_page(
         library, tmp_path, monkeypatch):
     lib = library
-    # The method this run was queued with, which its policy freezes; the whole m2 path is covered through the API in
-    # tests/search/test_search_plan.py, and this round reads the policy alone.
-    lib.run["budget"]["fast_path"]["search_method"] = "m2"
+    # The whole search-plan path is covered through the API in tests/search/test_search_plan.py; this round
+    # reads the frozen policy alone.
     flow, _, round_ = setup(lib, tmp_path)
     search(flow, lib, "search:fast:semantic", ["W1", "W2", "W3"])
     plan_step(lib, ["W3"])  # the page returned three records; the plan named the third
@@ -356,7 +370,6 @@ def test_the_chain_starts_from_the_work_the_plan_named_and_spends_its_allowance_
 
 def test_a_plan_that_named_no_work_leaves_the_chain_to_the_keyword_results(library, tmp_path, monkeypatch):
     lib = library
-    lib.run["budget"]["fast_path"]["search_method"] = "m2"
     flow, _, round_ = setup(lib, tmp_path)
     search(flow, lib, "search:fast:semantic", ["W1", "W2"])
     plan_step(lib, [])

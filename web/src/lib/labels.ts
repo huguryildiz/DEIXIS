@@ -423,8 +423,21 @@ const pauseReasons: Record<string, string> = {
   vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question above with a narrower topic or with key terms, and search again.',
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or revise the question above and search again.',
   user_plan_unsearchable: 'No record on OpenAlex holds any word of one block of your search plan, backups included, so nothing was searched. Edit the plan and search again.',
+  // A run frozen under an older rule, left half-finished when that rule was removed from the application.
+  search_rules_removed: 'This run was started under an older version of the search rules, which this version no longer carries out. Nothing more was searched or read, and everything it had already found is kept. Start the search again to run it under the current rules.',
 }
 export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewContextLabels, notReviewedText } from '../review/labels'
+// What the question's own first request did, as the provider's own outcome recorded it (`search_runs.status`),
+// for the stop that follows it. A status with no sentence here adds none.
+const firstPageOutcome: Record<string, string> = {
+  timeout: 'The scholarly provider did not answer the first search in time.',
+  parse_error: 'The scholarly provider answered the first search with something that could not be read.',
+  failed: 'The first search did not come back from the scholarly provider.',
+  rate_limited: 'The first search was held back because too many have been sent to this provider.',
+  auth_required: 'The scholarly provider did not accept the key the first search carried, or there was none.',
+  entitlement_missing: 'The scholarly provider does not give this account the records the first search asked for.',
+}
+
 export const pauseReasonText = (reason: string | null, detail?: unknown) => {
   const error = detail && typeof detail === 'object' ? detail as Record<string, unknown> : {}
   if ((reason === 'model_call_failed' || reason === 'model_connection_not_ready' || reason?.startsWith('provider_')) && (error.error_kind || error.service_kind)) {
@@ -435,9 +448,14 @@ export const pauseReasonText = (reason: string | null, detail?: unknown) => {
   // answer the same way: the way on is a different question.
   if (reason === 'search_query_failed' && error.reason === 'first_page_no_records')
     return t('The first search found no work for this question, so the model was not asked to write the search plan from results, and nothing has been searched. Revise the question above and search again.')
-  // The first search brought back nothing because its request did not land; the model was not asked at all.
-  if (reason === 'search_query_failed' && error.reason === 'first_page_empty')
-    return t('The first search brought back no record, so the model was not asked to write the search plan from one, and nothing has been searched. Resume to search again, or revise the question above.')
+  // The first search brought back nothing because its request did not land; the model was not asked at all. What
+  // went wrong with that request is said first, because a slow provider, a body no one can read and a server error
+  // are three different things to the person waiting.
+  if (reason === 'search_query_failed' && error.reason === 'first_page_empty') {
+    const went = firstPageOutcome[String(error.provider_outcome ?? '')]
+    return (went ? t(went) + ' ' : '') +
+      t('The first search brought back no record, so the model was not asked to write the search plan from one, and nothing has been searched. Resume to search again, or revise the question above.')
+  }
   // The same stop when the person's own key terms could not be read; no translation was asked for then.
   if (reason === 'key_terms_needed' && typeof error.error === 'string') return t('The English key terms could not be read, so nothing was searched. Change them above and search again.')
   return reason ? t(pauseReasons[reason] ?? 'An operation stopped this run. Completed work is saved.') : ''

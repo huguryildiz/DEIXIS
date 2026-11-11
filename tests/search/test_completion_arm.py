@@ -36,10 +36,10 @@ def lab(tmp_path):
     store = Store(conn, clock)
     clock.store = store
 
-    def run_at(arm="conditional", effort="standard", providers=("openalex", "semantic_scholar"), method="legacy"):
+    def run_at(arm="conditional", effort="standard", providers=("openalex", "semantic_scholar")):
         rid = store.create_research(QUESTION, "academic", effort, list(providers), "fake", "fake-model", "en")
         budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
-        budget["fast_path"] = fast_path.freeze_budget(budget, effort, completion_arm=arm, method=method)
+        budget["fast_path"] = fast_path.freeze_budget(budget, effort, completion_arm=arm)
         run = store.create_run(rid, "discovery", budget, None)
         store.update_run(run["id"], status="running")
         return SimpleNamespace(rid=rid, run=store.run(run["id"]))
@@ -325,7 +325,7 @@ def _s2_record(identity, corpus_id):
 
 
 def snippet_plan(lab, arm="conditional", effort="standard"):
-    research = lab.run_at(arm=arm, effort=effort, method="m2")
+    research = lab.run_at(arm=arm, effort=effort)
     flow, scope, plan = plan_for(lab, research, queries=[MAIN, FOCUSED], vocabulary=PLAN_VOCABULARY)
     return research, flow, scope, plan
 
@@ -436,7 +436,7 @@ def test_the_control_arm_sends_the_passage_query_whatever_the_gate_read(lab):
 
 
 def test_the_control_arm_asks_the_question_itself_where_the_plan_named_no_concept(lab):
-    research = lab.run_at(arm="always", method="m2")
+    research = lab.run_at(arm="always")
     flow, scope, plan = plan_for(lab, research, queries=[MAIN], vocabulary=PLAN_VOCABULARY)
     (spec,) = plan["s2_snippet"]
     # No concept to ask about, so the question's own main terms are the query and no gate decides it.
@@ -450,7 +450,7 @@ def test_the_control_arm_asks_the_question_itself_where_the_plan_named_no_concep
 
 
 def test_the_conditional_arm_asks_nothing_where_the_plan_named_no_concept(lab):
-    research = lab.run_at(arm="conditional", method="m2")
+    research = lab.run_at(arm="conditional")
     _, _, plan = plan_for(lab, research, queries=[MAIN], vocabulary=PLAN_VOCABULARY)
     assert plan["s2_snippet"] == []
 
@@ -506,7 +506,7 @@ def test_a_request_that_went_out_and_was_refused_is_not_reported_as_unsent(lab):
 
 
 def test_a_run_of_another_depth_is_not_the_reference_of_this_one(lab):
-    off = lab.run_at(arm="off", effort="detailed", method="m2")
+    off = lab.run_at(arm="off", effort="detailed")
     flow, scope, plan = plan_for(lab, off, queries=[MAIN, FOCUSED], vocabulary=PLAN_VOCABULARY)
     scripted_snippets(flow)
     asyncio.run(fast_search.execute(flow, off.run, scope, plan, False))
@@ -730,7 +730,7 @@ from completion_arms import aside, comparison, requests_of, runs, summary, top_w
 
 def test_the_reader_tells_the_arms_apart_and_compares_them_to_openalex_alone(lab):
     # Two runs of the same question: one of the `off` arm, one conditional whose snippet request went out.
-    off = lab.run_at(arm="off", method="m2")
+    off = lab.run_at(arm="off")
     flow, scope, plan = plan_for(lab, off, queries=[MAIN, FOCUSED], vocabulary=PLAN_VOCABULARY)
     scripted_snippets(flow)
     asyncio.run(fast_search.execute(flow, off.run, scope, plan, False))

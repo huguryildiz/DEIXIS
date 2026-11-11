@@ -165,30 +165,50 @@ def valid_response(si: dict[str, Any]) -> str:
     if task == "search_plan":
         # The terms are read out of the records this step was given, with their own spans, so the evidence code checks
         # against the stored text is real and a flow test exercises that check rather than stepping around it.
-        source = (si["sources"] or [{}])[0]
         abstracts = {p["source_id"]: p["text"] for p in si["passages"]
                      if (p.get("locator") or {}).get("kind") == "abstract"}
-        fields = {"title": source.get("title") or "", "abstract": abstracts.get(source.get("source_id"), ""),
-                  "keywords": "; ".join(source.get("index_keywords") or [])}
 
-        def pick(field, taken):
-            """A word of the field, with the span it stands at: the evidence a real plan would carry."""
-            text = fields.get(field) or ""
+        def readable(record):
+            """The three texts a plan may read a term out of, for one record."""
+            return {"title": record.get("title") or "", "abstract": abstracts.get(record.get("source_id"), ""),
+                    "keywords": "; ".join(record.get("index_keywords") or [])}
+
+        def word_of(record, field, taken):
+            """A word of that record's field, with the span it stands at: the evidence a real plan would carry."""
+            text = readable(record).get(field) or ""
             for match in re.finditer(r"[A-Za-z][A-Za-z-]{4,}", text):
                 if match.group(0).lower() not in taken:
-                    return {"record_id": source["source_id"], "field": field,
-                            "span": [match.start(), match.end()], "relation": "SYNTHETIC relation to the question"}, match.group(0)
+                    return ({"record_id": record["source_id"], "field": field, "span": [match.start(), match.end()],
+                             "relation": "SYNTHETIC relation to the question"}, match.group(0))
             return None, None
 
-        taken, terms = set(), {}
-        for block, field in (("setting", "title"), ("task", "abstract")):
-            evidence, word = pick(field, taken)
-            if evidence is None:  # a record without that field: the keywords stand in, as a real plan would do
-                evidence, word = pick("keywords", taken)
-            if evidence is None:
+        def blocks_from(record):
+            """Both blocks read out of one record, or None where it does not hold two words to cite."""
+            taken, terms = set(), {}
+            for block, field in (("setting", "title"), ("task", "abstract")):
+                evidence, word = word_of(record, field, taken)
+                for other in ("keywords", "abstract", "title"):  # a record without that field: another of its
+                    if evidence is not None:                      # texts stands in, as a real plan would do
+                        break
+                    evidence, word = word_of(record, other, taken)
+                if evidence is None:
+                    return None, None
+                taken.add(word.lower())
+                terms[block] = [{"term": word, "kind": "topic", "why": f"SYNTHETIC {block} term", "evidence": evidence}]
+            return terms, taken
+        # The first record two terms can be read out of. A record with one readable word, a seed PDF whose text
+        # this step was not given, is not one: a real plan reads the next record instead of writing a term it
+        # cannot point at.
+        sources = si["sources"] or [{}]
+        source, terms, taken = sources[0], {}, set()
+        for record in sources:
+            read, used = blocks_from(record)
+            if read is not None:
+                source, terms, taken = record, read, used
                 break
-            taken.add(word.lower())
-            terms[block] = [{"term": word, "kind": "topic", "why": f"SYNTHETIC {block} term", "evidence": evidence}]
+
+        def pick(field, taken):
+            return word_of(source, field, taken)
         if len(terms) == 2:
             # A backup carries the same evidence as a chosen term, because it can reach the sent query; a record
             # with no further readable word gives none rather than an unchecked phrase.

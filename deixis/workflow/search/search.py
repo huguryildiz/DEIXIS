@@ -894,11 +894,10 @@ async def first_semantic(flow, run, scope, seed_context=None, sent=None):
         # take the research's current protocol. Opened before this run's freeze it carries no hash, whatever an
         # earlier run of the same scope revision froze (Ç1); on a resume after this run's own freeze, that hash.
         flow.store.step(run["id"], "search:fast:semantic", "provider_search:openalex", protocol_hash=hash_of)
-        # Under the m2 method the plan step reads this page's records, so this arm retries a request an earlier
-        # attempt of the same run left failed or cancelled by a deadline: the plan cannot be written without that
-        # page, and a resume that could not send it again would stop at the same place for ever. The other methods
-        # leave every retry to the search stage, which retries no deadline.
-        send_page = page_sender(flow, run, scope, plan, fast_path.search_method(run["budget"]) == "m2", shared,
+        # The plan step reads this page's records, so a request an earlier attempt of the same run left failed or
+        # cancelled by a deadline is retried here: the plan cannot be written without that page, and a resume that
+        # could not send it again would stop at the same place for ever.
+        send_page = page_sender(flow, run, scope, plan, True, shared,
                                 retry_cancels=("budget_exhausted", "deadline"))
     finally:
         if sent is not None:

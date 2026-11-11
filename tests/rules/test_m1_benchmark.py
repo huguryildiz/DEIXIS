@@ -35,17 +35,24 @@ class AliasAdapter(FakeAdapter):
                                    requested_model_verified=True)
 
 
-def sessions(client, task="search_query"):
+def sessions(client, task="criterion_proposal"):
     return [(row[0], row[1]) for row in client.app.state.store.conn.execute(
         "SELECT m.status, m.raw_output FROM model_sessions m JOIN step_inputs si ON si.id = m.step_input_id"
         " WHERE si.task_type = ? ORDER BY m.started_at, m.rowid", (task,))]
 
 
-def test_a_replayed_arm_gets_the_baselines_invalid_answer_and_then_its_repair(tmp_path, monkeypatch):
+def test_a_replayed_arm_takes_the_baselines_plan_and_stops_rather_than_searching_under_one_it_cannot_check(tmp_path, monkeypatch):
+    """The arm's records are its own, so the baseline's search plan names spans in records this library does not
+    have: the plan is replayed and then refused by the contract, and the arm stops at the planning step instead
+    of searching under a plan it cannot check. An arm that wants the same plan has to be given the same records.
+
+    What this shows is the refusal, not that a repair replays: the baseline's own invalid answer and its repair
+    are recorded here only to set the arm up.
+    """
     first = {"sent": False}
 
     def responder(si):
-        if si["task_type"] == "search_query" and not first["sent"]:
+        if si["task_type"] == "criterion_proposal" and not first["sent"]:
             first["sent"] = True
             return "{}"  # invalid: the product sends one repair with the issues in the message
         return valid_response(si)
@@ -54,7 +61,8 @@ def test_a_replayed_arm_gets_the_baselines_invalid_answer_and_then_its_repair(tm
     rid, run_id = start(base)
     assert wait(base, rid, run_id)[1]["status"] == "completed"
     baseline = sessions(base)
-    assert len(baseline) == 2 and baseline[0][1] == "{}"
+    # Three proposal runs, the first of them answered badly once and repaired.
+    assert len(baseline) == 4 and baseline[0][1] == "{}"
     base.__exit__(None, None, None)
 
     log = tmp_path / "replay.jsonl"
@@ -62,11 +70,13 @@ def test_a_replayed_arm_gets_the_baselines_invalid_answer_and_then_its_repair(tm
                                           log, tmp_path / "arm" / "data" / "library.sqlite", sleep=no_sleep)
     arm = client_for(tmp_path / "arm", monkeypatch, OpenAlex(), replay)
     rid, run_id = start(arm)
-    assert wait(arm, rid, run_id)[1]["status"] == "completed"
-    assert sessions(arm) == baseline
+    stopped = wait(arm, rid, run_id)[1]
+    assert (stopped["status"], stopped["error"]["reason"]) == ("paused", "model_call_failed")
+    # The baseline's plan came back for the first call and the contract refused it, because it names spans in
+    # records this library does not have; the repair the product then sent had no baseline reply left to take.
     rows = [json.loads(line) for line in log.read_text().splitlines()]
-    # Calls after the list froze (the answer here) are not replayed; the harness cancels a run there.
-    assert rows and all(r["outcome"] == "replayed" for r in rows if r["task_type"] in replay_answers.REPLAYED)
+    assert [(r["task_type"], r["outcome"], r.get("reason")) for r in rows] == [
+        ("search_plan", "replayed", None), ("search_plan", "refused", "more_calls_than_baseline")]
 
 
 def call(digest="d", key=("search_query:1", 1), **kw):
@@ -186,7 +196,7 @@ def test_the_question_bound_counts_the_model_query_counts_of_every_checked_attem
     assert requests["count"] >= search_query.MAX_COUNT_REQUESTS * search_query.ATTEMPTS
 
 
-def test_a_v2_run_without_frozen_forms_that_match_their_digest_is_not_checked_with_rebuilt_ones(tmp_path):
+def test_a_run_without_frozen_forms_that_match_their_digest_is_not_checked_with_rebuilt_ones(tmp_path):
     import sqlite3
 
     import chain_rule_check
@@ -199,7 +209,7 @@ def test_a_v2_run_without_frozen_forms_that_match_their_digest_is_not_checked_wi
         conn.execute("CREATE TABLE run_steps (run_id TEXT, operation_key TEXT, output_json TEXT)")
         conn.execute("CREATE TABLE protocol_records (research_id TEXT, scope_revision INT, protocol_revision INT,"
                      " body_json TEXT)")
-        budget = json.dumps({"fast_path": {"chain_rule": chaining.RULE_V2}})
+        budget = json.dumps({"fast_path": {"chain_rule": chaining.RULE_V3}})
         listing = json.dumps({"manifest": {"blocks": {"task": ["pump"]}, "versions": {}}})
         for n, body in enumerate([{"admission_forms": forms, "admission_forms_sha256": "sha256:0"}, {}]):
             conn.execute("INSERT INTO runs VALUES (?, ?, 1, 'discovery', ?, ?)", (f"run_{n}", f"res_{n}", budget, n))
@@ -208,8 +218,8 @@ def test_a_v2_run_without_frozen_forms_that_match_their_digest_is_not_checked_wi
             conn.execute("INSERT INTO protocol_records VALUES (?, 1, 1, ?)",
                          (f"res_{n}", json.dumps({"citation_chaining": body})))
     checked = chain_rule_check.check(path)
-    assert checked == {"run_0": {"rule": chaining.RULE_V2, "forms_unverified": True},  # digest does not match
-                       "run_1": {"rule": chaining.RULE_V2, "forms_unverified": True}}  # nothing frozen
+    assert checked == {"run_0": {"rule": chaining.RULE_V3, "forms_unverified": True},  # digest does not match
+                       "run_1": {"rule": chaining.RULE_V3, "forms_unverified": True}}  # nothing frozen
 
 
 def test_a_run_request_without_a_reply_is_sent_again_with_the_same_key_and_marked_until_answered():

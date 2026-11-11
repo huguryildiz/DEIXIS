@@ -62,31 +62,38 @@ def test_p5_empty_200_body_is_a_parse_error_for_every_provider(provider):
     assert outcome.records == []
 
 
-def test_p1_provider_timeout_stops_the_run_as_provider_timeout(tmp_path):
-    """P1: every search times out -> search_runs `timeout`, run paused `provider_timeout`."""
+def test_p1_provider_timeout_stops_the_run_before_it_plans(tmp_path):
+    """P1: every search times out -> search_runs `timeout`. The first request is the question's own, and the plan
+    cannot be written without it, so the run stops there and the person is offered a resume."""
     view, run = fault_run(tmp_path, "timeout")
     assert {s["status"] for s in view["search_runs"]} == {"timeout"}
-    assert (run["status"], run["pause_reason"]) == ("paused", "provider_timeout"), run
+    assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed"), run
+    assert run["error"]["reason"] == "first_page_empty" and run["error"]["retries_left"] > 0
+    # The stop says which provider fault it was, so the person is not told only that nothing came back.
+    assert run["error"]["provider_outcome"] == "timeout"
     assert set(step_statuses(run).values()) == {"outcome_unknown"}
-    assert label_sentence("provider_timeout")
+    assert "did not answer the first search in time" in LABELS
 
 
-def test_p4_malformed_json_body_stops_the_run_as_provider_parse_error(tmp_path):
-    """P4: every search answers 200 with a body that is not JSON -> `parse_error`, run paused `provider_parse_error`."""
+def test_p4_malformed_json_body_is_a_parse_error_and_stops_the_run_before_it_plans(tmp_path):
+    """P4: every search answers 200 with a body that is not JSON -> `parse_error` on the search run; the run stops
+    at the question's own first request, which is what the plan needs."""
     view, run = fault_run(tmp_path, "malformed")
     assert {s["status"] for s in view["search_runs"]} == {"parse_error"}
-    assert (run["status"], run["pause_reason"]) == ("paused", "provider_parse_error"), run
-    assert label_sentence("provider_parse_error")
+    assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed"), run
+    assert run["error"]["reason"] == "first_page_empty" and run["error"]["provider_outcome"] == "parse_error"
+    assert "could not be read" in LABELS
 
 
 def test_p2_provider_5xx_is_failed_on_the_search_run_and_outcome_unknown_on_the_step(tmp_path):
-    """P2: every search answers 500 -> search_runs `failed`, run paused `provider_failed`, step `outcome_unknown`
-    (a 5xx after the request was sent leaves its delivery unknown)."""
+    """P2: every search answers 500 -> search_runs `failed`, step `outcome_unknown` (a 5xx after the request was
+    sent leaves its delivery unknown). The run stops at the question's own first request."""
     view, run = fault_run(tmp_path, "server")
     assert {s["status"] for s in view["search_runs"]} == {"failed"}
-    assert (run["status"], run["pause_reason"]) == ("paused", "provider_failed"), run
+    assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed"), run
+    assert run["error"]["reason"] == "first_page_empty" and run["error"]["provider_outcome"] == "failed"
     assert set(step_statuses(run).values()) == {"outcome_unknown"}
-    assert label_sentence("provider_failed")
+    assert "did not come back from the scholarly provider" in LABELS
 
 
 # ---- O2, O3: the wording of the guard refusals ----------------------------------------------------------------

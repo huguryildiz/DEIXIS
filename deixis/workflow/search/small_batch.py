@@ -90,6 +90,35 @@ def enabled(budget: dict[str, Any]) -> bool:
     return (budget.get("inspection") or {}).get("policy") == POLICY
 
 
+# The rules a run must have frozen for this version to be able to carry it out. A budget frozen under a rule whose
+# code is gone cannot be resumed: carrying it out under today's rule would be a different run from the one the
+# person started, and silently so. The run stops with the rule named and the person starts it again.
+REMOVED_RULES = "search_rules_removed"
+
+
+def removed_rule(run: dict[str, Any]) -> str | None:
+    """Which frozen rule of this run this version no longer carries out, or None when it carries out all of them.
+
+    Only the rules the run itself would act on are checked, and only for the kind of run that acts on them: a
+    search rule binds a discovery, an answer allocation binds an answer. A stored list, manifest or seed match
+    frozen under an older rule is still read back by its own reader; this is about going on to search, read and
+    answer under a rule whose code is gone.
+    """
+    budget = run["budget"]
+    fast = budget.get("fast_path") or {}
+    inspection = budget.get("inspection") or {}
+    if run["kind"] == "discovery" and fast.get("policy") == fast_path.POLICY:
+        if fast.get("plan_rule") not in fast_path.PLAN_RULES:
+            # No rule at all: frozen before the plan the model writes was the only way to search.
+            return "plan_rule" if fast.get("plan_rule") else "search_method"
+        if fast.get("chain_rule") not in fast_path.CHAIN_RULES:
+            return "chain_rule"
+    if (run["kind"] == "answer" and inspection.get("policy") == POLICY
+            and inspection.get("answer_allocation_version", 0) < ANSWER_ALLOCATION_VERSION):
+        return "answer_allocation"
+    return None
+
+
 def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -> dict[str, Any]:
     """Bind a new answer to the latest completed discovery, without switching an older run's policy."""
     scope = store.scope(rid, revision)

@@ -26,7 +26,7 @@ def client_of(app):
 
 
 def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, adapter=None, model_works=False,
-            transport=None, fetch="auto", reading="auto", start_worker=True, **settings):
+            transport=None, plan_work=None, fetch="auto", reading="auto", start_worker=True, **settings):
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
     for connector in CONNECTORS.values():
         if connector.key_env:
@@ -39,7 +39,7 @@ def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, adapter=None, model_works
     app = create_app(Settings(data_dir=tmp_path / "data", port=8877, fulltext_fetch=fetch,
                               fulltext_adjudication=reading, **settings),
                      adapters={"fake": adapter or FakeAdapter(valid_response)},
-                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport or Transport(records))),
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport or Transport(records, plan_work=plan_work))),
                      fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",), start_worker=start_worker)
     return app, fetcher
 
@@ -96,3 +96,34 @@ def test_freeze_list_records_v3_maximum_version_counts_and_replays_without_store
     with client_of(app) as client:
         _, _, _, run = discover(client, effort="standard")
         assert run["status"] == "completed", run
+
+
+# ---- a run frozen under a rule this version no longer carries out ------------------------------------------------
+
+def test_a_run_frozen_under_a_removed_rule_is_named_and_not_carried_out_under_todays():
+    """Every frozen rule the code dropped stops its own kind of run, and a current policy passes the gate.
+
+    A stored budget with no allocation version at all is one of those: it was written before the field existed, so
+    its answer was laid out by a rule this version no longer has, and running it now would quietly lay it out by
+    another one.
+    """
+    from deixis.workflow.run import fast_path
+
+    def discovery(**fast):
+        return {"kind": "discovery", "budget": {"fast_path": {"policy": fast_path.POLICY} | fast}}
+
+    def answer(**inspection):
+        return {"kind": "answer", "budget": {"inspection": {"policy": small_batch.POLICY} | inspection}}
+
+    current = fast_path.freeze_budget({}, "standard")
+    assert small_batch.removed_rule(discovery(**current)) is None
+    assert small_batch.removed_rule(answer(answer_allocation_version=small_batch.ANSWER_ALLOCATION_VERSION)) is None
+    # The search method's own runs froze no plan rule at all; a later rule that was itself dropped is named too.
+    assert small_batch.removed_rule(discovery(chain_rule=fast_path.CHAIN_RULE)) == "search_method"
+    assert small_batch.removed_rule(discovery(**current | {"plan_rule": "SYNTHETIC_older"})) == "plan_rule"
+    assert small_batch.removed_rule(discovery(**current | {"chain_rule": "fast_chain_v1"})) == "chain_rule"
+    assert small_batch.removed_rule(answer(answer_allocation_version=6)) == "answer_allocation"
+    assert small_batch.removed_rule(answer()) == "answer_allocation"
+    # A run of another kind, and a budget no fast path froze, are not this gate's business.
+    assert small_batch.removed_rule({"kind": "followup_search", "budget": {"fast_path": {}}}) is None
+    assert small_batch.removed_rule({"kind": "discovery", "budget": {}}) is None

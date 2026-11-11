@@ -74,9 +74,8 @@ def request_plan(seeds, policy, held, prior=()):
     size = policy["backward_page_size"]
     batches = [refs[i:i + size] for i in range(0, len(refs), size)]
     back = batches[:max(0, policy["backward_requests"] - back_used)]
-    # Only the method whose plan names the chain's works spends a leftover allowance on a further page (P3).
-    forward = forward_pages(seeds, max(0, policy["forward_requests"] - fwd_used),
-                            policy.get("search_method") == "m2")
+    # The plan names the chain's works, so a leftover allowance is spent on a further page.
+    forward = forward_pages(seeds, max(0, policy["forward_requests"] - fwd_used), True)
     specs = []
     base = max((s["index"] for s in prior), default=-1) + 1
     for j in range(max(len(back), len(forward))):
@@ -106,7 +105,7 @@ def request_plan(seeds, policy, held, prior=()):
 
 
 def frozen_forms(flow, run):
-    """The v2 or v3 admission forms this run's protocol froze, checked against their digest. A body without them, or
+    """The admission forms this run's protocol froze, checked against their digest. A body without them, or
     one whose forms no longer match the digest, stops the run: the chain never admits with forms other than frozen."""
     store = flow.store
     step = store.existing_step(run["id"], "protocol")
@@ -127,10 +126,8 @@ class Round:
         self.flow, self.store, self.run, self.scope = flow, flow.store, run, scope
         self.policy = run["budget"]["fast_path"]
         self.vocabulary = vocabulary
-        # A run keeps the admission rule its budget froze: v2 and v3 read the forms its protocol froze, v1 the
-        # searched gate forms as before.
-        self.normalised = self.policy.get("chain_rule") in chaining.NORMALISED_RULES
-        self.forms = frozen_forms(flow, run) if self.normalised else flow._chain_forms(run, scope, vocabulary)
+        # The chain admits with the forms this run's protocol froze, never with forms computed now.
+        self.forms = frozen_forms(flow, run)
         self.semaphore = asyncio.Semaphore(self.policy["chain_in_flight"])
         self.admit = asyncio.Event()
         if self.store.existing_step(run["id"], "fast_chain:plan_fallback"):
@@ -476,7 +473,7 @@ class Round:
             batch=spec["batch"], per_page=spec["limit"], fast_request=spec["index"],
             fast_arrival={"arrived_at": arrived, "cutoff": cutoff, "late": late,
                           "raw_returned": raw_returned, "admitted_returned": len(dispatched.outcome.records) if not late else 0},
-            normalised=self.normalised)
+            normalised=True)
         consumer = self.flow._fast_consumers.get(self.run["id"])
         if consumer:
             consumer.notify()

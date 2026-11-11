@@ -24,7 +24,7 @@ from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter, valid_response
 from overlap_flow_helpers import discover, output
 from test_abstract_flow import HALF
-from test_fulltext_flow import Transport, work
+from test_fulltext_flow import Transport, plan_work, work
 from test_small_batch_flow import app_for, client_of
 from windows_env import WAIT_FACTOR
 
@@ -53,7 +53,8 @@ def discovered(tmp_path, monkeypatch, n, preprints=False, no_abstract=()):
     records = ([work(i, title=HALF, version="submittedVersion" if preprints else "publishedVersion",
                      **({"abstract": None} if i in no_abstract else {})) for i in range(n)]
                if preprints or no_abstract else None)
-    app, _ = app_for(tmp_path, monkeypatch, n, model_works=True, transport=Transport(records) if records else None)
+    app, _ = app_for(tmp_path, monkeypatch, n, model_works=True, plan_work=plan_work(),
+                     transport=Transport(records, plan_work=plan_work()) if records else None)
     with client_of(app) as client:
         rid, run_id, _, run = discover(client, effort="quick")
         assert run["status"] == "completed", run
@@ -153,9 +154,11 @@ def test_a_work_the_person_already_decided_is_neither_listed_nor_planned(tmp_pat
                                    (rid, head)).fetchone()[0]
     h.store.set_user_selection(rid, head, "excluded", version, "SYNTHETIC not this one")
     page = screen_more.unscreened(h.store, rid, 0, 100)
-    assert page["total"] == 34 and head not in {i["source_version_id"] for i in page["items"]}
+    # 60 records plus the one the question's own request brought, less the 25 the window read and the one the
+    # person decided.
+    assert page["total"] == 35 and head not in {i["source_version_id"] for i in page["items"]}
     run = screen_more.request(h.store, rid, None)
-    assert head not in run["target"]["heads"] and len(run["target"]["heads"]) == 34
+    assert head not in run["target"]["heads"] and len(run["target"]["heads"]) == 35
     pending = run["target"]["heads"][0]  # a selection the person set back to pending is the person's too
     version = h.store.conn.execute("SELECT version FROM selections WHERE research_id = ? AND source_version_id = ?",
                                    (rid, pending)).fetchone()[0]
@@ -176,7 +179,7 @@ def new_answer(h, rid, **extra):
 
 
 def test_unscreened_and_screen_more_routes(tmp_path, monkeypatch):
-    app, _ = app_for(tmp_path, monkeypatch, 60, model_works=True)
+    app, _ = app_for(tmp_path, monkeypatch, 60, model_works=True, plan_work=plan_work())
     with client_of(app) as client:
         assert client.get("/api/researches/res_missing/unscreened").status_code == 404
         rid, discovery_id, _, run = discover(client, effort="quick")
@@ -187,13 +190,14 @@ def test_unscreened_and_screen_more_routes(tmp_path, monkeypatch):
         assert answer["applicability"] == "current"
 
         page = client.get(f"/api/researches/{rid}/unscreened", params={"offset": 10, "limit": 5}).json()
-        assert page["total"] == 35 and page["screenable"] == 35 and page["list_size"] == 60
+        # 61 records: the 60 of the pool and the one the question's own request brought.
+        assert page["total"] == 36 and page["screenable"] == 36 and page["list_size"] == 61
         assert [i["source_version_id"] for i in page["items"]] == [i["head"] for i in frozen["items"][35:40]]
         assert [i["signals"]["rank"] for i in page["items"]] == [36, 37, 38, 39, 40]
         assert "prioritization signals" in page["signals_note"] and page["items"][0]["title"].startswith("SYNTHETIC")
         assert set(page["items"][0]["signals"]) == {"rank", "similarity"}
         everything = client.get(f"/api/researches/{rid}/unscreened", params={"limit": 100}).json()["items"]
-        assert [i["signals"]["rank"] for i in everything] == list(range(26, 61))
+        assert [i["signals"]["rank"] for i in everything] == list(range(26, 62))
         assert client.get(f"/api/researches/{rid}/unscreened", params={"limit": 101}).status_code == 422
         assert client.get(f"/api/researches/{rid}/unscreened", params={"offset": -1}).status_code == 422
 
@@ -206,7 +210,7 @@ def test_unscreened_and_screen_more_routes(tmp_path, monkeypatch):
         store.conn.execute("UPDATE runs SET status = 'cancelled' WHERE id = 'run_ACTIVE00000001'")
         first = client.post(url, headers={"Idempotency-Key": "s1"})
         assert first.status_code == 202, first.text
-        assert first.json()["kind"] == "screen_more" and len(first.json()["target"]["heads"]) == 35
+        assert first.json()["kind"] == "screen_more" and len(first.json()["target"]["heads"]) == 36
         assert client.post(url, headers={"Idempotency-Key": "s1"}).json()["id"] == first.json()["id"]
         view = settle(client, rid)
         assert next(r for r in view["runs"] if r["id"] == first.json()["id"])["status"] == "completed"
@@ -221,7 +225,7 @@ def test_unscreened_and_screen_more_routes(tmp_path, monkeypatch):
         settle(client, rid)
         plan = output(store, again.json()["id"], "fast_path:v1:answer_input")
         later = [row for row in plan["items"] if row.get("screened_after_cutoff") == first.json()["id"]]
-        assert len(later) == 35 and all(row["route"] == "abstract" for row in later)
+        assert len(later) == 36 and all(row["route"] == "abstract" for row in later)
         assert plan["excluded_reasons"].get("outside_read_window", 0) == 0
         assert included(store, rid) == 0
 

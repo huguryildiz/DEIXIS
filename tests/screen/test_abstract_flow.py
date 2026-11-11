@@ -41,11 +41,25 @@ def work(number, title=HALF, abstract=HALF_ABSTRACT, doi=None):
             "abstract_inverted_index": inverted or None}
 
 
-class Pool:
-    """Mocked OpenAlex answering every count probe and serving one page of records; no other provider is mocked."""
+# The record the question's own request brings back, which the model reads to write the search plan. Its words
+# appear in no other record here, so the plan's two blocks name nothing in the pool's titles and code leaves every
+# record open for the model to read — which is what this module is about. It joins the pool like any other record.
+PLAN_TITLE = "Zzqscope of zzqdomain (SYNTHETIC)"
+PLAN_ABSTRACT = "We zzqmeasure the zzqoutcome of one case."
+PLAN_WORK = {"id": "https://openalex.org/W900", "doi": "https://doi.org/10.1/oa.900",
+             "display_name": PLAN_TITLE, "publication_year": 2024, "type": "article", "authorships": [],
+             "abstract_inverted_index": {word: [n] for n, word in enumerate(PLAN_ABSTRACT.split())}}
 
-    def __init__(self, works):
+
+class Pool:
+    """Mocked OpenAlex answering every count probe and serving one page of records; no other provider is mocked.
+
+    The question's own request is answered with `plan_work` alone, so the plan is written from a record of its own.
+    """
+
+    def __init__(self, works, plan_work=PLAN_WORK):
         self.works = works
+        self.plan_work = plan_work
         self.probes, self.searches = [], []
 
     def __call__(self, request):
@@ -56,6 +70,9 @@ class Pool:
         if params.get("per_page") == "1" and params.get("select") == "id":
             self.probes.append(query)
             return httpx.Response(200, json={"meta": {"count": 1 if " AND " in query else 40}, "results": []})
+        if params.get("search.semantic"):
+            return httpx.Response(200, json={"meta": {"count": 1, "next_cursor": None},
+                                             "results": [self.plan_work] if self.plan_work else []})
         self.searches.append(query)
         return httpx.Response(200, json={"meta": {"count": len(self.works), "next_cursor": None},
                                          "results": self.works})
@@ -176,8 +193,9 @@ def test_no_selection_becomes_included_and_the_run_opens_no_screening_step(tmp_p
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed"
-    # Every candidate was passed after a model read its abstract: none counts as passed on its title alone.
-    assert (funnel["abstracts_read"], funnel["candidates"], funnel["candidates_by_title"]) == (4, 4, 0)
+    # Five records: the four of the pool and the one the question's own request brought, which the plan was
+    # written from. Every candidate was passed after a model read its abstract: none on its title alone.
+    assert (funnel["abstracts_read"], funnel["candidates"], funnel["candidates_by_title"]) == (5, 5, 0)
     assert set(selections.values()) == {("pending", "code_rule")}
     assert not [state for state, _ in selections.values() if state == "included"]
     assert "model:screening" not in kinds and "model:abstract_screening" in kinds
@@ -200,7 +218,7 @@ def test_a_second_run_of_a_fully_read_research_asks_nothing_and_writes_no_row(tm
         plan = step_output(store, second_run, "abstract_stage")
     finally:
         client.__exit__(None, None, None)
-    assert before == after == 4 and asked == [] and plan["works_needing_model"] == 0
+    assert before == after == 5 and asked == [] and plan["works_needing_model"] == 0
 
 
 # ---- what the two runs mean --------------------------------------------------------------------
@@ -297,51 +315,59 @@ def stage_snapshot(store, rid, run_id):
             "selection_revision": store.selection_revision(rid)}
 
 
-# What the stage wrote before its reads were batched, captured on the unchanged code (slice 13d, Task 2).
-STAGE_ROWS_BEFORE_13D = {
-    "output": {"decisions": {"artifact_of_paper": 1, "both_blocks_missing": 1}, "limit": 40, "batch": 20, "runs": 2,
-               "batches": [["W1", "W2"]], "not_read": 0, "works_needing_model": 2},
-    "decisions": [
-        ("W1", "abstract", "candidate", "blocks_in_title", "code", 1, True),
-        ("W1", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 2, False),
-        ("W2", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 1, True),
-        ("W2", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 2, False),
-        ("W3", "abstract", "out_of_scope", "both_blocks_missing", "code", 1, True),
-        ("W3", "abstract", "out_of_scope", "both_blocks_missing", "code", 2, False),
-        ("W4", "abstract", "unresolved", "survey_title_word", "code", 1, False),
-        ("W5", "abstract", "candidate", "blocks_in_title", "code", 1, True),
-        ("W5", "abstract", "out_of_scope", "artifact_of_paper", "code", 2, False),
-        ("W6", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 1, False),
-        ("W6", "fulltext", "include", "human_include", "human", 1, False),
-    ],
-    "selections": [
-        ("W1", "pending", "code_rule", 2), ("W2", "pending", "code_rule", 2),
-        ("W2:acceptedVersion", "pending", "default", 1), ("W3", "excluded", "code_rule", 2),
-        ("W4", "pending", "default", 1), ("W5", "excluded", "code_rule", 3), ("W6", "included", "user", 3),
-    ],
-    "history": [
-        ("W1", None, "pending", "default", None),
-        ("W1", "pending", "pending", "code_rule", "blocks_in_title"),
-        ("W2", None, "pending", "default", None),
-        ("W2", "pending", "pending", "code_rule", "runs_agree_candidate"),
-        ("W2:acceptedVersion", None, "pending", "default", None),
-        ("W3", None, "pending", "default", None),
-        ("W3", "pending", "excluded", "code_rule", "both_blocks_missing"),
-        ("W4", None, "pending", "default", None),
-        ("W5", None, "pending", "default", None),
-        ("W5", "pending", "excluded", "code_rule", "artifact_of_paper"),
-        ("W5", "pending", "pending", "code_rule", "blocks_in_title"),
-        ("W6", None, "pending", "default", None),
-        ("W6", "pending", "included", "user", "SYNTHETIC: the user's own call"),
-        ("W6", "pending", "pending", "code_rule", "runs_agree_candidate"),
-    ],
-    "selection_revision": 1,
-}
+# The rows the stage writes for this pool, captured from the current code: nothing it writes may move
+# without this test saying so.
+STAGE_ROWS = {'output': {'batch': 20,
+            'batches': [['W2', 'W900']],
+            'decisions': {'artifact_of_paper': 1, 'blocks_in_title': 1, 'both_blocks_missing': 1},
+            'limit': 40,
+            'not_read': 0,
+            'runs': 2,
+            'works_needing_model': 2},
+ 'decisions': [('W1', 'abstract', 'candidate', 'blocks_in_title', 'code', 1, True),
+               ('W1', 'abstract', 'candidate', 'blocks_in_title', 'code', 2, False),
+               ('W2', 'abstract', 'candidate', 'runs_agree_candidate', 'model_agreement', 1, True),
+               ('W2', 'abstract', 'candidate', 'runs_agree_candidate', 'model_agreement', 2, False),
+               ('W3', 'abstract', 'out_of_scope', 'both_blocks_missing', 'code', 1, True),
+               ('W3', 'abstract', 'out_of_scope', 'both_blocks_missing', 'code', 2, False),
+               ('W4', 'abstract', 'unresolved', 'survey_title_word', 'code', 1, False),
+               ('W5', 'abstract', 'candidate', 'blocks_in_title', 'code', 1, True),
+               ('W5', 'abstract', 'out_of_scope', 'artifact_of_paper', 'code', 2, False),
+               ('W6', 'abstract', 'candidate', 'runs_agree_candidate', 'model_agreement', 1, False),
+               ('W6', 'fulltext', 'include', 'human_include', 'human', 1, False),
+               ('W900', 'abstract', 'candidate', 'runs_agree_candidate', 'model_agreement', 1, True),
+               ('W900', 'abstract', 'candidate', 'runs_agree_candidate', 'model_agreement', 2, False)],
+ 'selections': [('W1', 'pending', 'code_rule', 2),
+                ('W2', 'pending', 'code_rule', 2),
+                ('W2:acceptedVersion', 'pending', 'default', 1),
+                ('W3', 'excluded', 'code_rule', 2),
+                ('W4', 'pending', 'default', 1),
+                ('W5', 'excluded', 'code_rule', 3),
+                ('W6', 'included', 'user', 3),
+                ('W900', 'pending', 'code_rule', 2)],
+ 'history': [('W1', None, 'pending', 'default', None),
+             ('W1', 'pending', 'pending', 'code_rule', 'blocks_in_title'),
+             ('W2', None, 'pending', 'default', None),
+             ('W2', 'pending', 'pending', 'code_rule', 'runs_agree_candidate'),
+             ('W2:acceptedVersion', None, 'pending', 'default', None),
+             ('W3', None, 'pending', 'default', None),
+             ('W3', 'pending', 'excluded', 'code_rule', 'both_blocks_missing'),
+             ('W4', None, 'pending', 'default', None),
+             ('W5', None, 'pending', 'default', None),
+             ('W5', 'pending', 'excluded', 'code_rule', 'artifact_of_paper'),
+             ('W5', 'pending', 'pending', 'code_rule', 'blocks_in_title'),
+             ('W6', None, 'pending', 'default', None),
+             ('W6', 'pending', 'included', 'user', "SYNTHETIC: the user's own call"),
+             ('W6', 'pending', 'pending', 'code_rule', 'runs_agree_candidate'),
+             ('W900', None, 'pending', 'default', None),
+             ('W900', 'pending', 'pending', 'code_rule', 'runs_agree_candidate')],
+ 'selection_revision': 1}
 
 
 def test_the_stage_writes_the_same_rows_when_its_reads_are_batched(tmp_path, monkeypatch):
-    """Slice 13d: the stage reads the research in a few statements instead of a few per record, and writes its
-    decisions and selections in one transaction. Nothing it writes may move.
+    """The stage reads the research in a few statements instead of a few per record, and writes its decisions and
+    selections in one transaction. Nothing it writes may move: the rows below are this pool's, captured from the
+    current code, and a change that moves one has to say so here.
 
     The pool holds the cases whose reads the batch has to keep apart: works with several versions, an artifact
     attached to a paper by an open link, a survey title word, a record the user decided, and decisions a revised
@@ -350,9 +376,12 @@ def test_the_stage_writes_the_same_rows_when_its_reads_are_batched(tmp_path, mon
     """
     from deixis.storage import db as storage_db
 
+    # This test needs two records that pass on their title alone, so the plan is written from a record whose own
+    # words the greenhouse titles carry: its blocks are then "Greenhouse" and "tomato".
+    plan_work = work(900, "Greenhouse beds of one crop (SYNTHETIC)", "We look at tomato trusses.")
     pool = Pool([work(1, ON_TOPIC, ON_ABSTRACT), work(2), work(3, OFF_TOPIC, OFF_ABSTRACT),
                  work(4, SURVEY_TITLE, ON_ABSTRACT), work(5, ARTIFACT_TITLE, ON_ABSTRACT, doi=ARTIFACT_DOI),
-                 work(6)])
+                 work(6)], plan_work=plan_work)
     app = app_for(tmp_path, monkeypatch, pool)
     client = client_of(app)
     try:
@@ -385,7 +414,7 @@ def test_the_stage_writes_the_same_rows_when_its_reads_are_batched(tmp_path, mon
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed"
-    assert snapshot == STAGE_ROWS_BEFORE_13D
+    assert snapshot == STAGE_ROWS
 
 
 # ---- the second word filter, on and off (K3) ----------------------------------------------------

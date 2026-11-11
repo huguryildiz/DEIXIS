@@ -16,6 +16,7 @@ from deixis.storage.db import now
 from deixis.workflow.features.citation_map import snowball
 from deixis.workflow.run.flow import FlowDeps, ResearchFlow
 from deixis.workflow.run.store import Store
+from deixis.workflow.search import chaining
 from fakes import FakeAdapter, valid_response
 from test_fulltext_flow import work
 from test_screen_more import discovered, included, new_answer
@@ -257,14 +258,13 @@ def test_a_round_candidate_reaches_a_new_answer_only_after_the_person_includes_i
     assert rows[0]["route"] == "abstract" and len(rows[0]["abstract_ids"]) == 1
 
 
-def test_a_round_orders_its_list_with_the_first_chain_matcher_even_after_an_m1_discovery(lib, monkeypatch):
-    """The `m1` method changes only the discovery chain's admission: a person-started round still orders its list with
-    `chaining.passes` over the searched gate forms, so a hyphenated variant of a gate form does not count as naming it."""
+def test_a_round_orders_its_list_with_the_first_chain_matcher_whatever_the_discovery_froze(lib, monkeypatch):
+    """The discovery chain's own admission rule does not reach here: a person-started round still orders its list
+    with `chaining.passes` over the searched gate forms, so a hyphenated variant of a gate form does not count as
+    naming it."""
     seed_world(lib)
     lib.api.add(900, title="SYNTHETIC State-of-Health of irrigation pumps")
-    budget = lib.store.run(lib.discovery_id)["budget"]
-    budget["fast_path"] |= {"search_method": "m1", "chain_rule": "fast_chain_v2"}
-    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), lib.discovery_id))
+    assert lib.store.run(lib.discovery_id)["budget"]["fast_path"]["chain_rule"] == chaining.RULE_V3
     monkeypatch.setattr(lib.flow, "_chain_forms", lambda *args: {"task": [" state of health"], "setting": []})
     run = snowball.request(lib.store, lib.rid, seeds=[lib.by_oid["W0"]])
     assert execute(lib, run)["status"] == "completed"

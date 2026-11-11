@@ -75,13 +75,13 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def client_for(tmp_path, monkeypatch, handler, adapter, method="legacy"):
+def client_for(tmp_path, monkeypatch, handler, adapter):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     # Scopus in scope and configured, so a run that may ask it would send its access check.
     monkeypatch.setenv(CONNECTORS["scopus"].key_env, "SYNTHETIC-scopus-key")
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off", search_method=method),
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off"),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = TestClient(app)
@@ -185,8 +185,8 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
     assert view["origin"] == "model" and view["plan"]["providers"][0] == "openalex"
     assert [(q["label"], q["origin"]) for q in view["queries"]] == [("Query 1", "model")]
     assert {p["provider_id"]: p["required"] for p in view["providers"]}["openalex"] is True
-    # The three calls a run of the default method makes before its first search; an m2 run makes one instead.
-    assert set(planning_calls(adapter, 1)) == {"vocabulary_labels", "search_query", "criterion_proposal"}
+    # The two calls a run makes before its first search: the plan and the inclusion criterion.
+    assert set(planning_calls(adapter, 1)) == {"search_plan", "criterion_proposal"}
 
     saved = save(client, rid, plan(providers=("openalex", "semantic_scholar", "crossref", "scopus")))
     assert saved.status_code == 200, saved.text

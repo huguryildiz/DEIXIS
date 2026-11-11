@@ -221,7 +221,7 @@ def test_the_questions_own_request_starts_before_the_first_planning_model_call(t
     # Opened first of all the run's work; `source_similarity` opens with the run and sends nothing to a provider.
     assert keys[0] in ("search:fast:semantic", "source_similarity") and "search:fast:semantic" in keys[:2]
     first = next(step for step in steps if step["operation_key"] == "search:fast:semantic")
-    model = next(step for step in steps if step["operation_key"].startswith("vocabulary_labels"))
+    model = next(step for step in steps if step["operation_key"].startswith("search_query:"))
     assert first["started_at"] <= model["started_at"]
     if language == "turkish":
         # The translation the vocabulary step asks for started after the request, so the request waited for none of it.

@@ -432,6 +432,11 @@ class ResearchFlow:
         run = self.store.run(run_id)
         scope = {} if run["kind"] == "review" else self.store.scope(run["research_id"], run["scope_revision"])
         try:
+            # A run frozen under a rule this version no longer carries out stops here, before any provider or
+            # model call, with the rule named. Carrying it out under today's rule would quietly make it a
+            # different run. The stop goes through the same path as every other, so a worker reads it as a stop.
+            if (gone := small_batch.removed_rule(run)) is not None:
+                self._fail(run_id, small_batch.REMOVED_RULES, {"rule": gone})
             if run["kind"] == "discovery":
                 await self._discovery(run, scope)
             elif run["kind"] == "answer":
@@ -653,11 +658,10 @@ class ResearchFlow:
             if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
                 # The vocabulary step has just stored the model's English sentence: the built-in model reads it too.
                 self._fast_consumers[run_id] = Consumer(self, run, scope)
-            if fast_path.search_method(run["budget"]) == "m2":
-                # The plan the model writes reads the records the question's own request returned (P3), so this arm
-                # waits for that page here. The request's own failure is not raised: `first_semantic` records it and
-                # the search stage retries it, and the plan step then reads whatever records the page wrote.
-                await first_request
+            # The plan the model writes reads the records the question's own request returned, so the run waits for
+            # that page here. The request's own failure is not raised: `first_semantic` records it, and the plan
+            # step then reads whatever records the page wrote, stopping the run itself when there are none.
+            await first_request
             vocabulary, queries = await self._search_query(run, scope, vocabulary)
             # The first safe point of the plan stage: there is a query now, so the run could search. If its own
             # delivery clock has already run out — a long queue, a model call that took minutes, or a run resumed
@@ -901,10 +905,9 @@ class ResearchFlow:
             return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
                                   stored["queries"])
         seed_sha, seed_rows = self._seed_passages(run_id, scope)
-        # Under the m1 search method a stored output holds the code-query decision of its own method, so only a run of
-        # the same
-        # frozen method is reused; a run of another method in between does not hide an older compatible query.
-        earlier = (self.store.search_query_of(rid, revision, run_id, method=fast_path.search_method(run["budget"]))
+        # A stored output holds the decision of the rule its run froze, so only a run that froze this same plan
+        # rule is reused; a run frozen under a rule this version no longer carries does not hide a usable query.
+        earlier = (self.store.search_query_of(rid, revision, run_id, plan_rule=fast_path.PLAN_RULE)
                    if step["output"] is None else None)
         if earlier is not None and earlier["output"].get("seed_passages_sha256") != seed_sha:
             earlier = None  # a query written without this run's seed pages is not this run's query
@@ -938,12 +941,11 @@ class ResearchFlow:
         if attempt > search_query_rules.ATTEMPTS:
             self._pause(run_id, "search_query_failed", {"attempts": output["attempts"], "retries_left": 0})
         self._checkpoint(run_id, revision)
-        # Under the m2 method the model writes its plan from the records the question's own request returned (P3): one
-        # call that reads their titles, abstracts and keywords, gives every term the place it was read from, and names
-        # the works the chain starts from.
-        plan_method = fast_path.search_method(run["budget"]) == "m2"
-        records = search_plan_rules.page_records(self.store, run) if plan_method else []
-        if plan_method and not records:
+        # The model writes its plan from the records the question's own request returned: one call that reads their
+        # titles, abstracts and keywords, gives every term the place it was read from, and names the works the
+        # chain starts from.
+        records = search_plan_rules.page_records(self.store, run)
+        if not records:
             # No record to read. The question's own words are not written as the query in the plan's place, because
             # this method's terms are what the records teach; a run that quietly fell back would search as the older
             # methods do and say it had written a plan. The step stays pending, so nothing is asked twice, and which
@@ -954,6 +956,12 @@ class ResearchFlow:
             page = self.store.existing_step(run_id, search_plan_rules.SEMANTIC_KEY)
             answered = bool(page and page["status"] == "succeeded")
             reason = "first_page_no_records" if answered else "first_page_empty"
+            # Why the request brought nothing, as the provider's own outcome recorded it (`timeout`,
+            # `parse_error`, `failed`, …): `first_page_empty` alone would not tell a slow provider from one
+            # that answered with a body no one can read, and the person is told which.
+            outcome = self.store.conn.execute(
+                "SELECT status FROM search_runs WHERE step_id = ? ORDER BY retrieved_at DESC, rowid DESC LIMIT 1",
+                (page["id"],)).fetchone() if page else None
             # Written on the step, which is never started — a step still `pending` is not half-finished work — but
             # written it must be: the stop's own reason is read from this output, and it says which of the two
             # cases the person is facing.
@@ -961,8 +969,12 @@ class ResearchFlow:
             self.store.set_step_output(step["id"], output)
             self._pause(run_id, "search_query_failed", {
                 "reason": reason, "attempts": output["attempts"],
+                **({"provider_outcome": outcome[0]} if outcome and not answered else {}),
                 "retries_left": 0 if answered else search_query_rules.ATTEMPTS - len(output["attempts"])})
-        task = "search_plan" if records else "search_query"
+        # The stop above leaves no path here without records, so the plan is what is asked for. The older step
+        # that wrote a query with no records in hand is no longer reached; its contract stays readable because
+        # stored protocols name it.
+        task = "search_plan"
         sources = list(dict.fromkeys([*(seed_source_ids(scope) if seed_rows else []), *records]))
         rows = [*(seed_rows or []), *search_plan_rules.record_passages(self.store, records, MAX_ABSTRACT_CHARS)]
         failure: dict[str, Any] | None = None
@@ -1000,12 +1012,10 @@ class ResearchFlow:
                   # under a newer package, and must not credit the answer to that one.
                   "skill_package_hash": payload["skill_package_hash"],
                   "answer": answer["result"]}
-        if task == "search_plan":
-            # What this plan was written from, as one fingerprint (P4): the payload the call read, in the order it
-            # read it, and the versions that wrote it. Two plans with the same fingerprint may be compared term by
-            # term; the measurement of how steady the terms are reads it back from the stored run. The question's
-            # own query step (`search_query`) writes none: it reads no records, so there is nothing to compare.
-            record["fingerprint"] = plan_identity.fingerprint(payload, record, fast_path.PLAN_RULE)
+        # What this plan was written from, as one fingerprint: the payload the call read, in the order it read it,
+        # and the versions that wrote it. Two plans with the same fingerprint may be compared term by term, and
+        # the measurement of how steady the terms are reads it back from the stored run.
+        record["fingerprint"] = plan_identity.fingerprint(payload, record, fast_path.PLAN_RULE)
         claim = None
         if intent_rules.is_statement(self.store, run):
             # Written on the step as soon as it is built, as the counts above are: a worker that dies before the step
@@ -1040,8 +1050,7 @@ class ResearchFlow:
                    # them, so none is dropped here without saying so.
                    "plan_seeds": search_plan_rules.named_seeds(self.store, answer["result"], sources),
                    # What the plan asked for beside the main query and what was really sent for it.
-                   "focused": search_plan_rules.focused_record(answer["result"], focused, allowance)} \
-            if task == "search_plan" else {}
+                   "focused": search_plan_rules.focused_record(answer["result"], focused, allowance)}
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output=output | {
             "status": "ready", "vocabulary": built, "queries": queries,
@@ -1193,45 +1202,17 @@ class ResearchFlow:
 
     async def _vocabulary_labels(self, run: dict[str, Any], scope: dict[str, Any],
                                  extraction: Extraction) -> tuple[Extraction, dict[str, Any]]:
-        """Ask a model which block each extracted phrase belongs to, and keep the rule wherever it does not answer (SW17).
+        """Which block each extracted phrase belongs to; nothing is asked of a model here any more.
 
-        Three optional calls: a failed one is recorded and the run goes on, and with too few of them the rule's own
-        assignment stands, so a search never waits for a model. A call whose step already succeeded returns its stored
-        output, so a resumed run labels nothing twice.
+        One plan call now writes the terms with their blocks from the first page's records, so the three labelling
+        calls this step used to send are never sent and the model-call count does not rise. The person's own plan
+        and the person's own key terms still outrank the plan's assignment and are named as the reason, so the
+        screen keeps saying which of the three decided the blocks.
         """
-        run_id, revision = run["id"], run["scope_revision"]
-        phrases = vocabulary_rules.labelling_phrases(extraction)
         skipped = ("user_plan" if user_plan_rules.of(scope) is not None else  # the person's plan has its blocks (S23a)
                    "user_key_terms" if extraction.block_assignment == "user" else
-                   # Under the m2 method one call writes the terms with their blocks from the first page's records
-                   # (P3), so these three calls are not sent at all and the model-call count does not rise.
-                   "search_plan" if fast_path.search_method(run["budget"]) == "m2" else
-                   "no_phrases" if not phrases else
-                   "too_many_phrases" if len(phrases) > vocabulary_rules.MAX_LABELLED_PHRASES else None)
-        if skipped:
-            # The user's own key terms are above both assignments (SW2.6), and a list this long is not sent at all.
-            return extraction, {"runs_ok": 0, "skipped": skipped, "failures": [], "phrases": []}
-        target = {"question_text": scope["question"], "language": extraction.language, "phrases": phrases}
-        runs: list[dict[str, str]] = []
-        failures: list[dict[str, Any]] = []
-        keys = [f"vocabulary_labels_{index + 1}" for index in range(vocabulary_rules.LABEL_RUNS)]
-        outputs = await self._optional_calls(run, keys, lambda key: self._model_step(
-            run, scope, key, "vocabulary_labels", optional=True, vocabulary_target=target))
-        for key, output in zip(keys, outputs):
-            if isinstance(output, OptionalStepFailed):
-                failures.append({"step": key, "reason": output.reason})
-                continue
-            if output.get("invalid"):
-                # An invented, missing or repeated phrase drops this run; it is not repaired and not half-applied.
-                failures.append({"step": key, "reason": "invalid_model_output"})
-                continue
-            runs.append({label["phrase"]: label["block"] for label in output["result"]["labels"]})
-        self._checkpoint(run_id, revision)
-        labelled, records = vocabulary_rules.apply_labels(extraction, runs)
-        # Enough runs arrived and the rule still stands: the labelling left nothing to search with (apply_labels).
-        fallback = ("labelling_unsearchable" if len(runs) >= vocabulary_rules.LABEL_MAJORITY
-                    and labelled.block_assignment != "model" else None)
-        return labelled, {"runs_ok": len(runs), "skipped": None, "fallback": fallback, "failures": failures, "phrases": records}
+                   "search_plan")
+        return extraction, {"runs_ok": 0, "skipped": skipped, "failures": [], "phrases": []}
 
     async def _criterion(self, run: dict[str, Any], scope: dict[str, Any],
                          vocabulary: dict[str, Any]) -> dict[str, Any] | None:
@@ -1325,11 +1306,11 @@ class ResearchFlow:
         """The OpenAlex work each seed PDF is, or why there is none, as the envelope the protocol freezes.
 
         Runs only for a ready seed set and before this run's protocol is frozen: a run whose protocol froze without
-        it finishes the way it began, and a run that opened the `seed_pdf_v1` step finishes under that rule. One DOI request for
-        every seed, then one meaning search per seed that is still open, each kept in its own step, so a resumed run
-        sends none again once it has an answer. A failed lookup does not stop the run; the context says so and the
-        PDF's own pages still guide the query. A second discovery run of the scope revision takes the first one's
-        match when its seed key is this one's.
+        it finishes the way it began, and a run that opened the `seed_pdf_v1` step stops with that rule named,
+        because this version no longer carries it out. One DOI request for every seed, then one meaning search per
+        seed that is still open, each kept in its own step, so a resumed run sends none again once it has an answer.
+        A failed lookup does not stop the run; the context says so and the PDF's own pages still guide the query. A
+        second discovery run of the scope revision takes the first one's match when its seed key is this one's.
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         if scope["seed_mode"] != "uploaded_seed" or not scope["seeds"]:
@@ -1341,7 +1322,9 @@ class ResearchFlow:
         if step is None and frozen is not None and frozen["status"] == "succeeded":
             return None
         if step is not None and step["kind"] == "code:seed_match":
-            return seed_match_rules.contexts(await self._seed_match_v1(run, scope, step))
+            # A run that opened the `seed_pdf_v1` step before `seed_pdf_v2`. That step's code is gone, and the run
+            # is stopped before it reaches here (`small_batch.removed_rule`); this says so rather than carrying on.
+            self._fail(run_id, small_batch.REMOVED_RULES, {"rule": seed_match_rules.RULE_V1})
         step = step or self.store.step(run_id, "seed_match", "code:seed_match_v2")
         self.store.start_step(step["id"])
         earlier = self.store.search_query_of(rid, revision, run_id, "seed_match")
@@ -1428,65 +1411,6 @@ class ResearchFlow:
             work, hits = seed_match_rules.pick(title_region, found["works"])
             contexts[i].update(seed_match_rules.matched(work, "title") if work is not None
                                else {"status": "no_match", "ambiguous": hits > 1})
-
-    async def _seed_match_v1(self, run: dict[str, Any], scope: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
-        """The `seed_pdf_v1` seed step, kept so a run that opened it before seed_pdf_v2 finishes under its own rule and reads back
-        the lookups it already sent. Returns its single context."""
-        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        snapshot = scope["seeds"][0]
-        self.store.start_step(step["id"])
-        earlier = self.store.search_query_of(rid, revision, run_id, "seed_match")
-        if (earlier is not None and earlier["output"].get("rule") == seed_match_rules.RULE_V1
-                and earlier["output"]["asset_sha256"] == snapshot["asset_sha256"]
-                and earlier["output"]["status"] != "lookup_failed"):
-            output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
-            self.store.finish_step(step["id"], "succeeded", output=output)
-            return output
-        head, title_region, first_page = seed_match_rules.first_pages(self.store, snapshot)
-        context = {"rule": seed_match_rules.RULE_V1, "status": None, "basis": None,
-                   "source_version_id": snapshot["source_version_id"],
-                   "work_id": self.store.source(snapshot["source_version_id"])["work_id"],
-                   "asset_sha256": snapshot["asset_sha256"],
-                   "seed_passages_sha256": seed_match_rules.passages_sha256([snapshot]),
-                   "first_page_text": first_page,
-                   "lookups": []}
-        connector = CONNECTORS["openalex"]
-        if not head:
-            context["status"] = "no_first_page_text"
-        elif "openalex" not in scope["providers"] or connector.access_mode() == "not_configured":
-            context["status"] = "skipped"
-        else:
-            context.update(await self._seed_lookups_v1(run, head, title_region, connector))
-        self.store.finish_step(step["id"], "succeeded", output=context)
-        self._checkpoint(run_id, revision)
-        return context
-
-    async def _seed_lookups_v1(self, run: dict[str, Any], head: str, title_region: str, connector: Connector) -> dict[str, Any]:
-        """The DOI lookup, then the meaning search only when no DOI record's title stands at the head of page 1."""
-        api_key, mailto = connector.api_key(), self.deps.settings.contact_email
-        lookups = []
-        dois = seed_match_rules.dois_in(head)
-        if dois:
-            found = await self._seed_lookup(run, "seed_match:doi", lambda: openalex.works_by_dois(
-                self.deps.http, dois, api_key=api_key, contact_email=mailto))
-            lookups.append(found["summary"])
-            if found["failed"]:
-                return {"status": "lookup_failed", "lookups": lookups}
-            work, hits = seed_match_rules.pick(title_region, found["works"])
-            if work is not None:
-                return seed_match_rules.matched(work, "doi_title") | {"lookups": lookups}
-            if hits > 1:
-                return {"status": "no_match", "ambiguous": True, "lookups": lookups}
-        found = await self._seed_lookup(run, "seed_match:semantic", lambda: openalex.search_semantic(
-            self.deps.http, openalex.semantic_text(head), seed_match_rules.SEMANTIC_PER_PAGE,
-            api_key, mailto, references=True))
-        lookups.append(found["summary"])
-        if found["failed"]:
-            return {"status": "lookup_failed", "lookups": lookups}
-        work, hits = seed_match_rules.pick(title_region, found["works"])
-        if work is not None:
-            return seed_match_rules.matched(work, "title") | {"lookups": lookups}
-        return {"status": "no_match", "ambiguous": hits > 1, "lookups": lookups}
 
     async def _seed_lookup(self, run: dict[str, Any], key: str,
                            send: Callable[[], Awaitable[SearchOutcome]], complete: bool = False) -> dict[str, Any]:

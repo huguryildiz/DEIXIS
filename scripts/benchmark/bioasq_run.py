@@ -254,10 +254,10 @@ def measured_run(args, home, questions, server, records):
     `records(order, research_id)` turns list positions into scored rows. A product failure (the run failed) is a row
     scored as zero; a pause, a timeout, a wrong embedding or a rerank that did not apply stops the whole run.
 
-    An m1 arm (`harness.add_m1_args`) writes to `--out`, checks that every run froze `--method`, creates its
-    researches on `--connection`, and reserves each question on the shared `--ledger` before starting it."""
+    An m1 arm (`harness.add_m1_args`) writes to `--out`, creates its researches on `--connection`, and reserves
+    each question on the shared `--ledger` before starting it."""
     home = Path(args.out) if getattr(args, 'out', None) else home
-    method, connection = getattr(args, 'method', None), getattr(args, 'connection', 'anthropic')
+    connection = getattr(args, 'connection', 'anthropic')
     model = getattr(args, 'model', None) or MODEL
     ledger = None
     if getattr(args, 'ledger', None):
@@ -274,7 +274,7 @@ def measured_run(args, home, questions, server, records):
     if getattr(args, 'pool_factor', None):
         harness.RERANKER['pool_factor'] = args.pool_factor  # the arm's own choice; written and checked below
     settings = harness.stamp(harness.configure(server), model, EFFORT) | {'keep': args.keep}  # positions kept per row
-    settings |= {'method': method, 'connection': connection} if method else {}
+    settings |= {'connection': connection}
     outs = {arm: home / f'runs/deixis_{arm}.jsonl' for arm in harness.ARMS}
     outs['fused'].parent.mkdir(parents=True, exist_ok=True)
     skip = harness.done_in_all(list(outs.values()), read_jsonl)
@@ -328,7 +328,7 @@ def measured_run(args, home, questions, server, records):
                 rows = dict.fromkeys(harness.ARMS, row | {'error': f"run failed at {state['stage']}: {state['reason']}"})
             else:
                 with closing(server.db()) as conn:
-                    if found := harness.problems(conn, row['run_id'], listing, method):
+                    if found := harness.problems(conn, row['run_id'], listing):
                         harness.stopped(home, row, '; '.join(found), len(skip), len(questions))
                     rerank = harness.rerank_info(conn, row['run_id'], listing)
                 orders = harness.arms(listing)

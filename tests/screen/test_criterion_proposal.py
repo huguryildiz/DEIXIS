@@ -17,7 +17,6 @@ from deixis.domain.canonical import canonical_json
 from deixis.domain.rules import LITERATURE_TASKS, NO_REPAIR_TASKS, schema_repairs
 from deixis.domain.skill import RUNTIME_FILES, integrity_issues, load_skill_package
 from deixis.workflow.search.criterion import PARTS_PER_PROPOSAL, PHRASES_PER_PART, PROPOSAL_MAJORITY, PROPOSAL_RUNS, THRESHOLDS, consensus
-import httpx
 from fastapi.testclient import TestClient
 
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
@@ -295,12 +294,11 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     rid, run, openalex, adapter = run_with_proposals(tmp_path, monkeypatch)
     # The fast path opens its embedding step (`source_similarity`) as the run starts; it sends nothing to a provider.
     keys = [key for key in steps_of(run) if key != "source_similarity"]
-    # The question's own semantic request opens before anything plans: it needs no model and no criterion (P2).
-    # The query a model writes follows the vocabulary, then the source routing of slice 14, then the criterion.
+    # The question's own semantic request opens before anything plans: it needs no model and no criterion. The
+    # plan a model writes from that page follows the vocabulary, then the source routing, then the criterion.
     # PubMed's heading lookup is the last step before the freeze, so what the protocol freezes is what is sent.
-    assert keys[:15] == ["search:fast:semantic",
-                         "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
-                         "search_query", "search_query:1", "source_routing",
+    assert keys[:12] == ["search:fast:semantic",
+                         "vocabulary", "search_query", "search_query:1", "source_routing",
                          "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
                          "protocol_approval", "mesh_expansion", "protocol"]
     # Every planned provider search was opened after the protocol step, which already held the criterion.
@@ -328,21 +326,23 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
 
 
 def test_a_resumed_run_proposes_nothing_again(tmp_path, monkeypatch):
-    """The search fails on the first pass; resuming retries the search and must not pay for the proposals again."""
+    """The run stops after its proposals on the first pass; resuming must not pay for them again."""
     openalex, adapter = CountingOpenAlex(), proposing()
     down = {"now": True}
 
-    def handler(request):
-        params = request.url.params
-        if down["now"] and not (params.get("per_page") == "1" and params.get("select") == "id"):
-            return httpx.Response(503)
-        return openalex(request)
+    def responder(si):
+        # The abstract stage is the first model work after the criterion, so a connection that is down there
+        # stops the run with every proposal already made and stored.
+        if down["now"] and si["task_type"] == "abstract_screening":
+            return ModelStepResult("failed", error="SYNTHETIC model connection is down")
+        return None
+    adapter.fail = responder
 
-    with TestClient(app_for(tmp_path, monkeypatch, handler, adapter)) as client:
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
         rid, run_id = start(client, EXERCISE)
         view, run = wait(client, rid, run_id)
-        assert run["status"] == "paused" and not openalex.searches
+        assert run["status"] == "paused", run
         asked = [c["step_input_id"] for c in criterion_calls(adapter)]
         assert len(asked) == PROPOSAL_RUNS
         down["now"] = False

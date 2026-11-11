@@ -32,18 +32,14 @@ CLOSEST_CODES = frozenset({"criterion_absent", "part_without_evidence", "fulltex
                            "protocol_title", "abstract_promise_absent"})
 # How many closest works an answer reads, by its passage budget (quick 16, standard 48, detailed 80), and how many of
 # each one's pages. Included works keep MAX_PASSAGES_PER_SOURCE; an abstract-only work gives its abstract.
-# The standard budget's count is 12 since allocation version 7: on the 8 November engineering cuts the two works the
+# The standard budget's count is 12: on the 8 November engineering cuts the two works the
 # question itself compared were the 6th and 7th closest work, so a count of 5 left both out of the answer input.
 # Reading a part of the scope is what a closest work is for, and the count is the smallest step towards giving a
-# passage to the part it supports. An answer bound earlier keeps the count it was queued with.
+# passage to the part it supports.
 CLOSEST_WORKS = {16: 3, 48: 12, 80: 8}
-CLOSEST_WORKS_V6 = {16: 3, 48: 5, 80: 8}
-# The first allocation version whose standard budget reads 12 closest works.
-CLOSEST_WORKS_VERSION = 7
 CLOSEST_PAGES = 4
 # The selection marker of the one closest work taken although its reading found no criterion part.
 CLOSEST_FALLBACK = "closest_zero_part_fallback"
-# Since allocation version 6 that work gives at most its first passage and one page.
 CLOSEST_FALLBACK_PAGES = 2
 ROLES = ("included", "closest", "abstract")
 
@@ -517,7 +513,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                 row["reason"] = "no_text_at_cutoff"
     # A closest work whose reading found no criterion part stays out; the rest are taken by the parts their reading
     # found, the frozen list's order breaking ties, and those past the budget's count stay out.
-    cap, cap_known = closest_cap(run["budget"]["max_answer_passages"], allocation_of(run["budget"]))
+    cap, cap_known = closest_cap(run["budget"]["max_answer_passages"])
     closest = [row for row in rows if not row["reason"] and role_of(row) == "closest"]
     quoted_by_work = {}
     for row in closest:
@@ -527,12 +523,9 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
     # One of those places is kept for the first such work in the list order whose own abstract screening made
     # it a candidate: as an abstract it was the nearest neighbour the answer read, and reading its file must not take
     # it away (Jia & Chen, 6 Nov). It stays a closest work with its reading's findings, its full-text decision is not
-    # touched, and the row says why it was taken. An answer bound earlier (allocation version 4) leaves it out.
-    fallback = None
-    allocation = allocation_of(run["budget"])
-    if allocation >= 5:
-        fallback = next((row for row in closest if row["reason"] == "closest_no_part"
-                         and row.get("abstract_decision_id")), None)
+    # touched, and the row says why it was taken.
+    fallback = next((row for row in closest if row["reason"] == "closest_no_part"
+                     and row.get("abstract_decision_id")), None)
     if fallback is not None:
         fallback.update(reason=None, closest_selection=CLOSEST_FALLBACK)
     taken = sorted((row for row in closest if not row["reason"] and row is not fallback), key=closest_rank)
@@ -558,7 +551,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         pages = [store.passage(pid) for pid in ids]
         if row["route"] == "fulltext" and role_of(row) == "closest":
             pages = closest_pages(store, row, pages, quoted_by_work[row["work_id"]], fts, patterns)
-            if allocation >= 6 and row.get("closest_selection") == CLOSEST_FALLBACK:
+            if row.get("closest_selection") == CLOSEST_FALLBACK:
                 pages = pages[:CLOSEST_FALLBACK_PAGES]  # Its reading found nothing to quote
         elif row["route"] == "fulltext":
             topic = [p for p in store.search_passages([row["source_version_id"]], fts, len(ids)) if p["id"] in ids]
@@ -570,7 +563,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             pages = pages[:MAX_PASSAGES_PER_SOURCE]
         queues.append(pages)
     limit = run["budget"]["max_answer_passages"]
-    passages = allocate_by_role(rows, queues, limit, abstracts_first=allocation >= 6)
+    passages = allocate_by_role(rows, queues, limit)
     given = {p["id"] for p in passages}
     # A work the budget left without a page is not given to the model, and is listed with why.
     for row in rows:
@@ -655,20 +648,13 @@ def closest_parts(store: Any, row: dict[str, Any]) -> tuple[list[dict[str, str]]
     return parts, quoted
 
 
-def allocation_of(budget: dict[str, Any]) -> int:
-    """The answer allocation version a run froze; 0 for a run bound before the versions."""
-    return (budget.get("inspection") or {}).get("answer_allocation_version", 0)
-
-
-def closest_cap(passages: int, allocation: int = CLOSEST_WORKS_VERSION) -> tuple[int, bool]:
+def closest_cap(passages: int) -> tuple[int, bool]:
     """How many closest works an answer of this passage budget reads, and whether the budget is one the table names.
 
-    The count belongs to the allocation version the run froze, so a run queued before version 7 keeps the count it
-    was queued with. A budget without its own count would otherwise read the standard budget's silently, so the
-    caller records `budget_known` and the rules guard keeps every depth's budget in the table.
+    A budget without its own count would otherwise read the standard budget's silently, so the caller records
+    `budget_known` and the rules guard keeps every depth's budget in the table.
     """
-    table = CLOSEST_WORKS if allocation >= CLOSEST_WORKS_VERSION else CLOSEST_WORKS_V6
-    return table.get(passages, table[48]), passages in table
+    return CLOSEST_WORKS.get(passages, CLOSEST_WORKS[48]), passages in CLOSEST_WORKS
 
 
 def closest_rank(row: dict[str, Any]) -> tuple[int, int]:
@@ -692,21 +678,19 @@ def closest_pages(store: Any, row: dict[str, Any], pages: list[dict[str, Any]], 
 
 
 def allocate_by_role(rows: list[dict[str, Any]], queues: list[list[dict[str, Any]]],
-                     limit: int, *, abstracts_first: bool = False) -> list[dict[str, Any]]:
+                     limit: int) -> list[dict[str, Any]]:
     """Fill the passage budget by role, breadth first and in row order within each pass: the first page of every
     included and closest work, then the other pages of the closest works (up to CLOSEST_PAGES each), then one abstract
     per abstract-only work, then the deeper pages of the included works (up to MAX_PASSAGES_PER_SOURCE each). Without
     closest works this is the earlier breadth-first order; the budget is no longer widened to fit every work. A work
     the person included, or that a Screen more run the person started admitted, always gets its first page, even past
-    the budget. `abstracts_first` (allocation version 6) gives the abstract-only works their abstract before the
-    closest works their second to fourth pages."""
+    the budget. Every abstract-only work gets its abstract before the closest works get their second to fourth
+    pages."""
     forced = [bool(row["user_priority"] or row.get("screened_after_cutoff")) for row in rows]
     selected = [queue[0] for queue, first in zip(queues, forced) if first and queue]
     entries = list(zip([role_of(row) for row in rows], queues, forced))
-    passes = [(("included", "closest"), range(0, 1)), (("closest",), range(1, CLOSEST_PAGES)),
-              (("abstract",), range(0, 1)), (("included",), range(1, MAX_PASSAGES_PER_SOURCE))]
-    if abstracts_first:
-        passes[1], passes[2] = passes[2], passes[1]
+    passes = [(("included", "closest"), range(0, 1)), (("abstract",), range(0, 1)),
+              (("closest",), range(1, CLOSEST_PAGES)), (("included",), range(1, MAX_PASSAGES_PER_SOURCE))]
     for roles, depths in passes:
         for depth in depths:
             for role, queue, first in entries:

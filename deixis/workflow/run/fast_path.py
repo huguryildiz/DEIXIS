@@ -16,19 +16,18 @@ RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
 # The stages that must be done before the answer is written. Their bases sum to the depth's handover moment.
 PRE_ANSWER = STAGES[:4]
-# The search method a discovery run is queued with, frozen in its policy. `legacy` is every run's default:
-# chain admission `fast_chain_v1`. `m1` selects chain admission `fast_chain_v2`; it is for the M1 measurement
-# until all its gates pass.
-# `m2` adds the search plan the model writes from the first semantic page (`search_plan_v1`): its terms carry the
-# record, field and span they were read from, and it names the works the citation chain starts from. A query written
-# under one method is never reused by a run of another (`store.search_query_of`).
-SEARCH_METHODS = ("legacy", "m1", "m2")
-# The plan rule `m2` freezes: one model call reads the first semantic page and writes the terms, their blocks and the
-# chain's starting works. It replaces the three labelling calls and the query call of the older methods.
+# The plan rule every run freezes: one model call reads the first semantic page and writes the terms, their blocks
+# and the chain's starting works. A run whose budget names no plan rule was frozen under a search method this
+# version no longer carries, and `small_batch.removed_rule` stops it rather than running it under a rule that is
+# gone. A query is only reused from a run that froze this same rule (`store.search_query_of`).
 PLAN_RULE = "search_plan_v1"
-# The chain admission rules a run's budget can freeze. v3 (the `m2` method) matches words as v2 does and adds the
-# rescue quota: a few linked records the gate blocks' words do not reach are still written as ranked candidates.
-CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2", "fast_chain_v3")
+# The chain admission rule a run freezes: words are matched against the protocol's frozen forms, and a few linked
+# records those words do not reach are still written as ranked candidates under the rescue quota. Older budgets
+# name `fast_chain_v1` or `fast_chain_v2`; their code is gone and `small_batch.removed_rule` stops those runs.
+CHAIN_RULE = "fast_chain_v3"
+CHAIN_RULES = (CHAIN_RULE,)
+# The plan rules this version carries out, as `CHAIN_RULES` does for the chain.
+PLAN_RULES = (PLAN_RULE,)
 # The deeper screening: a Standard or Detailed discovery queued with the option on also screens the next
 # `DEEP_SCREENING_WORKS` works of the frozen list, places N+1..N+100, one model read per batch. Frozen in the policy under
 # its rule's name; a policy without the key screens 1..N only, as before.
@@ -179,7 +178,7 @@ def elapsed(start: str, end: str) -> int:
 
 
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
-                  method: str = "legacy", deep_screening: bool = False,
+                  deep_screening: bool = False,
                   lexical_exclusion: bool = True, candidate_embedding: bool = True,
                   completion_arm: str = "off", broad_index_arm: str = "off",
                   subtopic_arm: str = "off", date_scope: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -187,9 +186,6 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
     call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT).
-
-    `method` is the search method (`SEARCH_METHODS`). A `legacy` policy is exactly the one frozen before `m1`, so
-    its hash does not move; `m1` names itself and its two rules.
 
     `deep_screening` adds the deeper screening's window under `deep_screening`; off adds nothing, so a policy
     frozen without it is byte for byte the one frozen before, hash included. Quick takes no window.
@@ -213,8 +209,6 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     `date_scope` is the years this run searches in, built by `search.date_scope` from the person's own question or
     supplied with the run by a measurement. A run that bounds no years names no key, which is byte for byte the
     policy frozen before the rule."""
-    if method not in SEARCH_METHODS:
-        raise ValueError(f"unknown search method {method!r}")
     if completion_arm not in COMPLETION_ARMS:
         raise ValueError(f"unknown completion arm {completion_arm!r}")
     if broad_index_arm not in BROAD_INDEX_ARMS:
@@ -235,7 +229,15 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "N": mode.read_top, "K": mode.fulltext_works, "keyword_record_cap": mode.keyword_record_cap, "semantic_top": 50,
         "chain_seeds": mode.chain_seeds, "backward_requests": mode.backward_requests, "backward_page_size": 50,
         "forward_requests": mode.forward_requests, "forward_page_size": 25,
-        "chain_in_flight": 5, "chain_rule": "fast_chain_v1", "acquire_rule": ACQUIRE_RULE,
+        # The chain matches the protocol's frozen word forms and keeps the rescue quota: `chain_rescue` linked
+        # records the gate's words do not reach are written as ranked candidates, and the gate's own verdict on
+        # them is still recorded.
+        "chain_in_flight": 5, "chain_rule": CHAIN_RULE, "chain_rescue": mode.chain_rescue,
+        "acquire_rule": ACQUIRE_RULE,
+        # The model writes the plan from the first semantic page and the chain starts from the works it names.
+        # `boolean_plans` counts the distinct Boolean query plans the run may send, the main one included; one plan
+        # still goes to every enabled provider in that provider's syntax, and those requests are counted elsewhere.
+        "plan_rule": PLAN_RULE, "boolean_plans": mode.boolean_plans,
         "file_ask_rule": FILE_ASK_RULE, "file_asks": mode.file_asks,
         # Which other sources this depth searches, and by what share of the question's field distribution they are
         # chosen. The share is frozen here so a run decides by the value it started with, and a pilot that moves the
@@ -250,16 +252,6 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # K admission takes the abstract stage's unresolved works after the candidates (`read.selected`).
         "admission_order": "unresolved_last",
     }
-    if method in ("m1", "m2"):
-        policy |= {"search_method": method, "chain_rule": "fast_chain_v2"}
-    if method == "m2":
-        # The chain keeps v2's word matching and adds the rescue quota: `chain_rescue` linked records the gate's
-        # words do not reach are written as ranked candidates, and the gate's own verdict on them is still recorded.
-        policy |= {"chain_rule": "fast_chain_v3", "chain_rescue": mode.chain_rescue}
-        # The model writes the plan from the first semantic page; the chain starts from the works it names.
-        # `boolean_plans` counts the distinct Boolean query plans the run may send, the main one included; one plan
-        # still goes to every enabled provider in that provider's syntax, and those requests are counted elsewhere.
-        policy |= {"plan_rule": PLAN_RULE, "boolean_plans": mode.boolean_plans}
     if deep_screening:
         if effort not in DEEP_SCREENING_EFFORTS:
             raise ValueError(f"deeper screening is not offered at {effort!r}")
@@ -365,9 +357,6 @@ def enabled(budget: dict[str, Any]) -> bool:
     return (budget.get("fast_path") or {}).get("policy") == POLICY
 
 
-def search_method(budget: dict[str, Any]) -> str:
-    """The search method a run was queued with: `legacy` for every policy that does not name one."""
-    return (budget.get("fast_path") or {}).get("search_method", "legacy")
 
 
 def completion(budget: dict[str, Any]) -> dict[str, Any] | None:

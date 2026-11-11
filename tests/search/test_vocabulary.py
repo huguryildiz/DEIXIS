@@ -13,7 +13,6 @@ from deixis.workflow.search.vocabulary import build_vocabulary
 import json
 from fastapi.testclient import TestClient
 from deixis.domain.vocabulary import extract
-from deixis.workflow.search.vocabulary import LABEL_RUNS
 from fakes import FakeAdapter, envelope, valid_response
 from deixis.models.adapter import ModelStepResult
 from test_vocabulary_flow import CountingOpenAlex, KEY_TERMS, app_for, start, store_at, wait
@@ -140,49 +139,9 @@ def test_the_user_s_key_terms_are_labelled_by_nobody_but_the_user():
     assert extraction.block_assignment == "user"
 
 
-def labelling(overrides=None, invalid_call=None, disagreeing_call=None):
-    """A model that labels the given phrases, and on one named call answers badly on purpose."""
-    overrides, calls = overrides or {}, []
-
-    def responder(si):
-        if si["task_type"] != "vocabulary_labels":
-            return valid_response(si)
-        calls.append(si)
-        given = si["vocabulary_target"]["phrases"]
-        if len(calls) == disagreeing_call:  # a third opinion that no majority forms around
-            labels = [{"phrase": p["phrase"], "block": p["rule_block"]} for p in given]
-        else:
-            labels = [{"phrase": p["phrase"], "block": overrides.get(p["phrase"], p["rule_block"])} for p in given]
-        if len(calls) == invalid_call:  # a phrase the question does not hold: the whole run is dropped, not repaired
-            labels.append({"phrase": "SYNTHETIC invented phrase", "block": "setting"})
-        return json.dumps(envelope(si, "deixis.vocabulary_labels.v1") | {"labels": labels})
-
-    responder.calls = calls
-    return responder
-
-
 def stored_vocabulary(tmp_path, rid):
     """The vocabulary step's stored output, read from the library after the client closed it."""
     return store_at(tmp_path).latest_step_output(rid, "vocabulary", 1)["vocabulary"]
-
-
-def test_two_runs_of_three_agreeing_put_the_models_block_in_the_query(tmp_path, monkeypatch):
-    openalex = CountingOpenAlex()
-    adapter = FakeAdapter(labelling({"distributed ledgers": "setting"}, disagreeing_call=3))
-    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
-        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, SUPPLY)
-        wait(client, rid, run_id)
-    vocabulary = stored_vocabulary(tmp_path, rid)
-    assert vocabulary["block_assignment"] == "model"
-    assert vocabulary["claim_words"] == [] and vocabulary["labelling"]["runs_ok"] == LABEL_RUNS
-    setting = [t["phrase"] for t in vocabulary["terms"] if t["block"] == "setting"]
-    assert "distributed ledgers" in setting
-    # The count enters by the term's root word, so the phrase shows up in the probes as "distributed" (SW3.5).
-    assert any("distributed" in probe["query"] for probe in vocabulary["probes"]), vocabulary["probes"]
-    record = next(p for p in vocabulary["labelling"]["phrases"] if p["phrase"] == "distributed ledgers")
-    assert record == {"phrase": "distributed ledgers", "rule_block": "claim", "block": "setting", "origin": "model",
-                      "runs": ["claim", "setting", "setting"]}
 
 
 # ---- a question that is not English, translated by a model ------------------------------------------------

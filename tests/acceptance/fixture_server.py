@@ -114,6 +114,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -963,8 +964,31 @@ class ScriptedCodex:
             await asyncio.sleep(WAITING_READ_SECONDS)
         return ModelStepResult("completed", raw_text=json.dumps(self.respond(si, question)), resolved_model=requested_model)
 
+    @staticmethod
+    def topic_term(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+        """The plan's setting term moved off the word every fixture title opens with.
+
+        Each record here is titled "SYNTHETIC ...", so a term read off the front of one stands in all of them and
+        admits the whole pool on its title before a model reads an abstract. A real plan names the topic, so this
+        reads the next word of the same title instead, with the span it stands at.
+        """
+        term = output["setting"][0]
+        if term["term"] != "SYNTHETIC":
+            return output
+        record = next(s for s in si["sources"] if s["source_id"] == term["evidence"]["record_id"])
+        taken = {t["term"].lower() for block in ("setting", "task", "setting_backup", "task_backup", "focused")
+                 for t in output[block]}
+        for match in re.finditer(r"[A-Za-z][A-Za-z-]{4,}", record.get("title") or ""):
+            if match.group(0).lower() not in taken:
+                term["term"] = match.group(0)
+                term["evidence"] = term["evidence"] | {"field": "title", "span": [match.start(), match.end()]}
+                return output
+        raise RuntimeError("SYNTHETIC plan fixture needs a second readable word in the record's title")
+
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
+        if si["task_type"] == "search_plan":
+            output = self.topic_term(si, output)
         if si["task_type"] == "owner_review" and "[review-finding]" in question:
             if si["review_input"]["target_kind"] == "candidate":
                 cell = next(c for m in si["review_input"]["candidate_context"]["matrix"] for c in m["cells"] if c["quotes"])

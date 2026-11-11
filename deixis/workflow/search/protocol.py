@@ -148,9 +148,9 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
 
     # How this run chains citations (the fast chain), read from the policy its budget froze when it was queued.
     chaining = chain_policy(budget, scope["effort"])
-    if chaining is not None and chaining["rule_version"] in chaining_rules.NORMALISED_RULES and vocabulary:
-        # The forms a v2 or v3 chain admits with are frozen here, before any request, with their digest; the chain
-        # round reads them back from this body (`fast_chain.frozen_forms`).
+    if chaining is not None and vocabulary:
+        # The forms the chain admits with are frozen here, before any request, with their digest; the chain round
+        # reads them back from this body (`fast_chain.frozen_forms`).
         from deixis.workflow.search.ranking import query_vocabulary
 
         forms = chaining_rules.admission_forms(query_vocabulary(scope, vocabulary)[1], vocabulary)

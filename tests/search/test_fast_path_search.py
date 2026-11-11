@@ -466,7 +466,17 @@ def test_sw_pause_resume_keeps_frozen_protocol_and_does_not_repeat_search(tmp_pa
         if down and si["task_type"] == "abstract_screening":
             return ModelStepResult("failed", error="SYNTHETIC paused connection")
     adapter = FakeAdapter(fail=failure)
-    app = app_for(tmp_path, routed, adapter)
+
+    def plan_from_its_own_record(request):
+        # The question's own request answers with a record whose words the pool's titles do not carry, so the
+        # plan's blocks name nothing in them and the abstract stage has to ask the model.
+        if "search.semantic" in request.url.params:
+            return httpx.Response(200, json={"meta": {"count": 1}, "results": [
+                {"id": "https://openalex.org/W8000", "doi": "https://doi.org/10.1/plan",
+                 "display_name": "Zzqscope of zzqdomain (SYNTHETIC)", "publication_year": 2021, "type": "article",
+                 "authorships": [], "abstract_inverted_index": {"We": [0], "zzqmeasure": [1], "zzqoutcome": [2]}}]})
+        return routed(request)
+    app = app_for(tmp_path, plan_from_its_own_record, adapter)
     with TestClient(app) as raw:
         client = session(raw)
         rid, run_id = start(client)

@@ -32,17 +32,14 @@ SOURCE = "openalex"
 # `search_runs` has no kind column, so this is how a row says it was a chain request and not a keyword query.
 QUERY_PREFIX = "chain:"
 STEP_KIND = "provider_chain:openalex"
-# The admission rules a run's budget can freeze (`fast_path.freeze_budget`). v1 matches the searched gate forms as
-# written; v2 (the `m1` search method) matches normalised words against the searched forms and every
-# gate-block term the query step wrote. A run keeps the rule it was queued with.
-RULE_V1 = "fast_chain_v1"
-RULE_V2 = "fast_chain_v2"
-# v3 (the `m2` search method) matches words as v2 does and adds the rescue quota: the first few linked records no
-# gate form reaches are written as ranked candidates all the same, and the gate's verdict on them is still recorded.
+# The admission rule a run's budget freezes (`fast_path.freeze_budget`). It matches normalised words against the
+# searched forms and every gate-block term the query step wrote, and it adds the rescue quota: the first few linked
+# records no gate form reaches are written as ranked candidates all the same, and the gate's verdict on them is
+# still recorded. A run keeps the rule it was queued with; a run frozen under an older rule is stopped
+# (`small_batch.removed_rule`) rather than carried out under this one.
 RULE_V3 = "fast_chain_v3"
-RULES = (RULE_V1, RULE_V2, RULE_V3)
-NORMALISED_RULES = (RULE_V2, RULE_V3)
-# The characters v2 splits a word on before it compares: hyphen-minus, hyphen, non-breaking hyphen, en dash, slash.
+# The characters the rule splits a word on before it compares: hyphen-minus, hyphen, non-breaking hyphen, en dash,
+# slash.
 _SPLIT = re.compile(r"[-\u2010\u2011\u2013/]")
 
 
@@ -62,7 +59,7 @@ def policy(budget: dict[str, Any], effort: str) -> dict[str, Any] | None:
     run that carries no fast-path policy (every run kind but discovery).
 
     The policy is read from the budget, never from the settings of the moment, so both the protocol and the approval
-    card say what the run really does: the fast chain (`fast_chain_v1`), OpenAlex only. `request_limit` counts logical
+    card say what the run really does: the fast chain, OpenAlex only. `request_limit` counts logical
     requests; `attempt_limit` is the total HTTP attempts the chain may spend, retries included. A depth that opens no
     citation request of its own (Quick) carries every number as zero, and its links come from the pool alone.
 

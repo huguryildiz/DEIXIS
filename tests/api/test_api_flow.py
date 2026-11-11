@@ -220,7 +220,10 @@ def test_provider_rate_limit_pauses_without_fallback(tmp_path):
         rid = create(client)
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         view, run = wait_run(client, rid, run["id"])
-        assert run["status"] == "paused" and run["pause_reason"] == "provider_rate_limited"
+        # The first request is the question's own, and the plan cannot be written without it, so the run stops
+        # there; what the provider did is in the stop's own detail and on the search run.
+        assert run["status"] == "paused" and run["pause_reason"] == "search_query_failed"
+        assert run["error"]["provider_outcome"] == "rate_limited"
         assert view["search_runs"][0]["status"] == "rate_limited"
         assert view["counts"]["found"] == 0  # E: not shown as zero results of a completed search
 
@@ -339,7 +342,9 @@ def test_mutations_require_csrf_and_known_host(tmp_path):
 
 
 def run_to_end(client, rid, kind):
-    run = client.post(f"/api/researches/{rid}/runs", json={"kind": kind}).json()
+    response = client.post(f"/api/researches/{rid}/runs", json={"kind": kind})
+    run = response.json()
+    assert "id" in run, (response.status_code, run)
     view, run = wait_run(client, rid, run["id"])
     assert run["status"] == "completed", run
     return view
@@ -354,8 +359,7 @@ def test_literature_model_runs_search_steps_and_the_research_model_writes_the_an
         discovered = run_to_end(client, rid, "discovery")
         include_sources(client, rid, discovered)
         view = run_to_end(client, rid, "answer")
-        assert set(adapter.sent) == {("vocabulary_labels", "lit-model", "low"),
-                                     ("search_query", "lit-model", "low"),
+        assert set(adapter.sent) == {("search_plan", "lit-model", "low"),
                                      ("criterion_proposal", "lit-model", "low"),
                                      ("abstract_screening", "lit-model", "low"),
                                      ("grounded_answer", "answer-model", "high")}

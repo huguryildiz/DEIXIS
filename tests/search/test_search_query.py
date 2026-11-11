@@ -8,6 +8,7 @@ one model (`notes/archive/sw/sw-model-query-experiment-2026-09-24/result.md`) an
 
 import asyncio
 import json
+import sqlite3
 import time
 from pathlib import Path
 
@@ -196,11 +197,11 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def client_for(tmp_path, monkeypatch, handler, adapter, method="legacy"):
+def client_for(tmp_path, monkeypatch, handler, adapter):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off", search_method=method),
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off"),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = TestClient(app)
@@ -240,7 +241,7 @@ def protocol_body(client, rid, revision=1):
         (rid, revision - 1)).fetchone()[0])
 
 
-def calls(adapter, task="search_query"):
+def calls(adapter, task="search_plan"):
     return [si for si in adapter.calls if si["task_type"] == task]
 
 
@@ -258,16 +259,16 @@ def test_the_model_writes_the_query_and_it_is_the_only_keyword_query_of_the_roun
     origins = [(q["provider_id"], q["origin"]) for q in stored["queries"]]
     # Nothing code compiled from the question's own words is sent beside it: every query of the round is the model's.
     assert origins[0] == ("openalex", "model") and {o for _, o in origins} == {"model"}
-    assert '"synthetic setting" AND "synthetic task"' in openalex.searches
+    assert "synthetic AND schedule" in openalex.searches
     body = protocol_body(client, rid)
     assert body["search_query"]["status"] == "ready"
     # The prompt version is the one the model was sent, read from its StepInput and not from the package at freeze.
-    assert body["search_query"]["prompt"] == {"files": ["SKILL.md", "references/search-query.md"],
-                                              "schema_version": "deixis.search_query.v2",
+    assert body["search_query"]["prompt"] == {"files": ["SKILL.md", "references/search-plan.md"],
+                                              "schema_version": "deixis.search_plan.v2",
                                               "skill_package_hash": calls(adapter)[0]["skill_package_hash"]}
-    assert body["search_query"]["answer"]["setting"][0]["term"] == "synthetic setting"
+    assert body["search_query"]["answer"]["setting"][0]["term"] == "SYNTHETIC"
     assert {q.get("origin") for q in body["compiled_queries"]} == {"model"}
-    assert body["concept_blocks"] == {"setting": ["synthetic setting"], "task": ["synthetic task"]}
+    assert body["concept_blocks"] == {"setting": ["synthetic"], "task": ["schedule"]}
     # The run was given the model-query calls on top of its preset.
     preset = TEST_EFFORT_BUDGETS["quick"].max_model_calls
     assert run["budget"]["max_model_calls"] - preset >= SEARCH_QUERY_CALLS
@@ -287,42 +288,32 @@ class EveryCount(dict):
         return True
 
 
-def test_the_m1_method_freezes_its_own_chain_rule_and_admission_forms(tmp_path, monkeypatch):
+def test_a_run_freezes_its_chain_rule_and_admission_forms_before_it_searches(tmp_path, monkeypatch):
     from deixis.workflow.search import chaining
 
-    # Every count is 300,000, so no term reaches the one-million rule and both runs search the model's query. What
-    # differs is what each method freezes: a `legacy` run keeps the first chain rule, an `m1` run its own.
-    runs = {}
-    for method in ("legacy", "m1"):
-        openalex = OpenAlex(counts=EveryCount(300_000))
-        client = client_for(tmp_path / method, monkeypatch, openalex, FakeAdapter(), method=method)
-        rid, run_id = start(client)
-        _, run = wait(client, rid, run_id)
-        assert run["status"] == "completed", run
-        runs[method] = (step_output(client, run_id, "search_query"), protocol_body(client, rid), run)
-    legacy, m1 = runs["legacy"], runs["m1"]
-    assert {q["origin"] for q in legacy[0]["queries"]} == {"model"}
-    assert legacy[2]["budget"]["fast_path"]["chain_rule"] == "fast_chain_v1"
-    assert "search_method" not in legacy[2]["budget"]["fast_path"]
-    assert "admission_forms" not in legacy[1]["citation_chaining"]
-
-    stored, body, run = m1
+    # Every count is 300,000, so no term reaches the one-million rule and the run searches the model's query.
+    openalex = OpenAlex(counts=EveryCount(300_000))
+    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter())
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert run["status"] == "completed", run
+    stored, body = step_output(client, run_id, "search_query"), protocol_body(client, rid)
     # The question's own words are kept beside the model's terms with their counts, and nothing searches them.
     assert stored["vocabulary"]["question_vocabulary"]["gate_count"] == 300_000
     assert {q["origin"] for q in stored["queries"]} == {"model"}
     # Only what was searched stands in the ranking blocks; the selection is frozen in the body's budget.
-    assert body["concept_blocks"] == {"setting": ["synthetic setting"], "task": ["synthetic task"]}
-    assert body["budget"]["fast_path"]["search_method"] == "m1"
+    assert body["concept_blocks"] == {"setting": ["synthetic"], "task": ["schedule"]}
+    assert run["budget"]["fast_path"]["chain_rule"] == chaining.RULE_V3
     frozen = body["citation_chaining"]
-    assert frozen["rule_version"] == "fast_chain_v2"
+    assert frozen["rule_version"] == chaining.RULE_V3
     assert frozen["admission_forms_sha256"] == chaining.forms_digest(frozen["admission_forms"])
-    assert " synthetic setting" in frozen["admission_forms"]["setting"]
+    assert " synthetic" in frozen["admission_forms"]["setting"]
 
 
 def test_a_failed_model_stops_the_run_and_no_query_is_searched_in_its_place(tmp_path, monkeypatch):
     openalex = OpenAlex()
     adapter = FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
-                          if si["task_type"] == "search_query" else None)
+                          if si["task_type"] == "search_plan" else None)
     client = client_for(tmp_path, monkeypatch, openalex, adapter)
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
@@ -361,24 +352,28 @@ def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_pa
 # ---- review of 2026-09-23 (gpt-6-sol high) -----------------------------------------------------------------------
 
 
-def test_a_run_reuses_only_a_query_written_under_its_own_search_method(tmp_path, monkeypatch):
-    # A stored query carries the decisions of the method it was written under. A legacy run's query is not reused
-    # by an m1 run of the same scope revision; the m1 run asks once and freezes its own.
-    legacy_adapter, m1_adapter = FakeAdapter(), FakeAdapter()
-    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), legacy_adapter)
+def test_a_run_reuses_only_a_query_written_under_its_own_plan_rule(tmp_path, monkeypatch):
+    # A stored query carries the decisions of the plan rule it was written under. A second run of the same scope
+    # revision reuses it, and a query written under another rule is not reused: that run asks once and freezes
+    # its own.
+    adapter = FakeAdapter()
+    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), adapter)
     rid, first = start(client)
     assert wait(client, rid, first)[1]["status"] == "completed"
-    client.__exit__(None, None, None)
-    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), m1_adapter, method="m1")
     second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-    _, run = wait(client, rid, second)
-    assert run["status"] == "completed", run
-    stored = step_output(client, second, "search_query")
-    assert "reused_from_run" not in stored and len(calls(m1_adapter)) == 1
-    assert stored["vocabulary"]["question_vocabulary"]["gate_count"] == 300_000
+    assert wait(client, rid, second)[1]["status"] == "completed"
+    assert step_output(client, second, "search_query")["reused_from_run"] == first and len(calls(adapter)) == 1
     client.__exit__(None, None, None)
-    # A legacy run after the m1 one takes the first legacy query, as before M1: no model call.
-    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), legacy_adapter)
+    # The stored query now says it was written under another plan rule, so the next run does not take it.
+    with sqlite3.connect(tmp_path / "data" / "library.sqlite") as conn:
+        for run_id in (first, second):
+            budget = json.loads(conn.execute("SELECT budget_json FROM runs WHERE id = ?", (run_id,)).fetchone()[0])
+            budget["fast_path"]["plan_rule"] = "SYNTHETIC_older_rule"
+            conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), run_id))
+    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), adapter)
     third = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-    assert wait(client, rid, third)[1]["status"] == "completed"
-    assert step_output(client, third, "search_query")["reused_from_run"] == first and len(calls(legacy_adapter)) == 1
+    _, run = wait(client, rid, third)
+    assert run["status"] == "completed", run
+    stored = step_output(client, third, "search_query")
+    assert "reused_from_run" not in stored and len(calls(adapter)) == 2
+    assert stored["vocabulary"]["question_vocabulary"]["gate_count"] == 300_000

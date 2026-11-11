@@ -2215,7 +2215,7 @@ def create_app(
             budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
             budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(
                 budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS,
-                method=settings.search_method, deep_screening=deep, completion_arm=settings.completion_arm,
+                deep_screening=deep, completion_arm=settings.completion_arm,
                 broad_index_arm=settings.broad_index_arm, subtopic_arm=settings.subtopic_arm,
                 date_scope=years,
                 lexical_exclusion=settings.lexical_gate == "on",

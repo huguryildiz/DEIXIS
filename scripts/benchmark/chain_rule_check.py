@@ -23,6 +23,10 @@ from deixis.providers import openalex
 from deixis.providers.facade import usable_identity
 from deixis.workflow.search import chaining, ranking
 
+# The chain rules a stored library can carry. Only the last one is still carried out; the earlier two are read
+# here because old measurement libraries were frozen under them, and both judge a run by the forms it froze.
+NORMALISED_RULES = ('fast_chain_v2', 'fast_chain_v3')
+
 LIST_KEY = 'small_batch:v1:list'
 
 
@@ -80,12 +84,13 @@ def check(path):
         v1_forms = ranking.block_forms(blocks)
         chaining_body = protocol_body(conn, run).get('citation_chaining') or {}
         frozen = chaining_body.get('admission_forms')
-        if rule == chaining.RULE_V2:
-            # A v2 run is judged only by the forms it froze, and only when they match their digest; nothing is rebuilt.
+        if rule in NORMALISED_RULES:
+            # Such a run is judged only by the forms it froze, and only when they match their digest; nothing is
+            # rebuilt.
             if frozen is None or chaining.forms_digest(frozen) != chaining_body.get('admission_forms_sha256'):
                 out[run['id']] = {'rule': rule, 'forms_unverified': True}
                 continue
-        elif frozen is None:  # a v1 run: the forms v2 would have frozen, as a forecast only
+        elif frozen is None:  # a v1 run: the forms a later rule would have frozen, as a forecast only
             sq = output(conn, run['id'], 'search_query') or {}
             frozen = chaining.admission_forms(blocks, sq.get('vocabulary') or {'terms': []})
         links, written = {}, {}
@@ -104,7 +109,7 @@ def check(path):
                 continue
             v1 = chaining.passes(v1_forms, title, abstract)
             v2 = chaining.passes_v2(frozen, title, abstract)
-            mismatches += (v2 if rule == chaining.RULE_V2 else v1) != bool(links[oid])
+            mismatches += (v2 if rule in NORMALISED_RULES else v1) != bool(links[oid])
             rejected_v1 += not v1
             if v2 and not v1:
                 v2_only.add(oid)

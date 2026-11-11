@@ -43,11 +43,20 @@ def work(number, *, pdf_url=None, pdf_version=None, version="publishedVersion", 
             "best_oa_location": best, "abstract_inverted_index": inverted or None}
 
 
+# A record whose words no pool here carries, for the question's own request: the plan written from it names
+# nothing in the pool's titles, so code leaves every record open and the model reads the abstracts.
+PLAN_WORK_TITLE = "Zzqscope of zzqdomain (SYNTHETIC)"
+PLAN_WORK_ABSTRACT = "We zzqmeasure the zzqoutcome of one case."
+
+
 class Transport:
     """Mocked OpenAlex (count probes and one page of records) plus a scripted Unpaywall. No other host answers."""
 
-    def __init__(self, works, unpaywall=None):
+    def __init__(self, works, unpaywall=None, plan_work=None):
         self.works, self.unpaywall = works, unpaywall or {}
+        # The record the question's own request answers with, which the model reads to write the search plan. Left
+        # out, that request answers with the pool itself, so the plan's blocks are words the pool's titles carry.
+        self.plan_work = plan_work
         self.probes, self.searches, self.lookups = [], [], []
 
     def __call__(self, request):
@@ -64,6 +73,9 @@ class Transport:
         if params.get("per_page") == "1" and params.get("select") == "id":
             self.probes.append(query)
             return httpx.Response(200, json={"meta": {"count": 1 if " AND " in query else 40}, "results": []})
+        if self.plan_work is not None and params.get("search.semantic"):
+            return httpx.Response(200, json={"meta": {"count": 1, "next_cursor": None},
+                                             "results": [self.plan_work]})
         self.searches.append(query)
         return httpx.Response(200, json={"meta": {"count": len(self.works), "next_cursor": None},
                                          "results": self.works})
@@ -149,6 +161,11 @@ def step_output(store, run_id, key):
     row = store.conn.execute("SELECT output_json FROM run_steps WHERE run_id = ? AND operation_key = ?",
                              (run_id, key)).fetchone()
     return None if row is None or row[0] is None else json.loads(row[0])
+
+
+def plan_work():
+    """The record the question's own request answers with, built like any other."""
+    return work(8000, title=PLAN_WORK_TITLE, abstract=PLAN_WORK_ABSTRACT)
 
 
 def work_steps(store, run_id):

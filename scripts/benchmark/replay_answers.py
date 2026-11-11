@@ -1,10 +1,12 @@
 """A benchmark server whose model connection replays a baseline library's stored model answers (an m1 arm).
 
-    DEIXIS_SEARCH_METHOD=m1 uv run python scripts/benchmark/replay_answers.py \\
+    uv run python scripts/benchmark/replay_answers.py \\
         --port 8776 --data-dir notes/2026-11-07-m1/bioasq/m1/data --baseline notes/2026-11-07-m1/bioasq/base/data
 
 The arm is a controlled retrieval comparison conditional on fixed model replies and recorded latencies, not an
-independent live-model comparison. Only the calls a discovery run makes before its list freezes are replayed:
+independent live-model comparison. It fits an arm whose records carry the baseline's own ids: a search plan cites
+a span inside a record by its id, so an arm with records of its own is refused at the planning step rather than
+searching under a plan it cannot check. Only the calls a discovery run makes before its list freezes are replayed:
 vocabulary labelling, the query and its repairs, the criterion proposals. A call is paired with the baseline StepInput
 of the same question, operation key and place in its step (`call_key`, read from the call's metadata, never from its
 prompt), and answered only when its whole request (the rendered message, repair text included, the base and
@@ -33,7 +35,11 @@ from deixis.domain import canonical
 from deixis.models.adapter import ModelStepResult, model_call
 from deixis.storage.db import now
 
-REPLAYED = ('vocabulary_labels', 'search_query', 'criterion_proposal')
+# The planning calls an arm replays. A search plan's terms cite a span inside a record by the library's own id, so
+# a baseline plan can be replayed only into an arm whose records carry those same ids; where they do not, the arm
+# stops at the plan rather than searching under a plan it cannot check. `vocabulary_labels` and `search_query` are
+# read for baselines recorded before the plan was written from records.
+REPLAYED = ('search_plan', 'criterion_proposal', 'vocabulary_labels', 'search_query')
 # What a run generates and the request does not depend on: record ids (`new_id`: a prefix, `_`, 20 characters) and
 # ISO times. Each distinct id becomes a numbered placeholder by its first occurrence in the request, so two requests
 # are equal only if their ids point to the same places; everything else in the request must be equal.

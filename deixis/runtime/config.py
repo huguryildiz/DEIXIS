@@ -66,10 +66,6 @@ class Settings:
     # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
     # test that needs no second model run.
     fulltext_adjudication: str = "auto"
-    # The search method a discovery run is queued with, frozen in its fast-path policy: `legacy` for every run
-    # until M1's gates pass; `m1` (chain admission v2) for the M1 measurement arm;
-    # `m2` for the arm whose plan the model writes from the first semantic page.
-    search_method: str = "legacy"
     # Which Semantic Scholar completion arm a discovery run is queued with, frozen in its fast-path policy
     # (`fast_path.COMPLETION_ARMS`): `conditional` is the product's behaviour and sends a request only in the state the
     # design names; `always` sends the snippet query on every question and is a measurement arm; `off` freezes no arm.
@@ -192,9 +188,6 @@ def load_settings() -> Settings:
     fulltext_adjudication = os.environ.get("DEIXIS_FULLTEXT_ADJUDICATION", "auto")
     if fulltext_adjudication not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_ADJUDICATION must be auto or off")
-    search_method = os.environ.get("DEIXIS_SEARCH_METHOD", "legacy")
-    if search_method not in ("legacy", "m1", "m2"):
-        raise ValueError("DEIXIS_SEARCH_METHOD must be legacy, m1 or m2")
     completion_arm = os.environ.get("DEIXIS_COMPLETION_ARM", "conditional")
     if completion_arm not in ("off", "conditional", "always"):
         raise ValueError("DEIXIS_COMPLETION_ARM must be off, conditional or always")
@@ -221,7 +214,6 @@ def load_settings() -> Settings:
         fulltext_fetch=fulltext_fetch,
         study_table=study_table,
         fulltext_adjudication=fulltext_adjudication,
-        search_method=search_method,
         completion_arm=completion_arm,
         broad_index_arm=broad_index_arm,
         subtopic_arm=subtopic_arm,

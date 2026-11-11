@@ -18,7 +18,7 @@ from deixis.workflow.search import small_batch
 from fakes import FakeAdapter, valid_response
 from overlap_flow_helpers import discover, wait
 from test_fast_path_clock import FakeClock
-from test_fulltext_flow import Transport, work
+from test_fulltext_flow import Transport, plan_work, work
 from test_small_batch_flow import app_for, client_of
 
 N, K = 4, 2
@@ -48,7 +48,7 @@ def small_standard(monkeypatch):
 def app_with(tmp_path, monkeypatch, *, deep, adapter=None, n=30, **settings):
     records = [work(i, title=TITLE) for i in range(n)]
     app, _ = app_for(tmp_path, monkeypatch, n, adapter=adapter or FakeAdapter(responder),
-                     transport=Transport(records), **settings)
+                     transport=Transport(records, plan_work=plan_work()), **settings)
     app.deep = deep
     return app
 

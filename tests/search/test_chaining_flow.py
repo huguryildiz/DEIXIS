@@ -200,22 +200,22 @@ LINKED = [replace(record("W700"), title="SYNTHETIC State-of-Health estimates"),
           replace(record("W702"), title="SYNTHETIC unrelated pumps")]
 
 
-def method_run(lib, method):
-    """A second quick discovery run in its own research, queued under `method`."""
+def second_run(lib):
+    """A second quick discovery run in its own research, with a frozen policy of its own."""
     rid = lib.store.create_research("SYNTHETIC battery ageing", "academic", "quick", ["openalex"], "fake",
                                     "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, "quick", method=method)
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick")
     run = lib.store.create_run(rid, "discovery", budget, None)
     lib.store.update_run(run["id"], status="running")
     return SimpleNamespace(store=lib.store, conn=lib.conn, clock=lib.clock, rid=rid, run=lib.store.run(run["id"]))
 
 
 def frozen(lib, forms, digest=None):
-    """The protocol a v2 run froze before its first request, with the admission forms and their digest."""
+    """The protocol a run froze before its first request, with the admission forms and their digest."""
     from deixis.workflow.search import chaining
 
-    body = {"citation_chaining": {"rule_version": "fast_chain_v2", "admission_forms": forms,
+    body = {"citation_chaining": {"rule_version": chaining.RULE_V3, "admission_forms": forms,
                                   "admission_forms_sha256": digest or chaining.forms_digest(forms)}}
     record_ = lib.store.freeze_protocol(lib.rid, 1, body)
     step = lib.store.step(lib.run["id"], "protocol", "protocol:freeze")
@@ -236,36 +236,37 @@ def passed(run_lib):
     return {row["linked_openalex_id"]: row["passed_filter"] for row in links(run_lib)}
 
 
-def test_a_legacy_run_keeps_the_first_admission_rule_and_its_requests_on_resume(lib, tmp_path, monkeypatch):
-    # A `legacy` run (every run's default) keeps `fast_chain_v1`: the hyphenated variant and the query's backup are
-    # not the searched form, and a resumed round sends nothing again and admits the same.
-    assert lib.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v1"
+def test_a_run_admits_word_variants_and_query_synonyms_with_the_forms_it_froze(lib, tmp_path, monkeypatch):
+    # The hyphenated variant and the query's backup are admitted because the frozen forms hold them; a record that
+    # names neither block is still turned away.
+    from deixis.workflow.search import chaining
+
+    assert lib.run["budget"]["fast_path"]["chain_rule"] == chaining.RULE_V3
+    frozen(lib, chaining.admission_forms(GATE, QUERY_STEP))
+    _, _, round_ = round_for(lib, tmp_path)
+    chain(round_, monkeypatch, forward=LINKED)
+    assert passed(lib) == {"W700": 1, "W701": 1, "W702": 0}
+
+
+def test_a_resumed_round_sends_nothing_again_and_admits_the_same(lib, tmp_path, monkeypatch):
+    from deixis.workflow.search import chaining
+
+    frozen(lib, chaining.admission_forms(GATE, QUERY_STEP))
     flow, scope, round_ = round_for(lib, tmp_path)
     calls = []
     chain(round_, monkeypatch, forward=LINKED, calls=calls)
-    assert passed(lib) == {"W700": 0, "W701": 0, "W702": 0}
+    assert passed(lib) == {"W700": 1, "W701": 1, "W702": 0}
     again = type(round_)(flow, lib.run, scope, QUERY_STEP)
     flow._fast_chains[lib.run["id"]] = again
     sent = list(calls)
     chain(again, monkeypatch, forward=LINKED, calls=calls)
-    assert calls == sent and passed(lib) == {"W700": 0, "W701": 0, "W702": 0}
+    assert calls == sent and passed(lib) == {"W700": 1, "W701": 1, "W702": 0}
 
 
-def test_an_m1_run_admits_word_variants_and_query_synonyms_with_the_forms_it_froze(lib, tmp_path, monkeypatch):
-    from deixis.workflow.search import chaining
-
-    m1 = method_run(lib, "m1")
-    assert m1.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v2"
-    frozen(m1, chaining.admission_forms(GATE, QUERY_STEP))
-    _, _, round_ = round_for(m1, tmp_path)
-    chain(round_, monkeypatch, forward=LINKED)
-    assert passed(m1) == {"W700": 1, "W701": 1, "W702": 0}
-
-
-def test_frozen_forms_that_no_longer_match_their_digest_stop_an_m1_run(lib, tmp_path):
+def test_frozen_forms_that_no_longer_match_their_digest_stop_a_run(lib, tmp_path):
     from deixis.workflow.run.flow import RunStopped
 
-    tampered = method_run(lib, "m1")
+    tampered = second_run(lib)
     frozen(tampered, {"task": [" pumps"]}, digest="sha256:0")
     with pytest.raises(RunStopped):
         round_for(tampered, tmp_path)
@@ -280,21 +281,13 @@ KEYWORDED = [replace(record("W710"), index_keywords=["battery state of health", 
 
 
 def test_the_gate_reads_openalex_keywords_and_still_drops_a_record_without_one(lib, tmp_path, monkeypatch):
-    # v1, the default rule: neither record names the gate block in its title or abstract, so only the keyword admits.
-    assert lib.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v1"
+    # Neither record names the gate block in its title or abstract, so only the provider keyword admits.
+    from deixis.workflow.search import chaining
+
+    frozen(lib, chaining.admission_forms(GATE, QUERY_STEP))
     _, _, round_ = round_for(lib, tmp_path)
     chain(round_, monkeypatch, forward=KEYWORDED)
     assert passed(lib) == {"W710": 1, "W711": 0}
-
-
-def test_an_m1_run_reads_openalex_keywords_with_the_forms_it_froze(lib, tmp_path, monkeypatch):
-    from deixis.workflow.search import chaining
-
-    m1 = method_run(lib, "m1")
-    frozen(m1, chaining.admission_forms(GATE, QUERY_STEP))
-    _, _, round_ = round_for(m1, tmp_path)
-    chain(round_, monkeypatch, forward=KEYWORDED)
-    assert passed(m1) == {"W710": 1, "W711": 0}
 
 
 # ---- the mode's scope, the links inside the first page and the rescue quota ----------------------
@@ -372,13 +365,12 @@ def test_one_work_two_seeds_cite_keeps_one_candidate_and_both_links(lib, tmp_pat
 
 
 def test_the_rescue_quota_writes_what_the_gate_turned_away_and_never_more_than_its_place(lib, tmp_path, monkeypatch):
-    """An `m2` run freezes `fast_chain_v3`: the gate's verdict is recorded as before, and the first record no gate
-    form reaches is written as a ranked candidate all the same. The quota is the run's, so the next request that
-    asks finds it spent."""
+    """The gate's verdict is recorded as before, and the first record no gate form reaches is written as a ranked
+    candidate all the same. The quota is the run's, so the next request that asks finds it spent."""
     from deixis.workflow.search import chaining
 
-    m2 = method_run(lib, "m2")
-    assert m2.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v3"
+    m2 = second_run(lib)
+    assert m2.run["budget"]["fast_path"]["chain_rule"] == chaining.RULE_V3
     frozen(m2, chaining.admission_forms(GATE, QUERY_STEP))
     # The seed names one work, so this round sends a reference batch beside its citing request: two requests ask,
     # and between them the quota has one place.
@@ -404,12 +396,14 @@ def test_the_rescue_quota_writes_what_the_gate_turned_away_and_never_more_than_i
 
 
 def test_a_run_whose_budget_froze_no_quota_writes_no_record_the_gate_turned_away(lib, tmp_path, monkeypatch):
-    # The default (`legacy`, `fast_chain_v1`) freezes no quota, so the chain writes what it always wrote.
-    assert "chain_rescue" not in lib.run["budget"]["fast_path"]
-    _, _, round_ = round_for(lib, tmp_path)
+    # A mode whose policy freezes no rescue place: the chain writes only what the gate admits.
+    from deixis.workflow.search import chaining
+
+    frozen(lib, chaining.admission_forms(GATE, QUERY_STEP))
+    _, _, round_ = round_for(lib, tmp_path, chain_rescue=0)
     chain(round_, monkeypatch, forward=LINKED)
-    assert passed(lib) == {"W700": 0, "W701": 0, "W702": 0}
-    assert [row for row in links(lib) if row["source_version_id"]] == []
+    assert passed(lib) == {"W700": 1, "W701": 1, "W702": 0}
+    assert [row["linked_openalex_id"] for row in links(lib) if row["source_version_id"]] == ["W700", "W701"]
 
 
 def test_both_directions_ask_while_the_boolean_search_is_still_running(lib, tmp_path, monkeypatch):
@@ -426,10 +420,16 @@ def test_both_directions_ask_while_the_boolean_search_is_still_running(lib, tmp_
 
     async def run():
         round_.initial()
-        await asyncio.gather(*round_.tasks)
+        # A later page waits for the page before it to be written, so the round is not gathered here: the test
+        # only lets the first requests of both directions go out.
+        for _ in range(100):
+            if {"backward", "forward"} <= set(calls):
+                break
+            await asyncio.sleep(0)
         # The search stage has not closed, so nothing is written yet; both directions have already asked.
         assert set(calls) == {"backward", "forward"} and links(lib) == []
         round_.admit.set()
+        await asyncio.gather(*round_.tasks)
         await asyncio.gather(*round_.writers)
         await round_.stop()
     asyncio.run(run())
@@ -441,7 +441,7 @@ def test_a_work_the_quota_already_rescued_takes_no_second_place(lib, tmp_path, m
     to the one the first request rescued."""
     from deixis.workflow.search import chaining
 
-    m2 = method_run(lib, "m2")
+    m2 = second_run(lib)
     frozen(m2, chaining.admission_forms(GATE, QUERY_STEP))
     _, _, round_ = round_for(m2, tmp_path, page=("W1", "W2"), chain_rescue=2)
     valves = replace(record("W704"), title="SYNTHETIC unrelated valves")

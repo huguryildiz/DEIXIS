@@ -8,6 +8,7 @@ moved on at the first ending would time the next question while the one before i
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -422,3 +423,16 @@ def test_the_next_question_waits_for_the_research_to_go_quiet(lab):
     assert [r["kind"] for r in state["still_working"]] == ["answer"]
     lib.store.update_run(answer["id"], status="completed")
     assert delivery_pilot.quiet(server, lib.rid, limit=60, sleep=lambda _: None)["quiet"] is True
+
+
+def test_the_keys_are_read_the_way_the_product_reads_them(monkeypatch):
+    """The keychain keeps the keys inside one bundled item, so a reader of the pilot's own finds nothing under a
+    key's own name and the run stops on a provider's 401 before the first question."""
+    from deixis.keys import credentials
+
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    monkeypatch.setattr(credentials, "load_into_environment",
+                        lambda: os.environ.__setitem__("OPENALEX_API_KEY", "from-the-product-reader"))
+    secret = delivery_pilot._keyring()
+    assert secret("OPENALEX_API_KEY") == "from-the-product-reader"
+    assert secret("A_KEY_THAT_IS_NOT_STORED") is None

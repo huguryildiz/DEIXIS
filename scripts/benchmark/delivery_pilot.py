@@ -527,9 +527,13 @@ def _run(args, config, frozen, questions, done, rows_path, started_path, stopped
 
 
 def _keyring():
+    """Keys read the way the product reads them. The keychain holds them under one bundled item, so a reader of its
+    own would miss a key the product uses; this fills the environment through the product's own loader and reads it."""
+    from deixis.keys import credentials
+    credentials.load_into_environment()
+
     def secret(name):
-        import keyring
-        return keyring.get_password('DEIXIS', name)
+        return os.environ.get(name)
     return secret
 
 

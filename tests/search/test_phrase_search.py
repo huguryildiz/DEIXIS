@@ -172,11 +172,6 @@ def test_phrases_follow_the_questions_send_not_its_reply_one_at_a_time_through_t
 
 def test_the_keyword_search_never_waits_for_a_phrase_and_the_cutoff_cancels_and_records_them(tmp_path, monkeypatch):
     # Every phrase request hangs: the run still ends, and each one is closed at the end of the search stage.
-    # The fast path's OpenAlex start gap is real time and process-wide, so it is taken out here: the run's length then
-    # depends on no sleep, and on nothing an earlier test in this process left in the pacer.
-    from deixis.providers import pacing
-    monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "interval_seconds", 0.0)
-    monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "_next", 0.0)
     openalex = OpenAlex(hang=True)
     rid, run_id, view, run, store = run_once(tmp_path, monkeypatch, openalex, FakeAdapter())
     assert run["status"] == "completed", run

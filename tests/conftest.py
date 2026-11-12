@@ -239,6 +239,10 @@ def no_provider_pacing(request, monkeypatch):
     monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "cool_down", lambda seconds: None)
     monkeypatch.setattr(openalex.SEMANTIC_PACER, "interval_seconds", 0.0)
     monkeypatch.setattr(openalex.SEMANTIC_PACER, "_next", 0.0)
+    # The fast path's OpenAlex start gap is real time and process-wide too: a test neither waits it out nor inherits
+    # the next start an earlier test in this process left in it.
+    monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "interval_seconds", 0.0)
+    monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "_next", 0.0)
 
 
 @pytest.fixture(autouse=True)

@@ -1028,7 +1028,8 @@
         "owner_review",
         "followup_search_query",
         "citation_check",
-        "statement_check"
+        "statement_check",
+        "search_phrases"
       ]
     },
     "scope_revision": {
@@ -1724,6 +1725,29 @@
         },
         "runs": { "type": "integer", "minimum": 1 },
         "run": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "phrase_target": {
+      "type": "object",
+      "description": "search_phrases steps only: how many phrases to write and the run's English sentence for the question as it stood when the step started (null where the run has none). The step reads nothing else but the question.",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "english_question"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "english_question": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        }
       }
     },
     "vocabulary_target": {

@@ -252,6 +252,16 @@ class _ReadCutoff(Exception):
     """A model call the read window's cutoff reached before it was sent."""
 
 
+class _StopSeen(Exception):
+    """A pause or a cancel seen while a required read waited (`_wait_or_stop`)."""
+
+
+# Seconds a cancelled call is waited for to end before it is left behind and its outcome recorded as unknown.
+CANCEL_GRACE_SECONDS = 3.0
+# The step codes a required abstract read ends with when its call failed after its retries (`_model_step`).
+REQUIRED_READ_FAILED = ("model_failed", "model_unavailable")
+
+
 class RunStopped(Exception):
     """The run ended early (pause, cancel or recorded failure); state is already persisted."""
 
@@ -345,6 +355,7 @@ class ResearchFlow:
         self._clock_tasks: dict[str, dict[str, tuple[str, asyncio.Task]]] = {}
         self._fast_consumers: dict[str, Any] = {}
         self._fast_chains: dict[str, Any] = {}
+        self._phrase_routes: dict[str, Any] = {}  # per run: the short phrase searches (`phrase_search.Route`)
         self._held: dict[str, _Held] = {}
         # Per run, the latest time a model answer is still waited for (a fast-path read window's cutoff).
         self._send_by: dict[str, Callable[[], Any]] = {}
@@ -378,6 +389,10 @@ class ResearchFlow:
             consumer = self._fast_consumers.pop(run_id, None)
             if consumer is not None:
                 await consumer.stop()
+            # The short phrase searches still out stop with the run; what they had not answered is sent on resume.
+            route = getattr(self, "_phrase_routes", {}).pop(run_id, None)
+            if route is not None:
+                await route.stop()
             tasks = self._clock_tasks.pop(run_id, {})
             for _, task in tasks.values():
                 task.cancel()
@@ -647,12 +662,21 @@ class ResearchFlow:
         # it is in flight. It keeps the `search:fast:semantic` key, so the search stage finds the step succeeded and
         # sends nothing twice; only the later steps that need English (the reranker, BM25's question terms, the
         # comparison signal) wait for the translation `_vocabulary` asks for (P2).
-        sent = asyncio.Event()
-        first_request = asyncio.create_task(fast_search.first_semantic(self, run, scope, seed_context, sent))
+        sent, handed = asyncio.Event(), asyncio.Event()
+        first_request = asyncio.create_task(fast_search.first_semantic(self, run, scope, seed_context, sent, handed))
+        # The short phrase searches beside the plan, where this run froze the rule; a run queued before it has none.
+        from deixis.workflow.search import phrase_search
+        route = (phrase_search.Route(self, run, scope, first_request, handed)
+                 if fast_path.phrase_search(run["budget"]) else None)
+        if route is not None:
+            self._phrase_routes[run_id] = route
         planning_failed = False
         criterion_calls: asyncio.Task | None = None
         try:
             await sent.wait()  # the request is on its way before any step asks a model
+            if route is not None:
+                # The phrase step reads the question alone, so it is asked now; its requests follow the question's.
+                route.start()
             # The criterion's proposals read the question alone, so they are sent here and not after the plan: they
             # run while the plan call is in flight, and the person waits for the longer of the two instead of both.
             # The vote they feed still reads the vocabulary the plan settled, so what is recorded does not change.
@@ -684,7 +708,7 @@ class ResearchFlow:
             # The protocol is frozen before the first provider request that plans anything, and every step opened
             # after it carries its hash (SW14.1). The question's request and the translation it does not wait for are
             # the exception the seed match already set: they open before the freeze, carry no hash, and their plan is
-            # part of this one frozen body (Ç1).
+            # part of this one frozen body (Ç1). The short phrase requests that open before it are the same exception.
             protocol_step = self.store.step(run_id, "protocol", "protocol:freeze")
             if protocol_step["status"] != "succeeded":
                 self.store.start_step(protocol_step["id"])
@@ -695,6 +719,9 @@ class ResearchFlow:
                 # Which plan words a query the plan sends really carries: a word can stand in the plan and still be
                 # cut from every sent query, and the plan step and the Search plan panel say so from this record.
                 fast_plan = fast_plan | {"words": fast_search.plan_words(vocabulary, fast_plan)}
+                if route is not None:
+                    # The phrases the step gave by now, or why none: an unfinished step is cancelled, not waited for.
+                    fast_plan = fast_plan | {"phrase_search": await route.freeze()}
                 record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                     scope, run["budget"], None, queries,
                     self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
@@ -733,6 +760,9 @@ class ResearchFlow:
 
         self._close_clock_stage(run, "plan")
         self._enter_clock_stage(run, "search")
+        if route is not None:
+            # Phrase requests still out are closed at the search stage's own deadline, whenever the keyword path ends.
+            route.watch()
 
         # A failed search is recorded and shown, and the other searches go on. The run pauses on a failure only when
         # none of its searches succeeded; resuming it then retries the failed searches.
@@ -747,6 +777,9 @@ class ResearchFlow:
         self._fast_chains[run_id] = Round(self, run, scope, vocabulary)
         self._fast_consumers[run_id].start()
         failure = await fast_search.execute(self, run, scope, fast_search.stored_plan(self.store, run), retry_failed)
+        if route is not None:
+            # The search stage has ended: a phrase request still waiting or in flight is closed and recorded.
+            await route.close()
         if failure and not searched():
             self._pause(run_id, *failure)
         if not searched() and self._allowance_ended_searches(run_id):
@@ -783,7 +816,7 @@ class ResearchFlow:
     async def _second_sources(self, run: dict[str, Any], scope: dict[str, Any],
                               vocabulary: dict[str, Any] | None, *, only: set[str] | None = None,
                               prefix: str = "", flags_key: str = "record_flags", works: set[str] | None = None,
-                              stop: Callable[[], bool] | None = None) -> None:
+                              stop: Callable[[], bool] | None = None, stop_inside: bool = False) -> None:
         """The three code steps of slice 05 (SW5, SW9.3).
 
         No model is called and no selection is written here. A failed lookup is recorded on the record and the run
@@ -801,8 +834,9 @@ class ResearchFlow:
         skip = bool(((run["budget"].get("inspection") or {}).get("prerank_lookup") or {}).get("s2_cooldown_skip"))
         await lookups.ask_second_sources(self.store, self.deps.http, self.deps.settings, run, scope, words,
                                          lambda: self._checkpoint(run_id, revision), **({"only": only} if only is not None else {}),
-                                         s2_cooldown_skip=skip, prefix=prefix, stop=stop)
-        if stop is not None and stop():
+                                         s2_cooldown_skip=skip, prefix=prefix, stop=stop, stop_inside=stop_inside)
+        # The deeper screening labels nothing once its cutoff has passed; the top N's labels are still written.
+        if prefix and stop is not None and stop():
             return
         if not prefix:
             lookups.external_links(self.store, run)
@@ -927,10 +961,15 @@ class ResearchFlow:
         seed_sha, seed_rows = self._seed_passages(run_id, scope)
         # A stored output holds the decision of the rule its run froze, so only a run that froze this same plan
         # rule is reused; a run frozen under a rule this version no longer carries does not hide a usable query.
-        earlier = (self.store.search_query_of(rid, revision, run_id, plan_rule=fast_path.PLAN_RULE)
+        forms_on = fast_path.phrase_forms_on(run["budget"])
+
+        def reusable(output: dict[str, Any]) -> bool:
+            """Written with this run's seed pages and counted under the number-form rule this run froze."""
+            return (output.get("seed_passages_sha256") == seed_sha
+                    and query_compiler.phrase_forms_on(output.get("vocabulary") or {}) == forms_on)
+        # The newest earlier query that passes both checks; a newer one that fails them does not hide it.
+        earlier = (self.store.search_query_of(rid, revision, run_id, plan_rule=fast_path.PLAN_RULE, accept=reusable)
                    if step["output"] is None else None)
-        if earlier is not None and earlier["output"].get("seed_passages_sha256") != seed_sha:
-            earlier = None  # a query written without this run's seed pages is not this run's query
         if earlier is not None:
             # The follow-up search is one call per scope revision: the query the user already saw is searched again,
             # and the approval
@@ -1018,7 +1057,9 @@ class ResearchFlow:
             if stored is not None and stored["attempt"] == attempt:
                 checked = stored["result"]
             else:
-                checked = await search_query_rules.check(answer["result"], self._count_probe(scope, run_id))
+                # Counted under the forms rule only where this run froze it.
+                checked = await search_query_rules.check(answer["result"], self._count_probe(scope, run_id),
+                                                         phrase_forms=fast_path.phrase_forms_on(run["budget"]))
                 output["checked"] = {"attempt": attempt, "result": checked}
                 self.store.set_step_output(step["id"], output)
             if not checked["searchable"]:
@@ -1162,7 +1203,9 @@ class ResearchFlow:
         if output.get("checked") is not None:
             checked = output["checked"]
         else:
-            checked = await search_query_rules.check(user_plan_rules.answer(plan), self._count_probe(scope, run_id))
+            # Counted under the forms rule only where this run froze it.
+            checked = await search_query_rules.check(user_plan_rules.answer(plan), self._count_probe(scope, run_id),
+                                                     phrase_forms=fast_path.phrase_forms_on(run["budget"]))
             # The person, not a model, chose these terms; the record says so wherever a term's origin is read.
             checked["terms"] = [term | {"origin": user_plan_rules.ORIGIN} for term in checked["terms"]]
             self.store.set_step_output(step["id"], {"checked": checked})
@@ -1770,7 +1813,9 @@ class ResearchFlow:
                               order: list[str], *,
                               batch_key: str | None = None, read_limit: int | None = None,
                               frozen_plan: dict[str, Any] | None = None,
-                              cutoff: Callable[[], bool] | None = None, lexical_exclusion: bool = True) -> None:
+                              cutoff: Callable[[], bool] | None = None, lexical_exclusion: bool = True,
+                              window_word: dict[str, Any] | None = None,
+                              send_window: Callable[[], float | None] | None = None) -> None:
         """Classify every record by code, then ask the model twice about the works code left open (K3).
 
         Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
@@ -1790,7 +1835,7 @@ class ResearchFlow:
         prefix = f"{batch_key}:abstract_screening" if batch_key else "abstract_screening"
         plan = frozen_plan if frozen_plan is not None else self._abstract_code_stage(
             run, scope, vocabulary, order, batch_key=batch_key, read_limit=read_limit,
-            lexical_exclusion=lexical_exclusion)
+            lexical_exclusion=lexical_exclusion, window_word=window_word)
         self._wake_fetch(run_id)  # the code's decisions are written: more works may be certain now (slice 17a)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
@@ -1803,9 +1848,13 @@ class ResearchFlow:
         cutoff_batches: set[int] = set()
 
         # Read, not opened: a batch the budget never reaches must not be left with a pending step of its own.
+        # A required read that failed after its retries is settled too: it is not sent again (`_abstract_call`).
+        required = getattr(send_window, "required", False)
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:abstract_screening"
-                    and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff"))}
+                    and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff")
+                         or (required and s["status"] in ("failed", "outcome_unknown")
+                             and s["error_code"] in REQUIRED_READ_FAILED))}
 
         # A fast read whose budget already stopped short keeps that stop on a restart: the batches it left unread
         # are not sent later, so the closure's split between budget and deadline does not move.
@@ -1881,7 +1930,7 @@ class ResearchFlow:
                 submitted -= job.key not in answered
                 return None
             output = await self._abstract_call(run, scope, job.number, job.run_no, rows, self.deps.limiter, prefix,
-                                               recheck=undecided, runs=runs)
+                                               recheck=undecided, runs=runs, send_window=send_window)
             if output is not None and output.get("cutoff"):
                 cutoff_batches.add(job.number)
                 return None
@@ -1907,7 +1956,9 @@ class ResearchFlow:
                                            [collected[number][run_no] for run_no in range(1, runs + 1)], runs, prefix)
                 self._wake_fetch(run_id, prefix, number)
 
-        stop = await self._send_through_limiter(run, jobs(), call, close_ready)
+        # Required reads (a window a stop must end at once) are bounded in the limiter's queue too.
+        stop = await self._send_through_limiter(run, jobs(), call, close_ready,
+                                                watch=send_window if getattr(send_window, "interrupt", None) else None)
         if cutoff is not None:
             unread.extend(svid for n, batch in enumerate(batches) if n not in closed for svid in batch
                           if svid not in self._human_decided_records(run["research_id"], batch))
@@ -1985,12 +2036,14 @@ class ResearchFlow:
                              rows: list[dict[str, Any]], limiter: ModelCallLimiter | None = None,
                              prefix: str = "abstract_screening",
                              recheck: Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None] | None = None,
-                             runs: int = ABSTRACT_RUNS) -> dict[str, Any] | None:
+                             runs: int = ABSTRACT_RUNS,
+                             send_window: Callable[[], float | None] | None = None) -> dict[str, Any] | None:
         """One run of one batch; None when the model's output did not validate.
 
         An invalid output does not stop the run and is not repaired: its records stay `abstract_not_proposed` and
         a later discovery run reads them. A resumed run does not call the step again either (the guard
-        `_extraction` uses), so an unusable answer is paid for once.
+        `_extraction` uses), so an unusable answer is paid for once. `send_window`, where given, bounds the call in
+        place of the read stage's send window (the evidence minimum's ceiling for the top N).
         """
         key = f"{prefix}:{number}:{run_no}"
         step = self.store.step(run["id"], key, "model:abstract_screening")
@@ -1998,19 +2051,25 @@ class ResearchFlow:
             return None
         if step["error_code"] == "model_read_cutoff":
             return {"cutoff": True}  # A resumed run does not send it again
+        if (getattr(send_window, "required", False) and step["status"] in ("failed", "outcome_unknown")
+                and step["error_code"] in REQUIRED_READ_FAILED):
+            return {"cutoff": True}  # A required read that failed stays not read; a resumed run does not resend it
         output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
                                         screening_target={"runs": runs, "run": run_no}, limiter=limiter,
-                                        budget_short="skip", recheck=recheck)
+                                        budget_short="skip", recheck=recheck, send_window=send_window)
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                              order: list[str], *,
                              batch_key: str | None = None, read_limit: int | None = None,
-                             lexical_exclusion: bool = True, runs: int = ABSTRACT_RUNS) -> dict[str, Any]:
+                             lexical_exclusion: bool = True, runs: int = ABSTRACT_RUNS,
+                             window_word: dict[str, Any] | None = None) -> dict[str, Any]:
         """Write what code decides about every record, then freeze the read plan in this step's output. Without
         `lexical_exclusion` (a snowball round) code never closes a record for naming neither gate block; the plan
         records that. `runs` is how many model reads each batch gets, frozen in the plan: two, or one for the
-        deeper screening."""
+        deeper screening. `window_word` (`fast_path.WINDOW_WORD_RULE` and whether the frozen list says its
+        reranker was applied) keeps that close off where the reranker was applied; the plan records the rule, the
+        listing fact and the close in force."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         key = f"{batch_key}:abstract_stage" if batch_key else "abstract_stage"
         step = self.store.step(run_id, key, f"code:{key}")
@@ -2019,6 +2078,8 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(rid)
+        # Code closes a work for naming neither block only with the arm on and no reranked window kept open.
+        closes = lexical_exclusion and not (window_word or {}).get("listing_applied")
         _, blocks = ranking_rules.query_vocabulary(scope, vocabulary)
         # One read of the whole research, as the ranking does: asking per record cost a second on 2,000 candidates
         # on the thread the API answers from (slice 05 and 07 reviews).
@@ -2049,7 +2110,7 @@ class ResearchFlow:
             for version in sorted(by_work[versions[svid]["work_id"]], key=lambda v: v["id"]):
                 held = current.get(version["id"])
                 record = dict(version, decision=held["reason_code"] if held else None)
-                code = abstract_stage.code_outcome(record, blocks, links, lexical_exclusion)
+                code = abstract_stage.code_outcome(record, blocks, links, closes)
                 stale = bool(held) and decisions.is_stale(held, stale_key)
                 if batch_key and held and held["decided_by"] != "human" and not stale:
                     changed = (held["reason_code"] in abstract_stage.MODEL_CODES
@@ -2081,6 +2142,9 @@ class ResearchFlow:
                   "works_needing_model": sum(len(batch) for batch in plan["batches"]) + len(plan["not_read"])}
         if not lexical_exclusion:
             output["lexical_exclusion"] = False
+        if window_word is not None:
+            # The rule in force, the listing fact it rested on and whether code closed for missing both blocks.
+            output["window_word_rule"] = window_word | {"closes_both_blocks_missing": closes}
         self.store.finish_step(step["id"], "succeeded", output=output)
         return output
 
@@ -4620,7 +4684,8 @@ class ResearchFlow:
 
     async def _send_through_limiter(self, run: dict[str, Any], jobs: Iterator[Any],
                                     call: Callable[[Any], Awaitable[Any]],
-                                    applied: Callable[[list[tuple[Any, Any]]], None]) -> RunStopped | None:
+                                    applied: Callable[[list[tuple[Any, Any]]], None],
+                                    watch: Callable[[], float | None] | None = None) -> RunStopped | None:
         """Send `jobs` through the run's shared limiter, applying each round of results as they come back.
 
         The one submission loop table fill and the abstract stage both use. At most the limiter's
@@ -4629,13 +4694,19 @@ class ResearchFlow:
         that recorded a pause of its own — no more are submitted, but the calls already in flight finish and record
         their steps; their results are not applied, and the stop is returned for the caller to raise after whatever
         it still owes the run. An unexpected exception is raised once every call in flight has returned.
+
+        `watch` (the required reads' window, with its `interrupt`) bounds the wait for a limiter slot as well: a job
+        still queued when the window ends or a stop arrives is withdrawn unsent, and on a stop no more are submitted.
         """
         run_id, limiter = run["id"], self.deps.limiter
         pending: dict[asyncio.Task[Any], Any] = {}
         stop: RunStopped | None = None
         failure: Exception | None = None
+        started: set[str] = set()  # keys of jobs that got a limiter slot
+        withdrawn: set[asyncio.Task[Any]] = set()  # queued jobs cancelled before they got a slot
 
         async def guarded_call(job: Any) -> Any:
+            started.add(job.key)
             try:
                 return await call(job)
             except BaseException:
@@ -4661,10 +4732,23 @@ class ResearchFlow:
 
         submit_more()
         while pending:
-            done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED,
+                                         timeout=0.25 if watch is not None else None)
+            if watch is not None:
+                stopped = watch.interrupt()
+                if stopped or (watch() or 0) <= 0:
+                    if stopped and stop is None:
+                        stop = RunStopped()
+                    # A job still waiting for a slot is withdrawn unsent; its batch stays unread.
+                    for task, job in pending.items():
+                        if job.key not in started and task not in withdrawn and not task.done():
+                            task.cancel()
+                            withdrawn.add(task)
             completed: list[tuple[Any, Any]] = []
             for task in done:
                 job = pending.pop(task)
+                if task in withdrawn and task.cancelled():
+                    continue
                 try:
                     output = task.result()
                 except RunStopped as exc:
@@ -5788,6 +5872,44 @@ class ResearchFlow:
                 return False
         return True
 
+    @staticmethod
+    async def _wait_or_stop(call: Any, seconds: float, interrupt: Callable[[], bool]) -> Any:
+        """Await `call` up to `seconds`, looking for a stop every quarter second. Raises `_ReadCutoff` at the end and
+        `_StopSeen` on a stop. The call is then cancelled and waited for at most `CANCEL_GRACE_SECONDS`, so a transport
+        that does not end on cancel holds neither the cutoff nor the pause."""
+        task = asyncio.ensure_future(call)
+        loop = asyncio.get_running_loop()
+        end = loop.time() + seconds
+        try:
+            while True:
+                left = end - loop.time()
+                if left <= 0:
+                    raise _ReadCutoff
+                done, _ = await asyncio.wait({task}, timeout=min(left, 0.25))
+                if done:
+                    return task.result()
+                if interrupt():
+                    raise _StopSeen
+        finally:
+            if not task.done():
+                task.cancel()
+                done, _ = await asyncio.wait({task}, timeout=CANCEL_GRACE_SECONDS)
+                if not done:
+                    # Left behind: its eventual outcome is read so that nothing is logged as never retrieved.
+                    task.add_done_callback(lambda t: t.cancelled() or t.exception())
+
+    async def _until_stop(self, call: Any, seconds: float, interrupt: Callable[[], bool], session: str) -> ModelStepResult:
+        """Wait for a sent call up to `seconds`: a pause or a cancel ends it at once (its session is closed as not
+        known to have answered, and the step is sent again on resume); the window's end cuts it as the read cutoff
+        does, recorded as not known to have answered."""
+        try:
+            return await self._wait_or_stop(call, seconds, interrupt)
+        except _ReadCutoff:
+            return ModelStepResult("cutoff", error="read_cutoff", delivery_class="after_send_unknown")
+        except _StopSeen:
+            self.store.finish_model_session(session, status="outcome_unknown", request_sent=None)
+            raise RunStopped from None
+
     def _send_window(self, run_id: str) -> float | None:
         """Seconds a model answer of this run is still waited for, or None when no read window bounds it."""
         send_by = getattr(self, "_send_by", {}).get(run_id)
@@ -5819,9 +5941,14 @@ class ResearchFlow:
             session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model,
                                                      sent_effort)
             call = model_call.set({"step_id": step_id, "step_input_id": step_input_id})
+            interrupt = getattr(send_window, "interrupt", None)  # a window that a stop must end at once (required reads)
             try:
                 if remaining is None:
                     result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
+                elif interrupt is not None:
+                    result = await self._until_stop(adapter.run_step(
+                        base, developer, message, schema, requested_model, reasoning_effort), remaining, interrupt,
+                        session)
                 else:
                     try:
                         result = await asyncio.wait_for(adapter.run_step(
@@ -6139,7 +6266,16 @@ class ResearchFlow:
             return {"cutoff": True}
 
         window = send_window() if send_window is not None else self._send_window(run_id)
-        if window is not None:
+        interrupt = getattr(send_window, "interrupt", None)  # a window that a stop must end at once (required reads)
+        if window is not None and interrupt is not None:
+            # A required read waiting on the connection check still ends at once on a pause or a cancel.
+            try:
+                health = await self._wait_or_stop(adapter.health(), window, interrupt)
+            except _ReadCutoff:
+                return cut_before_send()
+            except _StopSeen:
+                raise RunStopped from None
+        elif window is not None:
             try:
                 if window <= 0:
                     raise TimeoutError
@@ -6421,6 +6557,9 @@ class ResearchFlow:
                                                 text=result.error or result.delivery_class or "", surface="model")
                 if error_kind == "model_unavailable" and requested_model:
                     unusable.record(self.store, connection, requested_model, unusable.NOT_SERVED)
+                if getattr(send_window, "required", False):
+                    # A required read that failed is recorded as not read and the run goes on with what was read.
+                    return {"cutoff": True}
                 halt("model_call_failed", {"status": result.status, "error": safe_error(result.error),
                      "error_kind": error_kind,
                      "http_status": result.http_status, "retry_after": result.retry_after if retry_at(result.retry_after) else None,

@@ -3966,5 +3966,121 @@
    "requested_model": "fake-model"
   },
   "created_at": "2026-10-25T02:18:25.723+00:00"
+ },
+ "E_search_phrases": {
+  "step_input_id": "sti_SYNTHPHR001",
+  "research_id": "res_SYNTHPHR001",
+  "run_id": "run_SYNTHPHR001",
+  "step_id": "stp_SYNTHPHR001",
+  "task_type": "search_phrases",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/search-phrases.md"
+  ],
+  "output_schema_versions": [
+   "deixis.search_phrases.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC: which routing protocols lower energy use in underwater acoustic sensor networks?",
+   "language_hint": "en"
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex"
+  ],
+  "candidates": [],
+  "sources": [],
+  "passages": [],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [],
+   "passage_ids": []
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 9,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-11-12T12:00:00Z",
+  "phrase_target": {
+   "count": 6,
+   "english_question": null
+  }
+ },
+ "E_search_phrases_other_language": {
+  "step_input_id": "sti_SYNTHPHR002",
+  "research_id": "res_SYNTHPHR001",
+  "run_id": "run_SYNTHPHR001",
+  "step_id": "stp_SYNTHPHR002",
+  "task_type": "search_phrases",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/search-phrases.md"
+  ],
+  "output_schema_versions": [
+   "deixis.search_phrases.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC: sualtı akustik sensör ağlarında enerji tüketimini düşüren yönlendirme protokolleri hangileri?",
+   "language_hint": "tr"
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex"
+  ],
+  "candidates": [],
+  "sources": [],
+  "passages": [],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [],
+   "passage_ids": []
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 9,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-11-12T12:00:00Z",
+  "phrase_target": {
+   "count": 6,
+   "english_question": "SYNTHETIC: which routing protocols lower energy use in underwater acoustic sensor networks?"
+  }
  }
 }

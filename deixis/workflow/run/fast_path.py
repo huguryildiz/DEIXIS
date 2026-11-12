@@ -16,6 +16,8 @@ RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
 # The stages that must be done before the answer is written. Their bases sum to the depth's handover moment.
 PRE_ANSWER = STAGES[:4]
+# The stages after ranking, which the reranker's own allowance must not shorten.
+AFTER_RANKING = STAGES[STAGES.index("ranking") + 1:]
 # The plan rule every run freezes: one model call reads the first semantic page and writes the terms, their blocks
 # and the chain's starting works. A run whose budget names no plan rule was frozen under a search method this
 # version no longer carries, and `small_batch.removed_rule` stops it rather than running it under a rule that is
@@ -78,6 +80,28 @@ SUBTOPIC_ARMS = ("off", "conditional", "always")
 # (`search.date_scope`). Frozen here with the rest of the policy, before the first request opens: the question's
 # own semantic request goes out before the protocol is frozen, so a bound kept only in the protocol would miss it.
 DATE_SCOPE_RULE = "date_scope_v1"
+# The reranker's own time: once the pool is ranked, the reranker may run for the depth's allowance even when the
+# ranking stage's time, or the depth's handover moment, is already gone. The time it runs past that cutoff is not
+# taken from the read stage: read keeps the allocation and the handover cap it would have had, so the answer comes
+# later by that time. Frozen in the policy with the number; a run queued before the rule carries none and keeps the
+# old arithmetic, in which the reranker had only what was left of the ranking stage.
+RERANK_ALLOWANCE_RULE = "rerank_allowance_v1"
+# Short semantic searches beside the plan: one model step writes the depth's number of short phrases from the question
+# alone, and each phrase is one OpenAlex semantic request of its own. Frozen in the policy with the number and the
+# records each request reads; a run queued before the rule names no key and sends none (`phrase_search`).
+PHRASE_SEARCH_RULE = "phrase_search_v1"
+PHRASE_SEARCH_RECORDS = 50  # records one phrase request reads: one semantic page
+# Where the reranker was applied to the frozen list, the abstract stage does not close a work of the top-N window for
+# naming neither gate block: the model reads it. A run frozen before the rule names no key and closes as it did.
+WINDOW_WORD_RULE = "reranked_window_open_v1"
+# The evidence a run must gather before it answers, whatever its handover moment says: the search stage keeps at least
+# `search_ms` from its own start, and the model's reads of the top N abstracts are waited for up to `abstract_ceiling_ms`
+# from the moment those reads can start. Under the rule no stage carries an earlier stage's overrun as debt, and the
+# handover cuts no stage: it and the end-to-end target stay recorded targets, and every stage keeps its own finite
+# deadline. A run frozen before the rule names no key and runs as it did.
+EVIDENCE_MINIMUM_RULE = "evidence_minimum_v1"
+EVIDENCE_SEARCH_MS = 10_000  # twelve measured keyword pages took 1.1-1.8 s each; a starting value, not a guarantee
+EVIDENCE_ABSTRACT_CEILING_MS = 60_000  # a ceiling that ends a hung call, not a measured sufficient time
 # A run in one of these states will send nothing more, so whether it met its target is settled.
 TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
@@ -96,7 +120,7 @@ class Mode(NamedTuple):
     boolean_plans: int  # the most distinct Boolean query plans a run of this depth sends: one main, the rest focused
     chain_rescue: int  # the most linked records the gate's words do not reach that are still written as candidates
     rerank_pool: float  # the most records the reranker reads, as a multiple of N; a saved factor is kept under it
-    rerank_point: str  # "before_list": the list waits for the reranker; "after_list": it is frozen first (Quick)
+    rerank_point: str  # "before_list": the list waits for the reranker; "after_list": it is frozen first (old Quick)
     file_asks: int  # the most works this depth asks the person for a file for, over the research's whole life
     fulltext_searches: int  # the most works this depth sends an open-web full-text search for, over the same life
     completion_records: int  # records the completion arm may read, taken off the keyword cap while the arm is frozen
@@ -105,6 +129,8 @@ class Mode(NamedTuple):
     field_records: int  # records each of them may read, taken off the same keyword cap
     broad_index_records: int  # records the second independent index may read; none at the depths that pay for none
     subtopic_records: int  # records the one sub-topic search may read; none where a depth searches that index anyway
+    rerank_allowance: int  # seconds the reranker keeps of its own past the ranking cutoff; 0 freezes no allowance
+    phrase_searches: int  # short semantic phrase searches beside the plan; 0 turns the route off
 
 
 # The stage seconds are the delivery-time targets split across the stages: the four pre-answer stages sum to the
@@ -116,16 +142,21 @@ MODES = {
     # the links inside that page are written, which costs nothing, but no seed work is read.
     "quick": Mode((7, 7, 7, 14, 25), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=0,
                   backward_requests=0, forward_requests=0, boolean_plans=1, chain_rescue=0,
-                  # Quick shows its list without waiting for the reranker, so the reranker does not order that list:
-                  # it reads a small group after the list is frozen, and the run keeps its scores to be measured.
+                  # Quick's list waits for the reranker, as Standard's does, and the reranker reads the same 400
+                  # records Standard's reads (16 x 25): the right paper has to reach Quick's top 25 to be screened.
                   # Quick asks for no file at all: it is the depth that answers from what it can reach itself.
                   # Quick sends no snippet query: it writes no focused concept, so there is no recorded gap to ask
                   # about, and its first list waits for no extra search. The records are for the fallback alone,
                   # which is the only thing that stands between a technical OpenAlex failure and an empty Quick run.
-                  rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0,
+                  rerank_pool=16.0, rerank_point="before_list", file_asks=0, fulltext_searches=0,
                   completion_records=50, snippet_requests=0,
                   # Quick binds its first list to no other source: it searches OpenAlex alone.
-                  field_sources=0, field_records=0, broad_index_records=0, subtopic_records=0),
+                  field_sources=0, field_records=0, broad_index_records=0, subtopic_records=0,
+                  # Standard's allowance for the same 400-record window: not measured at Quick.
+                  rerank_allowance=3,
+                  # Six phrases at every depth to begin with: the number of the ten-question loss trace, not measured
+                  # against any other.
+                  phrase_searches=6),
     "standard": Mode((8, 12, 17, 33, 50), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
                      backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
                      rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3,
@@ -135,7 +166,11 @@ MODES = {
                      field_sources=1, field_records=250,
                      # Standard pays for no second index of its own; what it pays for is the one sub-topic search
                      # of that index, and only where its field source left the sub-topic unmet.
-                     broad_index_records=0, subtopic_records=25),
+                     broad_index_records=0, subtopic_records=25,
+                     # The 95th percentile of seven successful Voyage rerank-3-lite steps over a 400-record window
+                     # (1.6 to 2.3 s), rounded up to a whole second. Steps that timed out are not in the sample, so
+                     # this is a starting value, not a guarantee.
+                     rerank_allowance=3, phrase_searches=6),
     "detailed": Mode((18, 36, 48, 108, 90), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
                      backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
                      # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
@@ -146,7 +181,10 @@ MODES = {
                      # adds to the first list is not measured.
                      # Deep searches that index on its own, so it sends no sub-topic search of it: one query per
                      # source stands.
-                     field_sources=1, field_records=250, broad_index_records=100, subtopic_records=0),
+                     field_sources=1, field_records=250, broad_index_records=100, subtopic_records=0,
+                     # No Deep reranker step has been measured; its window is the same 400 records as Standard's,
+                     # so it takes Standard's number until one is.
+                     rerank_allowance=3, phrase_searches=6),
 }
 
 
@@ -286,6 +324,22 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # The whole scope is frozen, the words it was read from included, so the measurement can say what the run
         # was bounded by and why without re-reading the question.
         policy["date_scope"] = {key: date_scope[key] for key in ("rule", "from_year", "to_year", "basis", "origin")}
+    # The rule that also searches the other number form of a quoted phrase: every depth, every model.
+    from deixis.providers.query_compiler import PHRASE_FORMS_RULE
+    policy["phrase_forms_rule"] = PHRASE_FORMS_RULE
+    if mode.rerank_allowance and not local_model:
+        # A depth without an allowance, and a local-model run, name no key: their policy is the one frozen before.
+        policy["rerank_allowance"] = {"rule": RERANK_ALLOWANCE_RULE, "ms": mode.rerank_allowance * 1000}
+    if mode.phrase_searches:
+        # The short phrase searches: how many phrases the step writes and what each request reads. A depth set to
+        # none names no key, which is the policy frozen before the rule.
+        policy["phrase_search"] = {"rule": PHRASE_SEARCH_RULE, "count": mode.phrase_searches,
+                                   "records": PHRASE_SEARCH_RECORDS}
+    # The word rule of a reranked window, frozen before the hash below: every depth, every model.
+    policy["window_word_rule"] = WINDOW_WORD_RULE
+    # The evidence minimum, frozen before the hash below: every depth, every model.
+    policy["evidence_minimum"] = {"rule": EVIDENCE_MINIMUM_RULE, "search_ms": EVIDENCE_SEARCH_MS,
+                                  "abstract_ceiling_ms": EVIDENCE_ABSTRACT_CEILING_MS}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
     if not candidate_embedding:
@@ -398,6 +452,55 @@ def scope_years(store, research_id: str, scope_revision: int) -> dict[str, Any] 
     return None
 
 
+def phrase_forms_on(budget: dict[str, Any]) -> bool:
+    """Whether this run froze the rule that also searches the other number form of a quoted phrase; a run queued
+    before it counts and compiles its plan as it always did."""
+    from deixis.providers.query_compiler import PHRASE_FORMS_RULE
+    return (budget.get("fast_path") or {}).get("phrase_forms_rule") == PHRASE_FORMS_RULE
+
+
+def evidence_minimum(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
+    """The evidence minimum the run's ledger froze (`EVIDENCE_MINIMUM_RULE`), or None for a run frozen before it."""
+    binding = run["budget"].get("fast_path") or {}
+    ledger_id = binding.get("ledger_run_id", run["id"])
+    policy = binding if ledger_id == run["id"] else (store.run(ledger_id)["budget"].get("fast_path") or {})
+    rule = policy.get("evidence_minimum") or {}
+    return rule if rule.get("rule") == EVIDENCE_MINIMUM_RULE else None
+
+
+def window_word_rule(policy: dict[str, Any]) -> bool:
+    """Whether this run froze the rule that keeps a reranked top-N window open to the model (`WINDOW_WORD_RULE`)."""
+    return policy.get("window_word_rule") == WINDOW_WORD_RULE
+
+
+def phrase_search(budget: dict[str, Any]) -> dict[str, Any] | None:
+    """The short phrase searches this run froze, or None for a run queued before the rule or at a depth set to none."""
+    rule = (budget.get("fast_path") or {}).get("phrase_search") or {}
+    return rule if rule.get("rule") == PHRASE_SEARCH_RULE and rule.get("count") else None
+
+
+def rerank_allowance_ms(budget: dict[str, Any]) -> int | None:
+    """The reranker's own allowance this run froze, in ms, or None for a run queued before the rule."""
+    allowance = (budget.get("fast_path") or {}).get("rerank_allowance") or {}
+    return allowance.get("ms") if allowance.get("rule") == RERANK_ALLOWANCE_RULE else None
+
+
+def rerank_carry_ms(store: Any, run: dict[str, Any]) -> int:
+    """The time the reranker ran past the ranking cutoff on its allowance, as its step recorded it, every attempt of
+    it included (a paused step keeps what it used); 0 when it ran none, and always 0 for a run whose policy froze no
+    allowance."""
+    binding = run["budget"].get("fast_path") or {}
+    ledger_id = binding.get("ledger_run_id", run["id"])
+    policy = binding if ledger_id == run["id"] else (store.run(ledger_id)["budget"].get("fast_path") or {})
+    if rerank_allowance_ms({"fast_path": policy}) is None:
+        return 0
+    from deixis.workflow.search.small_batch import RERANK_KEY
+    row = store.conn.execute("SELECT output_json FROM run_steps WHERE run_id = ? AND operation_key = ?",
+                             (ledger_id, RERANK_KEY)).fetchone()
+    output = json.loads(row["output_json"]) if row and row["output_json"] else {}
+    return int((output.get("allowance") or {}).get("past_cutoff_ms") or 0)
+
+
 def candidate_embedding_on(budget: dict[str, Any]) -> bool:
     """Whether this run embeds its candidates. A budget frozen before the switch embedded them, so it still does."""
     return (budget.get("fast_path") or {}).get("candidate_embedding", True)
@@ -442,14 +545,20 @@ def handover_deadline(store: Any, run: dict[str, Any]) -> datetime | None:
 
 def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | None:
     """A stage's own soft deadline, never later than the run's handover moment for a stage that must be done before
-    the answer is written. The handover is the harder of the two: a stage that carried time forward, or a protected
+    the answer is written, except under the evidence minimum, where the handover cuts no stage. The handover is the harder of the two: a stage that carried time forward, or a protected
     stage that keeps its whole base, cannot push the first answer past the depth's target.
 
     The handover stands even where the stage has no deadline of its own, which is how it reaches the two places the
     stage accounting does not: a stage this policy does not enforce, the plan stage above all, and a stage working in
     a rework interval, which is what retrying a failed search of a completed run opens. The person's clock has run
     out in both cases."""
-    handover = handover_deadline(store, run) if stage in PRE_ANSWER else None
+    # Under the evidence minimum the handover is a recorded target and cuts no stage.
+    evidence = evidence_minimum(store, run)
+    handover = handover_deadline(store, run) if stage in PRE_ANSWER and evidence is None else None
+    if handover is not None and stage in AFTER_RANKING:
+        # The time the reranker ran past the ranking cutoff on its own allowance moves the cap with it, so the read
+        # stage keeps the time it would have had and the answer comes that much later.
+        handover += timedelta(milliseconds=rerank_carry_ms(store, run))
     if not enforces(run["budget"], stage) or stage in run["budget"]["fast_path"].get("no_deadline_stages", ()):
         return handover
     ledger = run["budget"]["fast_path"].get("ledger_run_id", run["id"])
@@ -459,10 +568,30 @@ def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | No
         " WHERE s.ledger_run_id = ? AND s.stage = ? AND s.status = 'open'"
         " AND i.run_id = ? AND i.closed_at IS NULL AND i.rework = 0",
         (ledger, stage, run["id"])).fetchone()
+    minimum = evidence if stage == "search" else None
+    if row is None and evidence is not None:
+        # A rework interval (retrying a failed search of a completed run) has no stage accounting, and under the
+        # evidence minimum no handover either: it keeps the stage's allocation, and search its minimum, from its start.
+        rework = store.conn.execute(
+            "SELECT i.started_at, s.alloc_ms FROM fast_path_stages s"
+            " JOIN fast_path_intervals i ON i.ledger_run_id = s.ledger_run_id AND i.stage = s.stage"
+            " WHERE s.ledger_run_id = ? AND s.stage = ? AND i.run_id = ? AND i.closed_at IS NULL AND i.rework = 1",
+            (ledger, stage, run["id"])).fetchone()
+        if rework is not None:
+            begun = datetime.fromisoformat(rework["started_at"])
+            return begun + timedelta(milliseconds=max(rework["alloc_ms"], (minimum or {}).get("search_ms", 0)))
     if row is None:
+        if minimum is not None and store.conn.execute(
+                "SELECT 1 FROM fast_path_stages WHERE ledger_run_id = ? AND stage = 'search'", (ledger,)).fetchone() is None:
+            # The search stage has not started, so its minimum has not either: nothing of it has passed yet.
+            return None
         return handover
     deadline = datetime.fromisoformat(row["started_at"]) + timedelta(milliseconds=row["alloc_ms"] - row["used_ms"])
-    return deadline if handover is None else min(deadline, handover)
+    deadline = deadline if handover is None else min(deadline, handover)
+    if minimum is not None:
+        # The search stage keeps its minimum from its own start, whatever the handover moment says.
+        deadline = max(deadline, datetime.fromisoformat(row["started_at"]) + timedelta(milliseconds=minimum["search_ms"]))
+    return deadline
 
 
 def past_deadline(store: Any, run: dict[str, Any], stage: str) -> bool:
@@ -470,7 +599,8 @@ def past_deadline(store: Any, run: dict[str, Any], stage: str) -> bool:
     missed its depth's target, wherever in the run that moment arrives."""
     deadline = stage_deadline(store, run, stage)
     past = deadline is not None and store.clock.now() >= deadline
-    if past and stage in PRE_ANSWER:
+    # Under the evidence minimum the handover cuts no stage, so its passing is recorded whether or not the stage stops.
+    if stage in PRE_ANSWER and (past or evidence_minimum(store, run) is not None):
         note_handover_passed(store, run)
     return past
 
@@ -598,6 +728,19 @@ def enter_stage(store: Any, run: dict[str, Any], stage: str) -> str | None:
             balance = conn.execute(
                 "SELECT COALESCE(SUM(base_ms - used_ms), 0) FROM fast_path_stages"
                 " WHERE ledger_run_id = ? AND seq > 0 AND seq < ? AND status IN ('done', 'skipped')", (ledger_id, seq)).fetchone()[0]
+            debt_free = (policy.get("evidence_minimum") or {}).get("rule") == EVIDENCE_MINIMUM_RULE
+            if debt_free:
+                # Unused time carries forward and is spent in order; an overrun is never carried as debt:
+                # B_next = max(0, B + base - used). The reranker's time past its cutoff is an overrun of the ranking
+                # stage, already not charged here, so it is not given back a second time.
+                balance = 0
+                for earlier in conn.execute(
+                        "SELECT base_ms, used_ms FROM fast_path_stages WHERE ledger_run_id = ? AND seq > 0 AND seq < ?"
+                        " AND status IN ('done', 'skipped') ORDER BY seq", (ledger_id, seq)):
+                    balance = max(0, balance + earlier["base_ms"] - earlier["used_ms"])
+            elif stage in AFTER_RANKING:
+                # The time the reranker ran past the ranking cutoff on its allowance is not charged to this stage.
+                balance += rerank_carry_ms(store, run)
             base = policy["stage_base_ms"].get(stage, 0)
             # A protected stage's floor is its whole base; a policy frozen without the field keeps the 25% floor.
             floor = base if stage in policy.get("protected_stages", ()) else int(base * policy["floor_ratio"])
@@ -681,6 +824,44 @@ def save_answer(store: Any, run_id: str, outcome: str) -> None:
         close_stage(store, run_id, "answer")
 
 
+# The names a pre-answer stage's time past the handover moment takes, before and after the stage's own allocation
+# ran out: the plan's overrun; the search stage's own time and the minimum past it; ranking's own time and the
+# reranker's allowance past it; the read stage's own time and the required abstract reads past it.
+EVIDENCE_CAUSES = {"plan": ("plan_overrun", "plan_overrun"), "search": ("search_allocation", "search_minimum"),
+                   "ranking": ("ranking_allocation", "reranker_allowance"),
+                   "read": ("read_allocation", "required_abstract_reads")}
+
+
+def evidence_causes(ledger: dict[str, Any], intervals: list[dict[str, Any]], stages: list[dict[str, Any]],
+                    policy: dict[str, Any], end: str) -> dict[str, int]:
+    """The handover miss split by cause, in ms; empty while the handover has not passed. `end` is when the answer
+    stage opened, or now while it has not."""
+    if not isinstance(policy.get("handover_ms"), int):
+        return {}
+    handover = datetime.fromisoformat(ledger["started_at"]) + timedelta(milliseconds=policy["handover_ms"])
+    stop = datetime.fromisoformat(end)
+    if stop <= handover:
+        return {}
+    causes: dict[str, int] = {}
+    alloc = {stage["stage"]: stage["alloc_ms"] for stage in stages}
+    for name, (within, beyond) in EVIDENCE_CAUSES.items():
+        used = 0  # what the stage's earlier intervals used of its allocation
+        for interval in sorted((i for i in intervals if i["stage"] == name and not i["rework"]),
+                               key=lambda i: i["started_at"]):
+            begun = datetime.fromisoformat(interval["started_at"])
+            closed = min(datetime.fromisoformat(interval["closed_at"]) if interval["closed_at"] else stop, stop)
+            # Where the stage's own allocation ran out in this interval.
+            own = begun + timedelta(milliseconds=max(0, alloc.get(name, 0) - used))
+            for label, start, finish in ((within, max(begun, handover), min(closed, own)),
+                                         (beyond, max(begun, handover, own), closed)):
+                if finish > start:
+                    causes[label] = causes.get(label, 0) + round((finish - start).total_seconds() * 1000)
+            used += max(0, round((closed - begun).total_seconds() * 1000))
+    # Whatever no stage interval covers: the gaps between stages, queueing the answer run, the optional title call.
+    causes["between_stages"] = max(0, round((stop - handover).total_seconds() * 1000) - sum(causes.values()))
+    return causes
+
+
 def view(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
     if not enabled(run["budget"]):
         return None
@@ -748,4 +929,15 @@ def view(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
         result["on_target"] = None
     result["handover_on_target"] = (result["handover_at_ms"] <= handover
                                     if result["handover_at_ms"] is not None and isinstance(handover, int) else None)
+    if (policy.get("evidence_minimum") or {}).get("rule") == EVIDENCE_MINIMUM_RULE:
+        # Why the run turned to writing late, read from the stage intervals: each pre-answer stage's time past the
+        # handover moment is named by what kept it going, and the gaps between stages are their own cause, so the
+        # causes add up to the handover miss.
+        result["evidence_minimum"] = {
+            "rule": EVIDENCE_MINIMUM_RULE,
+            "causes": evidence_causes(ledger, intervals, stages, policy, answer_started or ts),
+            "handover_missed_ms": (max(0, result["handover_at_ms"] - handover)
+                                   if result["handover_at_ms"] is not None and isinstance(handover, int) else None),
+            "target_missed_ms": (max(0, result["latency_ms"] - target)
+                                 if result["latency_ms"] is not None and isinstance(target, int) else None)}
     return result

@@ -47,6 +47,9 @@ S2_COOLDOWN = "s2_cooldown"
 # event marks nothing: its records count as never sent, the conservative side (scored on their titles).
 SENT_EVENT, ANSWERED_EVENT = "send_request_headers.complete", "receive_response_headers.complete"
 on_send: ContextVar[Callable[[str], None] | None] = ContextVar("on_send", default=None)
+# Set by a caller that must know when its request has passed every wait (a pacer, a start gate, the stop check) and is
+# handed to the HTTP client; called once per attempt at that moment. Unset, nothing is called.
+on_handed: ContextVar[Callable[[], None] | None] = ContextVar("on_handed", default=None)
 
 
 def begin_request(location: str) -> Any:
@@ -279,6 +282,8 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                 # Stored before the client has it: a stop or a crash from here on leaves it "not known whether sent".
                 # A stop during a wait before this point (a pacer, the start gate) sent nothing and leaves no row.
                 begun = begin_request(location)
+                if (handed := on_handed.get()) is not None:
+                    handed()  # past every wait: the request is with the client now
                 traced = {}
                 if (mark := on_send.get()) is not None:
                     method, host, ours = (b"POST" if json_body is not None else b"GET"), (parts.hostname or ""), False

@@ -291,7 +291,8 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
                              checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None,
                              prefix: str = "", crossref_in_flight: int = 1, s2_waits: int | None = None,
                              s2_batch: int = lookup.S2_LOOKUP_BATCH, s2_cooldown_skip: bool = False,
-                             record_sent: bool = False, stop: Callable[[], bool] | None = None) -> None:
+                             record_sent: bool = False, stop: Callable[[], bool] | None = None,
+                             stop_inside: bool = False) -> None:
     """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on.
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
@@ -308,7 +309,9 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     headers are written to an open connection, and takes them off `out` when its response headers or its stored answer
     come back, so a round cut short can tell a request still out from one never sent or already answered.
     `stop` (the deeper screening: the read cutoff) is asked at each checkpoint; once it holds, no further request is
-    sent and the round returns.
+    sent and the round returns. With `stop_inside` (the top N's lookups under the evidence minimum) it, and a pause, is
+    also asked before each request inside a step and while a request is out, which is then cancelled; the step is
+    closed `lookup_time_ceiling` and its records not yet answered stay unasked.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     # How many 429s one batch waits out is this research's effort. `quick` waits for none: the refused batch
@@ -322,13 +325,32 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     # No plan step starts after the cutoff either; a round without `stop` checks as before, at each request only.
     if stop is not None and halted():
         return
+    halt = halted if stop is not None and stop_inside else None
+    try:
+        await _ask_steps(store, http, settings, run, scope, words, checkpoint, halted, limit, only=only, prefix=prefix,
+                         crossref_in_flight=crossref_in_flight, s2_waits=s2_waits, s2_batch=s2_batch,
+                         s2_cooldown_skip=s2_cooldown_skip, record_sent=record_sent, stop=stop, waits=waits,
+                         halt=halt)
+    except _Stopped:
+        return  # the step it stopped in is closed; no further request is sent
+
+
+async def _ask_steps(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
+                     scope: dict[str, Any], words: tuple[str, ...], checkpoint: Callable[[], None],
+                     halted: Callable[[], bool], limit: int, *, only: set[str] | None, prefix: str,
+                     crossref_in_flight: int, s2_waits: int | None, s2_batch: int, s2_cooldown_skip: bool,
+                     record_sent: bool, stop: Callable[[], bool] | None, waits: int,
+                     halt: Callable[[], bool] | None) -> None:
+    """The three sources' steps in order (`ask_second_sources`); `halt` is passed into each step."""
+    run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     plan = _code_step(store, run_id, f"{prefix}lookup_plan:semantic_scholar", "code:lookup_plan",
                       lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only, size=s2_batch))
     for number, batch in enumerate(plan["batches"]):
         if halted():
             return
         await _semantic_scholar_step(store, http, settings, run, number, batch,
-                                     waits if s2_waits is None else s2_waits, prefix, s2_cooldown_skip, record_sent)
+                                     waits if s2_waits is None else s2_waits, prefix, s2_cooldown_skip, record_sent,
+                                     halt=halt)
     if stop is not None and halted():
         return
     plan_cr = _code_step(store, run_id, f"{prefix}lookup_plan:crossref", "code:lookup_plan",
@@ -336,7 +358,8 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     for number, chunk in enumerate(plan_cr["chunks"]):
         if halted():
             return
-        await _crossref_step(store, http, settings, run, number, chunk, prefix, crossref_in_flight, record_sent)
+        await _crossref_step(store, http, settings, run, number, chunk, prefix, crossref_in_flight, record_sent,
+                             halt=halt)
     if halted():
         return
     spent = len(plan["batches"]) + sum(len(chunk) for chunk in plan_cr["chunks"])
@@ -344,8 +367,45 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     for number, chunk in enumerate(plan_sc["chunks"]):
         if halted():
             return
-        await _scopus_step(store, http, settings, run, number, chunk, waits, prefix, record_sent)
+        await _scopus_step(store, http, settings, run, number, chunk, waits, prefix, record_sent, halt=halt)
     checkpoint()
+
+
+class _Stopped(Exception):
+    """A lookup round stopped inside a step by its `halt`."""
+
+
+# Seconds a cancelled lookup request is waited for before it is left behind.
+_CANCEL_GRACE_SECONDS = 3.0
+
+
+async def _send(halt: Callable[[], bool] | None, call: Callable[[], Any]) -> Any:
+    """Send one lookup request. With `halt`, it is asked before the request is sent and every quarter second while it
+    is out; once it holds the request is cancelled and `_Stopped` raised. A pause raises from `halt` itself."""
+    if halt is None:
+        return await call()
+    if halt():
+        raise _Stopped
+    task = asyncio.ensure_future(call())
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=0.25)
+            if done:
+                return task.result()
+            if halt():
+                raise _Stopped
+    finally:
+        if not task.done():
+            task.cancel()
+            done, _ = await asyncio.wait({task}, timeout=_CANCEL_GRACE_SECONDS)
+            if not done:
+                task.add_done_callback(lambda t: t.cancelled() or t.exception())
+
+
+def _close_stopped(store: Store, step: dict[str, Any]) -> None:
+    """Close a step its round stopped inside, keeping what it stored; its unanswered records stay unasked."""
+    store.finish_step(step["id"], "failed", output=store.step_output(step["id"]), error_code="lookup_time_ceiling",
+                      error={"error": "the read stage's deadline passed before this step's requests were all sent"})
 
 
 def _code_step(store: Store, run_id: str, key: str, kind: str, build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
@@ -361,7 +421,8 @@ def _code_step(store: Store, run_id: str, key: str, kind: str, build: Callable[[
 
 async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                                  number: int, batch: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES,
-                                 prefix: str = "", cooldown_skip: bool = False, record_sent: bool = False) -> None:
+                                 prefix: str = "", cooldown_skip: bool = False, record_sent: bool = False,
+                                 halt: Callable[[], bool] | None = None) -> None:
     """One batch request. The whole batch shares one request, so one failure leaves every record in it `failed`.
 
     `waits` is how many 429s this effort waits out; it is written on the step, so a skipped wait is on the
@@ -379,13 +440,20 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
         return
     connector = CONNECTORS["semantic_scholar"]
     reserved = 1 + waits
+    if halt is not None and halt():
+        _close_stopped(store, step)
+        raise _Stopped
     store.add_usage(run["id"], "lookup_requests", reserved)
     api_key = connector.api_key()
     token = common.s2_skip_in_cooldown.set(cooldown_skip)
     try:
         with _marking(store, step["id"], [row["source_version_id"] for row in asking], record_sent):
-            dispatched = await facade.dispatch_lookup("semantic_scholar", "doi_lookup", http,
-                tuple(row["doi"] for row in asking), api_key, settings.contact_email, waits)
+            dispatched = await _send(halt, lambda: facade.dispatch_lookup(
+                "semantic_scholar", "doi_lookup", http, tuple(row["doi"] for row in asking), api_key,
+                settings.contact_email, waits))
+    except _Stopped:
+        _close_stopped(store, step)
+        raise
     finally:
         common.s2_skip_in_cooldown.reset(token)
     settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
@@ -408,7 +476,7 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
 
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                          number: int, chunk: list[dict[str, Any]], prefix: str = "", in_flight: int = 1,
-                         record_sent: bool = False) -> None:
+                         record_sent: bool = False, halt: Callable[[], bool] | None = None) -> None:
     """One chunk of single-record requests, `in_flight` of them out at once (1 sends them one after another).
     Each answer is written as soon as it comes back, before the request that waits for its place is sent."""
     step = store.step(run["id"], f"{prefix}record_lookup:crossref:{number}", "provider_lookup:crossref")
@@ -421,12 +489,14 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
         nonlocal asked
         if answered(store, row["source_version_id"], "crossref"):
             return
+        if halt is not None and halt():
+            raise _Stopped  # no request is sent once the round has stopped
         asked += 1
         reserved = 1 + MAX_RATE_LIMIT_RETRIES
         store.add_usage(run["id"], "lookup_requests", reserved)
         with _marking(store, step["id"], [row["source_version_id"]], record_sent):
-            dispatched = await facade.dispatch_lookup("crossref", "doi_lookup", http, (row["doi"],),
-                                                       None, settings.contact_email)
+            dispatched = await _send(halt, lambda: facade.dispatch_lookup("crossref", "doi_lookup", http, (row["doi"],),
+                                                                          None, settings.contact_email))
         settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
         answer, outcome = dispatched.answers[row["doi"]], dispatched.outcome
         payload_ref = None
@@ -437,23 +507,27 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
         added.append(store_answer(store, row["source_version_id"], "crossref", answer, step["id"], payload_ref))
         _answered(store, step["id"], [row["source_version_id"]], record_sent)
 
-    if in_flight <= 1:
-        for row in chunk:
-            await ask(row)
-    else:
-        gate = asyncio.Semaphore(in_flight)
-
-        async def gated(row: dict[str, Any]) -> None:
-            async with gate:
+    try:
+        if in_flight <= 1:
+            for row in chunk:
                 await ask(row)
-        tasks = [asyncio.ensure_future(gated(row)) for row in chunk]
-        try:
-            await asyncio.gather(*tasks)
-        finally:
-            # A stop or a time ceiling cancels the requests still out; none of them is left running unread.
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            gate = asyncio.Semaphore(in_flight)
+
+            async def gated(row: dict[str, Any]) -> None:
+                async with gate:
+                    await ask(row)
+            tasks = [asyncio.ensure_future(gated(row)) for row in chunk]
+            try:
+                await asyncio.gather(*tasks)
+            finally:
+                # A stop or a time ceiling cancels the requests still out; none of them is left running unread.
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+    except _Stopped:
+        _close_stopped(store, step)
+        raise
     store.finish_step(step["id"], "succeeded", output=transport_output(store, step, _counts(added, asked=asked)))
 
 
@@ -498,7 +572,8 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
 
 async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                        number: int, chunk: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES,
-                       prefix: str = "", record_sent: bool = False) -> None:
+                       prefix: str = "", record_sent: bool = False,
+                       halt: Callable[[], bool] | None = None) -> None:
     """One planned chunk: one OR-query request for its safe DOIs and one single request per unsafe DOI.
 
     Each request's answers are written before the next request is sent; usage is reserved per request.
@@ -517,13 +592,20 @@ async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings
                 for start in range(0, len(safe), lookup.SCOPUS_LOOKUP_BATCH)]
     requests += [[row] for row in rows if not lookup.scopus_doi_is_safe(row["doi"])]
     for group in requests:
+        if halt is not None and halt():
+            _close_stopped(store, step)
+            raise _Stopped  # no request is sent once the round has stopped
         asked += len(group)
         reserved = 1 + waits
         store.add_usage(run["id"], "lookup_requests", reserved)
         dois = tuple(dict.fromkeys(row["doi"] for row in group))
         with _marking(store, step["id"], [row["source_version_id"] for row in group], record_sent):
-            dispatched = await facade.dispatch_lookup("scopus", "doi_lookup", http, dois,
-                                                       api_key, settings.contact_email, waits)
+            try:
+                dispatched = await _send(halt, lambda: facade.dispatch_lookup(
+                    "scopus", "doi_lookup", http, dois, api_key, settings.contact_email, waits))
+            except _Stopped:
+                _close_stopped(store, step)
+                raise
         settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
         outcome = dispatched.outcome
         payload_ref = None

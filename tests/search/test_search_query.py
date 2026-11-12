@@ -23,7 +23,8 @@ from deixis.domain.skill import RUNTIME_FILES
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.search import search_query
-from fakes import FakeAdapter
+from deixis.workflow.search import search as fast_search
+from fakes import FakeAdapter, valid_response
 from windows_env import WAIT_FACTOR
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
@@ -100,6 +101,39 @@ def test_a_term_that_finds_nothing_with_the_other_block_brings_its_backup_and_co
     assert checked["warnings"] == [{"phrase": "integer programming", "block": "task",
                                     "warning": "no_records_with_other_block"}]
     assert checked["searchable"] and checked["gate_count"] == 50
+
+
+def test_under_the_forms_rule_a_term_is_counted_as_before_and_only_the_whole_query_carries_the_forms():
+    # A term keeps or loses its place on the same counts as before the rule; the forms are added only when the query
+    # is compiled, and the whole-query count is that compiled text. The forms are read from the terms' own spelling,
+    # so the acronym in "graph BERT" gets none although the stored phrase is lower-cased.
+    model = answer(["Mixture of Experts", "graph BERT"], ["differentiable", "time series"])
+    setting, task = '("mixture of experts" OR "graph bert")', '(differentiable OR "time series")'
+    before = ['"mixture of experts"', '"graph bert"', "differentiable", '"time series"',
+              f'"mixture of experts" AND {task}', f'"graph bert" AND {task}', f"differentiable AND {setting}",
+              f'"time series" AND {setting}']
+    count, asked = counter({})
+    checked = asyncio.run(search_query.check(model, count, phrase_forms=True))
+    sent = '("mixture of experts" OR "mixtures of experts" OR "graph bert") AND (differentiable OR "time series")'
+    assert asked == before + [sent]
+    built = search_query.vocabulary({"language": "en"}, checked, {"origin": "model"}, question_words=False)
+    queries = search_query.compile_queries(built, ["openalex"], 1)
+    assert [query["query_text"] for query in queries] == [sent] and "berts" not in sent
+    built = search_query.with_compiled(built, queries)
+    forms = built["phrase_forms"]
+    assert (forms["rule"], forms["counts"]) == (search_query.query_compiler.PHRASE_FORMS_RULE, "without_variants")
+    # Each phrase says what the compiled query did with its form.
+    assert [(row["phrase"], row["variant"], row["searched"], row["left_out"]) for row in forms["terms"]] == [
+        ("mixture of experts", "mixtures of experts", True, None), ("graph bert", None, False, "no_variant"),
+        ("time series", None, False, "no_variant")]
+    # A plan counted before the rule: the same term counts, its own whole-query count, no forms anywhere.
+    old_count, old_asked = counter({})
+    old = asyncio.run(search_query.check(model, old_count))
+    assert old_asked == before + [f"{setting} AND {task}"]
+    old_built = search_query.vocabulary({"language": "en"}, old, {"origin": "model"}, question_words=False)
+    assert "phrase_forms" not in old and "phrase_forms" not in old_built
+    (old_query,) = search_query.compile_queries(old_built, ["openalex"], 1)
+    assert old_query["query_text"] == f"{setting} AND {task}" and "phrase_forms" not in old_query
 
 
 # ---- the proposal, its queries and its correction ------------------------------------------------------------
@@ -320,10 +354,11 @@ def test_a_failed_model_stops_the_run_and_no_query_is_searched_in_its_place(tmp_
     assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed")
     assert run["error"]["retries_left"] == 1
     # No query the model would have written was searched. The question's own semantic request went out before the
-    # model was asked at all (P2), so its step is the one provider search this paused run holds.
-    assert not openalex.searches and openalex.semantic == [QUESTION]
-    assert [s["operation_key"] for s in run["steps"] if s["kind"].startswith("provider_search")] \
-        == ["search:fast:semantic"]
+    # model was asked at all (P2), so its step is the one provider search of the plan this paused run holds; the short
+    # phrase searches beside the plan follow it and wait for no plan.
+    assert not openalex.searches and openalex.semantic[0] == QUESTION and openalex.semantic.count(QUESTION) == 1
+    assert [s["operation_key"] for s in run["steps"] if s["kind"].startswith("provider_search")
+            and not s["operation_key"].startswith(fast_search.PHRASE_KEY)] == ["search:fast:semantic"]
     # Resuming asks the model once more; a second failure leaves no try.
     assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
     _, run = wait(client, rid, run_id, ("paused", "completed", "failed"))
@@ -334,7 +369,10 @@ def test_a_failed_model_stops_the_run_and_no_query_is_searched_in_its_place(tmp_
     # No try left and no way around the model: the run stays paused, and the way on is a new scope revision. Code
     # compiles no query of its own, so there is nothing to search in the model's place.
     assert client.post(f"/api/runs/{run_id}/resume").status_code == 409
-    assert not openalex.searches and openalex.semantic == [QUESTION]
+    # The question's own request went once, and no short phrase was sent twice; how many went out before each stop
+    # depends on when the planning step failed.
+    assert not openalex.searches and openalex.semantic.count(QUESTION) == 1
+    assert len(set(openalex.semantic)) == len(openalex.semantic) <= 7
     assert len(calls(adapter)) == 2
 
 
@@ -347,6 +385,126 @@ def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_pa
     assert not calls(adapter)
     assert step_output(client, run_id, "search_query")["status"] == "skipped"
     assert "search_query" not in protocol_body(client, rid)
+
+
+def phrase_plan(si):
+    """The fake's plan with its setting term replaced by the phrase "rail freight", read from the record's title."""
+    body = json.loads(valid_response(si))
+    if si["task_type"] == "search_plan":
+        record = si["sources"][0]
+        start = record["title"].index("rail freight")
+        body["setting"] = [{"term": "rail freight", "kind": "topic", "why": "SYNTHETIC setting term",
+                            "evidence": {"record_id": record["source_id"], "field": "title",
+                                         "span": [start, start + len("rail freight")],
+                                         "relation": "SYNTHETIC relation to the question"}}]
+    return json.dumps(body)
+
+
+def test_a_run_frozen_before_the_forms_rule_counts_and_compiles_its_plan_the_old_way_on_resume(tmp_path, monkeypatch):
+    # The run's first plan call fails and it pauses before any count is read; it is resumed under this version.
+    # Its frozen policy names no forms rule, so the resumed plan is counted and compiled exactly as before. A run
+    # queued now, on the same question, searches the plural beside the phrase.
+    from deixis.domain import canonical
+    from deixis.workflow.run import fast_path
+    freeze, old = fast_path.freeze_budget, [True]
+
+    def frozen(*args, **kwargs):
+        policy = freeze(*args, **kwargs)
+        if old[0]:
+            policy = {k: v for k, v in policy.items() if k not in ("policy_hash", "phrase_forms_rule")}
+            policy["policy_hash"] = canonical.sha256_hex(policy)
+        return policy
+    monkeypatch.setattr(fast_path, "freeze_budget", frozen)
+    failed = []
+
+    def fail_once(si):
+        if si["task_type"] == "search_plan" and not failed:
+            failed.append(si)
+            return ModelStepResult("failed", error="SYNTHETIC down")
+        return None
+    openalex = OpenAlex()
+    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(phrase_plan, fail=fail_once))
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed")
+    assert not any("rail freight" == query.strip('"') for query in openalex.counts)  # the plan was not counted yet
+    assert "phrase_forms_rule" not in run["budget"]["fast_path"]
+    assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    stored = step_output(client, run_id, "search_query")
+    assert "phrase_forms" not in stored["vocabulary"] and stored["queries"][0]["query_text"] == '"rail freight" AND schedule'
+    assert not any("rail freights" in query for query in openalex.counts + openalex.searches)
+    old[0] = False
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert run["status"] == "completed", run
+    assert run["budget"]["fast_path"]["phrase_forms_rule"] == search_query.query_compiler.PHRASE_FORMS_RULE
+    stored = step_output(client, run_id, "search_query")
+    assert stored["queries"][0]["query_text"] == '("rail freight" OR "rail freights") AND schedule'
+    assert stored["vocabulary"]["phrase_forms"]["terms"] == [
+        {"phrase": "rail freight", "block": "setting", "variant": "rail freights", "searched": True, "left_out": None}]
+
+
+def test_a_source_routing_recompile_of_a_plan_counted_before_the_rule_gives_its_old_text():
+    from deixis.workflow.run.flow import ResearchFlow
+    model = answer(["mixture of experts"], ["differentiable"])
+    count, _ = counter({})
+    checked = asyncio.run(search_query.check(model, count))
+    vocabulary = search_query.vocabulary({"language": "en"}, checked, {"origin": "model"}, question_words=False)
+    budget = {"max_provider_requests": 4, "fast_path": {"boolean_plans": 1}}
+    built, compiled = ResearchFlow._compiled(None, vocabulary, ["openalex"], budget)
+    assert [query["query_text"] for query in compiled] == ['"mixture of experts" AND differentiable']
+    assert "phrase_forms" not in built and "phrase_forms" not in compiled[0]
+
+
+def test_a_newer_query_under_the_other_forms_rule_does_not_hide_an_older_one_this_run_can_reuse(tmp_path, monkeypatch):
+    # A wrote its query before the forms rule, B after it; C, frozen before the rule, reuses A's query and asks the
+    # model nothing, although B's is the newest of the scope revision.
+    from deixis.domain import canonical
+    from deixis.workflow.run import fast_path
+    freeze, old = fast_path.freeze_budget, [True]
+
+    def frozen(*args, **kwargs):
+        policy = freeze(*args, **kwargs)
+        if old[0]:
+            policy = {k: v for k, v in policy.items() if k not in ("policy_hash", "phrase_forms_rule")}
+            policy["policy_hash"] = canonical.sha256_hex(policy)
+        return policy
+    monkeypatch.setattr(fast_path, "freeze_budget", frozen)
+    adapter = FakeAdapter()
+    client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
+    rid, first = start(client)
+    assert wait(client, rid, first)[1]["status"] == "completed"
+    old[0] = False
+    second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+    assert wait(client, rid, second)[1]["status"] == "completed"
+    # B, under the rule, does not take A's query and writes its own.
+    assert "reused_from_run" not in step_output(client, second, "search_query") and len(calls(adapter)) == 2
+    assert "phrase_forms" in step_output(client, second, "search_query")["vocabulary"]
+    old[0] = True
+    third = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+    _, run = wait(client, rid, third)
+    assert run["status"] == "completed", run
+    stored = step_output(client, third, "search_query")
+    assert stored["reused_from_run"] == first and len(calls(adapter)) == 2
+    assert "phrase_forms" not in stored["vocabulary"]
+
+
+def test_under_the_forms_rule_the_routing_distribution_is_read_for_the_query_the_search_sends():
+    # The field distribution is asked for the OpenAlex text the compiler writes, forms included; a plan counted
+    # before the rule is asked for its old gate query.
+    from deixis.workflow.search import routing
+    model = answer(["mixture of experts"], ["load balancing"])
+    count, _ = counter({})
+    checked = asyncio.run(search_query.check(model, count, phrase_forms=True))
+    built = search_query.vocabulary({"language": "en"}, checked, {"origin": "model"}, question_words=False)
+    (sent,) = search_query.compile_queries(built, ["openalex"], 1)
+    assert routing.gate_query(built) == sent["query_text"] == (
+        '("mixture of experts" OR "mixtures of experts") AND "load balancing"')
+    old = asyncio.run(search_query.check(model, counter({})[0]))
+    old_built = search_query.vocabulary({"language": "en"}, old, {"origin": "model"}, question_words=False)
+    assert routing.gate_query(old_built) == '("mixture of experts") AND ("load balancing")'
 
 
 # ---- review of 2026-09-23 (gpt-6-sol high) -----------------------------------------------------------------------

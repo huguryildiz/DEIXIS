@@ -213,7 +213,8 @@ def test_the_questions_own_request_starts_before_the_first_planning_model_call(t
         rid, run_id = start(client, question)
         view, run = wait(client, rid, run_id)
     assert run["status"] == "completed", run
-    assert openalex.semantic == [question]  # the question as written, once, in either language
+    # The question as written, once, in either language, and first; the short phrase searches follow it.
+    assert openalex.semantic[0] == question and openalex.semantic.count(question) == 1
     store = store_at(tmp_path)
     steps = [dict(row) for row in store.conn.execute(
         "SELECT operation_key, started_at, protocol_hash FROM run_steps WHERE run_id = ? ORDER BY rowid", (run_id,))]
@@ -249,7 +250,7 @@ def test_a_question_in_another_language_with_key_terms_searches_and_ranks_withou
         rid, run_id = start(client, TURKISH, key_terms=KEY_TERMS)
         view, run = wait(client, rid, run_id)
     assert run["status"] == "completed", run
-    assert openalex.semantic == [TURKISH] and openalex.searches
+    assert openalex.semantic[0] == TURKISH and openalex.semantic.count(TURKISH) == 1 and openalex.searches
     assert [si["task_type"] for si in adapter.calls].count("question_translation") == 0
     store = store_at(tmp_path)
     assert store.english_question(rid, 1) is None
@@ -302,7 +303,7 @@ def test_a_planning_failure_keeps_its_own_error_when_the_early_request_also_fail
     # error is on its way out would name the wrong cause.
     openalex = CountingOpenAlex()
 
-    async def broken_request(flow, run, scope, seed_context=None, sent=None):
+    async def broken_request(flow, run, scope, seed_context=None, sent=None, handed=None):
         if sent is not None:
             sent.set()
         raise RuntimeError("SYNTHETIC early request failure")

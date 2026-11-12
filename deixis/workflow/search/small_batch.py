@@ -66,7 +66,9 @@ PRERANK_LOOKUP = {"version": 5, "max_records": PRERANK_RECORDS, "seconds": 8, "c
 # keeps a floor for the records only citation chaining found and for the records only a focused query found. The
 # floor sizes are frozen per run; nothing has measured them yet, so they are the pilot's own starting numbers.
 # A rule frozen without `preselect` (version 4 and earlier) takes the fused prefix, as it did.
-RERANK_RULE = {"version": 5, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route",
+# The factors are the shared ceiling; each depth freezes the smaller of them and its own `rerank_pool`, so Standard and
+# Detailed freeze 8 and Quick 16 (400 records for its 25), and a factor saved in Settings stays below what was frozen.
+RERANK_RULE = {"version": 5, "pool_factor": 16.0, "max_pool_factor": 16.0, "hold_without_abstract": "with_text_route",
                "hold_chained": False, "preselect": preselect.RULE, "rrf_k": preselect.K,
                "floors": {"chain_only": 5, "narrow_only": 5}}
 RERANK_RULE_V1 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
@@ -183,9 +185,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
         "read_limit": body["max_fulltext_reads"], "max_model_calls": body["max_model_calls"],
         "fetch_attempts": fulltext.FULLTEXT_WORK_ATTEMPTS,
         "prerank_lookup": dict(PRERANK_LOOKUP),
-        # This depth's own reranker window and run point (`fast_path.MODES`): Quick reads a small group after its
-        # list is frozen, Standard and Detailed read the widest window before it. A factor the person saved is kept
-        # under the depth's own, so a run never reads a wider window than its depth allows.
+        # This depth's own reranker window and run point (`fast_path.MODES`): every depth now reads its window before
+        # the list is frozen. A factor the person saved is kept under the depth's own, so a run never reads a wider
+        # window than its depth allows.
         "rerank": dict(RERANK_RULE) | {
             "pool_factor": min(RERANK_RULE["pool_factor"], mode.rerank_pool),
             "max_pool_factor": min(RERANK_RULE["max_pool_factor"], mode.rerank_pool),
@@ -201,7 +203,8 @@ def rerank_rule(run: dict[str, Any]) -> dict[str, Any]:
 
 def rerank_point(run: dict[str, Any]) -> str:
     """Where this run's reranker stands: `before_list`, the list waiting for it, or `after_list`, the list frozen
-    from the fused order first and the reranker reading a small group afterwards for the measurement (Quick). A
+    from the fused order first and the reranker reading a small group afterwards for the measurement (Quick runs
+    frozen before Quick's list waited for the reranker). A
     budget frozen before the depths had a point of their own waits, as it did."""
     return rerank_rule(run).get("point", "before_list")
 
@@ -216,7 +219,7 @@ def rerank_choice(store: Any, run: dict[str, Any]) -> rerankers.Choice | None:
     """The reranker turned on in Settings, with the window factor this run reads (rerank rule version 2).
 
     A factor the person saved is kept, never above what the run's rule allows; with none saved the rule's own factor
-    applies, so a budget frozen with version 1 keeps 4x and a newer one takes 8x."""
+    applies, so a budget frozen with version 1 keeps 4x and a newer one its depth's own frozen factor."""
     saved = store.setting(rerankers.SETTING)
     choice = rerankers.chosen(saved)
     if choice is None:
@@ -341,8 +344,8 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
         return fused, None
     told = {key: stored.get(key) for key in ("provider", "model", "status", "error_code")}
     if stored.get("point") == "after_list":
-        # The list was frozen before this reranker read anything (Quick): its scores are the measurement's record
-        # and never move a record, whatever the list is rebuilt from.
+        # The list was frozen before this reranker read anything (an older Quick run): its scores are kept as a
+        # record and never move one, whatever the list is rebuilt from.
         return fused, told | {"applied": False, "reason": "read_after_list", "fallback": "fused_order"}
     if stored.get("status") != "applied":
         return fused, told | {"applied": False, "reason": stored.get("error_code") or stored.get("status"),
@@ -518,8 +521,11 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
         # What the query lists themselves say, frozen here: the places every list gave the pool's records, and the
         # rule the window is chosen with. A run whose rule names no preselect freezes neither, so its list is the
         # one it always was, hash included.
-        manifest["query_lists"] = query_lists(store, run, in_pool, versions, heads)
-        manifest["preselect"] = {"rule": rule["preselect"], "k": rule["rrf_k"], "floors": dict(rule["floors"])}
+        # A run that froze the short phrase searches keys its lists by endpoint too; any other keeps the old key.
+        identity = preselect.ENDPOINT_IDENTITY if fast_path.phrase_search(run["budget"]) else None
+        manifest["query_lists"] = query_lists(store, run, in_pool, versions, heads, identity)
+        manifest["preselect"] = {"rule": rule["preselect"], "k": rule["rrf_k"], "floors": dict(rule["floors"]),
+                                 **({"list_identity": identity} if identity else {})}
     from deixis.workflow.search.fast_chain import manifest as chain_manifest
     manifest["fast_path"] = chain_manifest(store, run)
     manifest["cutoff"] = cutoff_record(store, run)
@@ -550,7 +556,7 @@ def cutoff_record(store: Any, run: dict[str, Any]) -> dict[str, Any]:
 
 
 def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versions: dict[str, Any],
-                heads: dict[str, str]) -> list[dict[str, Any]]:
+                heads: dict[str, str], identity: str | None = None) -> list[dict[str, Any]]:
     """The query lists of this question revision, as `preselect.lists` groups them, each with its sorting setting,
     whether that setting is a relevance order (only then does the list vote) and how deep it was read.
 
@@ -565,23 +571,31 @@ def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versio
     about the question's own terms. The roles are read from the search plan each of those runs
     froze, not only this run's: a query of an earlier run keeps the role it was written with, and a run whose
     protocol holds no plan marks none.
+
+    With `identity` each hit also names its request's endpoint, read from the plan its run froze by the step that sent
+    it (`search.sent_plan`); a request no frozen plan names has none.
     """
     from deixis.providers import registry
     from deixis.workflow.search import search as fast_search
 
     rows = [dict(row) for row in store.conn.execute(
-        "SELECT h.source_version_id, h.rank, sr.run_id, sr.provider, sr.query_text, sr.sort, sr.read_total"
+        "SELECT h.source_version_id, h.rank, sr.run_id, sr.provider, sr.query_text, sr.sort, sr.read_total,"
+        " s.operation_key"
         " FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
         " JOIN run_steps s ON s.id = sr.step_id"
         " WHERE h.research_id = ? AND h.scope_revision = ? AND s.kind LIKE 'provider_search:%'"
         " AND sr.run_id IN (SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery')",
         (run["research_id"], run["scope_revision"], run["research_id"], run["scope_revision"]))]
     focused: set[tuple[str, str]] = set()
+    endpoints: dict[tuple[str, str], str | None] = {}  # (run, step key) -> the endpoint that run's plan sent it to
     for run_id in sorted({row["run_id"] for row in rows}):
         try:
             plan = fast_search.stored_plan(store, {"id": run_id, "research_id": run["research_id"]})
         except (LookupError, KeyError, TypeError):
             continue
+        if identity:
+            body = fast_search.frozen_body(store, {"id": run_id, "research_id": run["research_id"]})
+            endpoints |= {(run_id, entry["key"]): entry.get("endpoint") for entry in fast_search.sent_plan(body)}
         for entry in plan.get("keywords") or []:
             query = entry.get("query") or {}
             if query.get("role") == "focused":
@@ -597,9 +611,12 @@ def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versio
         if head in in_pool:
             hits.append({"head": head, "provider": row["provider"], "query_text": row["query_text"],
                          "sort": row["sort"], "relevance": registry.relevance_ordered(row["sort"]),
-                         "read_total": row["read_total"], "rank": row["rank"]})
+                         "read_total": row["read_total"], "rank": row["rank"],
+                         # Every page of a query is stored under its first page's key with a page suffix.
+                         **({"endpoint": endpoints.get((row["run_id"], row["operation_key"].split(":page:")[0]))}
+                            if identity else {})})
     return [entry | {"focused": (entry["provider"], entry["query_text"]) in focused}
-            for entry in preselect.lists(hits)]
+            for entry in preselect.lists(hits, identity)]
 
 
 def window_for(manifest: dict[str, Any], automatic: list[str], size: int) -> dict[str, Any]:
@@ -649,6 +666,9 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
             output = step["output"] or {}
             manifest["reranker"] = {key: output.get(key) for key in (
                 "status", "provider", "model", "candidate_ids", "scores", "error_code")}
+            if output.get("point") == "after_list":
+                # A reranker that read after the list froze never orders it, however the list is built again.
+                manifest["reranker"]["point"] = "after_list"
             if output.get("kept_in_place"):  # a step without it (an older rule, or none kept) adds nothing
                 manifest["reranker"]["kept_in_place"] = output["kept_in_place"]
             if output.get("kept_reasons"):  # why each was kept; a step under rerank rule version 1 has none
@@ -758,7 +778,10 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     A reranker that fails, answers wrongly, runs out of time (its own limit, or what is left of the ranking stage)
     never hands over to another reranker: the step is `failed`, says why, and the list keeps the
     fused order. A pause or a cancellation stops the request (the built-in runner is killed) and the run stops. A rerank
-    that ended, either way, is not asked again on resume."""
+    that ended, either way, is not asked again on resume.
+    A run whose policy froze a reranker allowance (`fast_path.RERANK_ALLOWANCE_RULE`) gives the reranker at least that
+    allowance, even past the ranking stage's or the handover's cutoff; the step's `allowance` says which cutoff it
+    ran past and for how long, and that time is given back to the read stage (`fast_path.rerank_carry_ms`)."""
     store = flow.store
     step = store.existing_step(run["id"], RERANK_KEY)
     if step is not None and step["status"] in ("succeeded", "failed"):
@@ -833,14 +856,43 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
                  "to": "this_computer" if choice.provider == "builtin" else choice.provider}}
     seconds = float(choice.timeout_seconds)
     deadline = fast_path.stage_deadline(store, run, "ranking")
+    allowance = fast_path.rerank_allowance_ms(run["budget"])
+    # What an earlier attempt of this step, cut by a pause or a crash, already used past the cutoff.
+    spent = int((((step.get("output") or {}).get("allowance") or {}).get("past_cutoff_ms")) or 0) if allowance else 0
+    beyond = None  # the cutoff the allowance reaches past, when it does
     if deadline is not None:
-        seconds = min(seconds, (deadline - store.clock.now()).total_seconds())
+        left = (deadline - store.clock.now()).total_seconds()
+        if allowance is None:
+            # A run frozen before the allowance has only what is left of the ranking stage.
+            seconds = min(seconds, left)
+        else:
+            # The reranker keeps what is left of its own allowance however little of the stage, or of the
+            # handover, is left; an earlier attempt's use is taken off it.
+            remaining = max(0, allowance - spent) / 1000
+            seconds = min(seconds, max(left, remaining))
+            if remaining > left:
+                # Under the evidence minimum the handover cuts no stage, so only the stage's own cutoff is reached past.
+                handover = (fast_path.handover_deadline(store, run)
+                            if fast_path.evidence_minimum(store, run) is None else None)
+                beyond = {"cutoff": "handover" if handover is not None and deadline >= handover else "stage",
+                          "at": deadline, "left_ms": int(left * 1000)}
+
+    def used(now: Any) -> dict[str, Any]:
+        """The allowance record: what this attempt and every earlier one ran past the cutoff."""
+        # No moment (the attempt never asked the reranker): nothing more is used than the earlier attempts used.
+        past = max(0, int((now - max(beyond["at"], started)).total_seconds() * 1000)) if beyond and now else 0
+        return {"allowance": {"rule": fast_path.RERANK_ALLOWANCE_RULE, "ms": allowance,
+                              "past_cutoff": beyond["cutoff"] if beyond else None,
+                              "stage_left_ms": beyond["left_ms"] if beyond else None,
+                              "earlier_ms": spent, "past_cutoff_ms": spent + past}}
     if seconds <= 0:
         store.finish_step(step["id"], "failed", output=output | {"status": "failed", "error_code": "no_time_left",
-                                                                 "fallback": "fused_order"},
+                                                                 "fallback": "fused_order"}
+                          | ({"allowance": used(None)["allowance"]} if spent else {}),
                           error_code="no_time_left", error={"error": "the ranking stage had no time left"})
         return
     checkpoint = lambda: flow._checkpoint(run["id"], run["scope_revision"])  # noqa: E731
+    started = store.clock.now()  # when the reranker was asked, on the run's clock
     task = asyncio.ensure_future(rerankers.rerank(choice, flow.deps.http, getattr(flow.deps, "local_embedder", None),
                                                   query, texts, checkpoint))
     loop = asyncio.get_running_loop()
@@ -851,17 +903,25 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
             if left <= 0:
                 break
             await asyncio.wait({task}, timeout=min(1.0, left))
+            if beyond is not None:
+                # Kept on the step as it goes, so a pause or a crash does not hand the time back on resume.
+                store.set_step_output(step["id"], output | used(store.clock.now()))
             if not task.done() and flow._stop_requested(run["id"], run["scope_revision"]):
                 break
     finally:
         if not task.done():
             task.cancel()  # the built-in runner is killed, so no reply is left unread
             await asyncio.gather(task, return_exceptions=True)
+        if beyond is not None:
+            store.set_step_output(step["id"], output | used(store.clock.now()))
     if task.cancelled():
         checkpoint()  # a pause or a cancellation: the run stops here and the step is asked again on resume
         error = rerankers.RerankError("reranker_timeout", f"no answer within {seconds:g} s")
     else:
         error = task.exception()
+    if beyond is not None or spent:
+        # How long the reranker ran past the cutoff over all its attempts; the read stage is given that time back.
+        output = output | used(store.clock.now())
     if error is None:
         result = task.result()
         store.finish_step(step["id"], "succeeded", output=output | {
@@ -1039,7 +1099,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             await rerank_list(flow, run, scope, vocabulary)
     listing = freeze_list(flow, run, scope, vocabulary)
     if point == "after_list":
-        # Quick: the list is frozen and does not change, so the reranker reads its small group now, for the
+        # A Quick run frozen before its list waited for the reranker: the list is frozen and does not change, so the
+        # reranker reads its small group now, for the
         # measurement alone. The missing abstracts are not asked for first: that lookup spends the stage's own time
         # to improve an order this depth does not use. The ranking stage's deadline still holds, so a stage with no
         # time left leaves the step saying so.
@@ -1061,7 +1122,10 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             flow._pause(run["id"], "benchmark_list_barrier")
     flow._enter_clock_stage(run, "read")
     only = {svid for item in listing["items"][:run["budget"]["fast_path"]["N"]] for svid in item["versions"]}
-    await flow._second_sources(run, scope, vocabulary, only=only)
+    # Under the evidence minimum the read stage's own deadline ends these lookups; a run frozen before it asks as it did.
+    stop = ((lambda: fast_path.past_deadline(flow.store, run, "read"))
+            if fast_path.evidence_minimum(flow.store, run) is not None else None)
+    await flow._second_sources(run, scope, vocabulary, only=only, stop=stop, stop_inside=stop is not None)
     from deixis.workflow.search.fast_chain import read_versions
     snapshot = read_versions(flow, run, listing)
     await fast_read.execute(flow, run, scope, vocabulary, listing, read_versions=snapshot["versions"])

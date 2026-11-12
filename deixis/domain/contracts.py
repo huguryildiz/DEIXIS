@@ -39,6 +39,7 @@ SCHEMA_FILES = {
     "QuestionTranslation": "question-translation.schema.json",
     "VocabularyLabels": "vocabulary-labels.schema.json",
     "CriterionProposal": "criterion-proposal.schema.json",
+    "SearchPhrases": "search-phrases.schema.json",
     "SearchQuery": "search-query.schema.json",
     "SearchPlan": "search-plan.schema.json",
     "AbstractScreening": "abstract-screening.schema.json",
@@ -68,6 +69,7 @@ SCHEMA_VERSIONS = {
     "QuestionTranslation": "deixis.question_translation.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v3",
+    "SearchPhrases": "deixis.search_phrases.v1",
     "SearchQuery": "deixis.search_query.v2",
     "SearchPlan": "deixis.search_plan.v2",
     "AbstractScreening": "deixis.abstract_screening.v1",
@@ -97,6 +99,7 @@ TASK_OUTPUTS = {
     "question_translation": ("QuestionTranslation",),
     "vocabulary_labels": ("VocabularyLabels",),
     "criterion_proposal": ("CriterionProposal",),
+    "search_phrases": ("SearchPhrases",),
     "search_query": ("SearchQuery",),
     "search_plan": ("SearchPlan",),
     "abstract_screening": ("AbstractScreening",),
@@ -119,6 +122,14 @@ VOCABULARY_TASKS = ("vocabulary_labels",)
 SCREENING_TARGET_TASKS = ("abstract_screening",)
 # The full-text reading step is given one work, the criterion parts, and which of the two runs this call is.
 ADJUDICATION_TARGET_TASKS = ("fulltext_adjudication",)
+# The short phrase step is given how many phrases to write and the English sentence it may read beside the question.
+PHRASE_TARGET_TASKS = ("search_phrases",)
+# What one short phrase may hold: three to seven words, and nothing a provider reads as an operator (the words AND, OR
+# and NOT in capitals, quotation marks, wildcards). At most two phrases may be in a language other than English, and
+# only for a question that is not in English itself.
+SEARCH_PHRASE_WORDS = (3, 7)
+SEARCH_PHRASE_OPERATOR = re.compile(r'["“”*?]|\b(?:AND|OR|NOT)\b')
+SEARCH_PHRASE_OTHER_LANGUAGE = 2
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_review")
 REVIEW_TASKS = ("owner_review",)
@@ -567,6 +578,8 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             issues.append(Issue("duplicate_vocabulary_phrase", "/vocabulary_target/phrases", "phrase must be unique"))
         if sorted(set(allow.get("phrases", []))) != sorted(set(phrases)):
             issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
+    if ("phrase_target" in step_input) != (step_input["task_type"] in PHRASE_TARGET_TASKS):
+        issues.append(Issue("phrase_target_mismatch", "/phrase_target", step_input["task_type"]))
     if ("conversation" in step_input) != (step_input["task_type"] == "followup_answer"):
         issues.append(Issue("conversation_mismatch", "/conversation", step_input["task_type"]))
     if ("followup_search_context" in step_input) != (step_input["task_type"] == "followup_search_query"):
@@ -1146,6 +1159,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_vocabulary_labels(allow, result, report)
     elif output_type == "CriterionProposal":
         _check_criterion_proposal(step_input, result, report)
+    elif output_type == "SearchPhrases":
+        _check_search_phrases(step_input, result, report)
     elif output_type == "SearchQuery":
         _check_search_query(result, report)
     elif output_type == "SearchPlan":
@@ -2384,6 +2399,44 @@ def _check_criterion_proposal(step_input: dict[str, Any], draft: dict[str, Any],
                 continue
             if len(normalized.split()) > MAX_PHRASE_WORDS:
                 report.issues.append(Issue("criterion_phrase_too_long", f"/parts/{index}/phrases/{position}", phrase))
+
+
+def _check_search_phrases(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+    """The limits every short phrase must hold, checked by code; a phrase that breaks one refuses the whole answer.
+
+    The step must write exactly the number of phrases its target names. Words are counted by splitting on white space.
+    A phrase repeats an earlier one when the two are the same text after lower-casing and collapsing spaces; the later
+    one is refused. A phrase holding a letter outside ASCII counts as not English: none is allowed for an English
+    question and at most two for a question in another language.
+    """
+    phrases = draft["phrases"]
+    count = step_input["phrase_target"]["count"]
+    if len(phrases) != count:
+        report.issues.append(Issue("search_phrase_count", "/phrases", f"expected {count}, got {len(phrases)}"))
+    question = step_input["question"]
+    # The same language rule the run reads its question by.
+    allowed = (0 if english_question.is_english(question["text"], question.get("language_hint"))
+               else SEARCH_PHRASE_OTHER_LANGUAGE)
+    least, most = SEARCH_PHRASE_WORDS
+    seen: set[str] = set()
+    other = 0
+    for index, phrase in enumerate(phrases):
+        path, text = f"/phrases/{index}/text", phrase["text"]
+        # Words split on white space, as the limit is stated.
+        if not least <= len(text.split()) <= most:
+            report.issues.append(Issue("search_phrase_word_count", path, text))
+        if SEARCH_PHRASE_OPERATOR.search(text):
+            report.issues.append(Issue("search_phrase_operator", path, text))
+        # The same text after lower-casing and collapsing spaces is one phrase: the later one is refused.
+        key = " ".join(text.lower().split())
+        if key in seen:
+            report.issues.append(Issue("duplicate_search_phrase", path, text))
+        seen.add(key)
+        # A letter outside ASCII marks a phrase as not English.
+        if any(char.isalpha() and not char.isascii() for char in text):
+            other += 1
+            if other > allowed:
+                report.issues.append(Issue("search_phrase_language", path, text))
 
 
 def _check_question_elements(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:

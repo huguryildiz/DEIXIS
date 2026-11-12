@@ -4160,6 +4160,201 @@
      }
     ]
    }
+  },
+  {
+   "name": "search_phrases_valid",
+   "step_input": "E_search_phrases",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.search_phrases.v1",
+    "step_input_id": "sti_SYNTHPHR001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "phrases": [
+     {
+      "text": "underwater acoustic sensor network routing",
+      "kind": "subject"
+     },
+     {
+      "text": "depth based routing protocol",
+      "kind": "method"
+     },
+     {
+      "text": "reducing energy consumption of routing",
+      "kind": "task"
+     },
+     {
+      "text": "energy efficient underwater routing",
+      "kind": "synonym"
+     },
+     {
+      "text": "energy aware routing for underwater networks",
+      "kind": "title_wording"
+     },
+     {
+      "text": "acoustic node residual energy",
+      "kind": "detail"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_phrases_wrong_count",
+   "step_input": "E_search_phrases",
+   "expect_ok": false,
+   "expect_codes": [
+    "search_phrase_count"
+   ],
+   "output": {
+    "schema_version": "deixis.search_phrases.v1",
+    "step_input_id": "sti_SYNTHPHR001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "phrases": [
+     {
+      "text": "underwater acoustic sensor network routing",
+      "kind": "subject"
+     },
+     {
+      "text": "depth based routing protocol",
+      "kind": "method"
+     },
+     {
+      "text": "reducing energy consumption of routing",
+      "kind": "task"
+     },
+     {
+      "text": "energy efficient underwater routing",
+      "kind": "synonym"
+     },
+     {
+      "text": "energy aware routing for underwater networks",
+      "kind": "title_wording"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_phrases_limits",
+   "step_input": "E_search_phrases",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_search_phrase",
+    "search_phrase_language",
+    "search_phrase_operator",
+    "search_phrase_word_count"
+   ],
+   "output": {
+    "schema_version": "deixis.search_phrases.v1",
+    "step_input_id": "sti_SYNTHPHR001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "phrases": [
+     {
+      "text": "underwater routing",
+      "kind": "subject"
+     },
+     {
+      "text": "depth based routing AND energy",
+      "kind": "method"
+     },
+     {
+      "text": "\"energy efficient\" underwater routing",
+      "kind": "synonym"
+     },
+     {
+      "text": "routing protocol energy wildcard*",
+      "kind": "detail"
+     },
+     {
+      "text": "Depth  Based Routing AND energy",
+      "kind": "task"
+     },
+     {
+      "text": "enerji verimli sualtı yönlendirme",
+      "kind": "title_wording"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_phrases_other_language_two",
+   "step_input": "E_search_phrases_other_language",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.search_phrases.v1",
+    "step_input_id": "sti_SYNTHPHR002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "phrases": [
+     {
+      "text": "underwater acoustic sensor network routing",
+      "kind": "subject"
+     },
+     {
+      "text": "depth based routing protocol",
+      "kind": "method"
+     },
+     {
+      "text": "reducing energy consumption of routing",
+      "kind": "task"
+     },
+     {
+      "text": "energy efficient underwater routing",
+      "kind": "synonym"
+     },
+     {
+      "text": "sualtı akustik sensör ağları yönlendirme",
+      "kind": "title_wording"
+     },
+     {
+      "text": "enerji verimli yönlendirme protokolü",
+      "kind": "synonym"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_phrases_other_language_three",
+   "step_input": "E_search_phrases_other_language",
+   "expect_ok": false,
+   "expect_codes": [
+    "search_phrase_language"
+   ],
+   "output": {
+    "schema_version": "deixis.search_phrases.v1",
+    "step_input_id": "sti_SYNTHPHR002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "phrases": [
+     {
+      "text": "underwater acoustic sensor network routing",
+      "kind": "subject"
+     },
+     {
+      "text": "depth based routing protocol",
+      "kind": "method"
+     },
+     {
+      "text": "reducing energy consumption of routing",
+      "kind": "task"
+     },
+     {
+      "text": "sualtı akustik sensör ağları yönlendirme",
+      "kind": "title_wording"
+     },
+     {
+      "text": "enerji verimli yönlendirme protokolü",
+      "kind": "synonym"
+     },
+     {
+      "text": "düğüm kalan enerji seviyesi",
+      "kind": "detail"
+     }
+    ]
+   }
   }
  ]
 }

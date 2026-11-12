@@ -105,7 +105,8 @@ def test_a_local_model_run_keeps_no_handover_and_says_so_by_name(lab):
 
 
 def test_a_policy_frozen_before_the_rule_keeps_its_stage_deadline_alone(lab):
-    lib = lab.run_at("standard", policy_edit=lambda p: [p.pop("handover_rule"), p.pop("handover_ms")])
+    lib = lab.run_at("standard", policy_edit=lambda p: [p.pop("handover_rule"), p.pop("handover_ms"),
+                                                        p.pop("evidence_minimum")])
     _finish(lib, "plan", 8)
     fast_path.enter_stage(lib.store, lib.run, "search")
     lib.clock.advance(200)
@@ -120,7 +121,8 @@ def test_a_policy_frozen_before_the_rule_keeps_its_stage_deadline_alone(lab):
 def test_a_long_queue_is_inside_the_handover(lab):
     """The run was created when the question was submitted and only began working 40 seconds later. Standard hands
     over at second 70, so reading gets the 30 seconds that are left, not its own 33."""
-    lib = lab.run_at("standard")
+    # The handover as a cutoff is the rule before the evidence minimum, under which it cuts no stage.
+    lib = lab.run_at("standard", policy_edit=lambda p: p.pop("evidence_minimum"))
     lib.clock.advance(40)
     _finish(lib, "plan", 0)
     fast_path.enter_stage(lib.store, lib.run, "read")
@@ -144,7 +146,8 @@ def test_the_handover_moment_itself_is_already_past(lab):
 def test_a_pause_gives_no_fresh_window(lab):
     """A run that stopped overnight and resumed has missed its target; it does not start a new 70 seconds. Its own
     stage accounting excludes the downtime, which is why the handover is read from the clock and not from it."""
-    lib = lab.run_at("standard")
+    # The handover as a cutoff is the rule before the evidence minimum, under which it cuts no stage.
+    lib = lab.run_at("standard", policy_edit=lambda p: p.pop("evidence_minimum"))
     _finish(lib, "plan", 5)
     lib.clock.advance(9 * 60 * 60)  # the person's computer was asleep
     fast_path.enter_stage(lib.store, lib.run, "read")
@@ -156,7 +159,8 @@ def test_a_pause_gives_no_fresh_window(lab):
 def test_an_earlier_stage_overrunning_cannot_push_the_first_answer_past_the_target(lab):
     """Search keeps its whole base however badly the plan overran, and a later stage keeps a quarter of its own, so
     before the handover nothing stopped the pre-answer stages from passing the target between them."""
-    lib = lab.run_at("standard")
+    # The handover as a cutoff is the rule before the evidence minimum, under which it cuts no stage.
+    lib = lab.run_at("standard", policy_edit=lambda p: p.pop("evidence_minimum"))
     _finish(lib, "search", 180)
     fast_path.enter_stage(lib.store, lib.run, "ranking")
     assert fast_path.past_deadline(lib.store, lib.run, "ranking")
@@ -240,7 +244,8 @@ def test_a_retried_search_of_a_completed_run_still_stops_at_the_handover(lab):
     """Retrying a failed search opens a rework interval, which the stage accounting does not give a deadline; the
     handover reaches it all the same, because the person's clock has run out either way. Queued through the
     application's own retry, so the budget it writes is the one the resumed run reads."""
-    lib = lab.run_at("standard")
+    # The handover as a cutoff is the rule before the evidence minimum, under which it cuts no stage.
+    lib = lab.run_at("standard", policy_edit=lambda p: p.pop("evidence_minimum"))
     _finish(lib, "search", 2)
     lib.conn.execute(
         "INSERT INTO run_steps (id, run_id, operation_key, kind, status, attempt) VALUES (?, ?, ?, ?, 'failed', 1)",
@@ -256,6 +261,30 @@ def test_a_retried_search_of_a_completed_run_still_stops_at_the_handover(lab):
                               " ORDER BY rowid DESC LIMIT 1", (run["id"],)).fetchone()[0]
     assert rework == 1
     assert fast_path.past_deadline(lib.store, run, "search")
+    assert lib.conn.execute("SELECT handover_passed_at FROM fast_path_ledgers WHERE ledger_run_id = ?",
+                            (run["id"],)).fetchone()[0] is not None
+
+
+def test_under_the_evidence_minimum_a_retried_search_keeps_a_deadline_of_its_own(lab):
+    """The handover cuts no stage under the evidence minimum, so a rework interval, which has no stage accounting,
+    keeps the search stage's allocation or its minimum from its own start instead of running without a deadline."""
+    lib = lab.run_at("standard")
+    _finish(lib, "search", 2)
+    lib.conn.execute(
+        "INSERT INTO run_steps (id, run_id, operation_key, kind, status, attempt) VALUES (?, ?, ?, ?, 'failed', 1)",
+        ("stp_synthetic_retry", lib.run["id"], "search:fast:openalex:1", "provider_search:openalex"))
+    lib.store.update_run(lib.run["id"], status="completed")
+    lib.clock.advance(300)
+    lib.store.queue_failed_search_retry(lib.run["id"])
+    lib.store.update_run(lib.run["id"], status="running")
+    run = lib.store.run(lib.run["id"])
+    fast_path.enter_stage(lib.store, run, "search")
+    alloc = lib.conn.execute("SELECT alloc_ms FROM fast_path_stages WHERE ledger_run_id = ? AND stage = 'search'",
+                             (run["id"],)).fetchone()[0]
+    deadline = fast_path.stage_deadline(lib.store, run, "search")
+    assert deadline == lib.clock.now() + timedelta(milliseconds=max(alloc, fast_path.EVIDENCE_SEARCH_MS))
+    assert not fast_path.past_deadline(lib.store, run, "search")
+    # The handover's passing is still recorded.
     assert lib.conn.execute("SELECT handover_passed_at FROM fast_path_ledgers WHERE ledger_run_id = ?",
                             (run["id"],)).fetchone()[0] is not None
 
@@ -376,3 +405,22 @@ def test_a_research_that_queues_no_answer_is_left_out_of_the_rate(lab):
         conn.close()
     assert rows[0]["no_answer_intended"] is True and rows[0]["on_target_to_record"] is None
     assert result["modes"] == {} and result["no_answer_intended"] == 1
+
+
+def test_the_reranker_allowance_is_frozen_per_depth_and_not_for_a_local_model(lab):
+    # Quick's list now waits for the reranker as the other depths' do, so it keeps the same allowance; a local-model
+    # run keeps its own arithmetic and names no key, so its policy is the one frozen before the rule.
+    for effort, ms in (("quick", 3000), ("standard", 3000), ("detailed", 3000)):
+        policy = lab.run_at(effort).run["budget"]["fast_path"]
+        assert policy["rerank_allowance"] == {"rule": fast_path.RERANK_ALLOWANCE_RULE, "ms": ms}
+        assert fast_path.rerank_allowance_ms({"fast_path": policy}) == ms
+    assert "rerank_allowance" not in lab.run_at("standard", local_model=True).run["budget"]["fast_path"]
+    # The reranked-window word rule is frozen at every depth and for every model, inside the policy's own hash.
+    for effort, local in (("quick", False), ("standard", True), ("detailed", False)):
+        policy = lab.run_at(effort, local_model=local).run["budget"]["fast_path"]
+        assert fast_path.window_word_rule(policy) and policy["window_word_rule"] == fast_path.WINDOW_WORD_RULE
+        body = {key: value for key, value in policy.items() if key not in ("policy_hash", "intent")}
+        assert canonical.sha256_hex(body) == policy["policy_hash"]
+    # The number-form rule of the plan's quoted phrases is frozen at every depth and for every model.
+    for effort, local in (("quick", False), ("standard", True), ("detailed", False)):
+        assert fast_path.phrase_forms_on(lab.run_at(effort, local_model=local).run["budget"])

@@ -137,7 +137,7 @@ def test_the_page_sends_the_expanded_text_and_the_query_keeps_its_compiled_text(
 
 # --- the step the run writes ------------------------------------------------------------------------------------
 
-def _library(tmp_path, name="library.sqlite", effort="standard", providers=None):
+def _library(tmp_path, name="library.sqlite", effort="standard", providers=None, evidence_minimum=True):
     conn = db.connect(tmp_path / name)
     db.migrate(conn)
     clock = FakeClock()
@@ -148,6 +148,11 @@ def _library(tmp_path, name="library.sqlite", effort="standard", providers=None)
                                "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
     budget["fast_path"] = fast_path.freeze_budget(budget, effort)
+    if not evidence_minimum:
+        # A run frozen before the evidence minimum, under which the handover still ends the plan stage.
+        policy = {k: v for k, v in budget["fast_path"].items() if k not in ("evidence_minimum", "policy_hash")}
+        from deixis.domain import canonical
+        budget["fast_path"] = policy | {"policy_hash": canonical.sha256_hex(policy)}
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     return SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run["id"]))
@@ -479,7 +484,7 @@ def test_a_lookup_waits_seconds_not_the_half_minute_a_search_page_may(tmp_path):
 
 
 def test_a_run_whose_plan_time_ran_out_searches_the_compiled_query(tmp_path):
-    lib = _library(tmp_path, "deadline.sqlite")
+    lib = _library(tmp_path, "deadline.sqlite", evidence_minimum=False)
     _routing(lib, [{"provider_id": "pubmed", "reason": "share", "share": 0.9}])
     flow, asked = _flow(lib, tmp_path)
     fast_path.enter_stage(lib.store, lib.run, "plan")

@@ -49,7 +49,10 @@ def test_a_paused_run_for_a_connection_that_is_not_ready_carries_the_connections
     assert run["error"] == {"connection": "fake", "reason": "fake not ready", "reset_at": None}
 
 
-def test_a_paused_run_after_a_model_failure_carries_the_connections_own_words(tmp_path):
+def test_a_paused_run_after_a_model_failure_carries_the_connections_own_words(tmp_path, monkeypatch):
+    from fakes import without_evidence_minimum
+    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
+    without_evidence_minimum(monkeypatch)
     words = "SYNTHETIC usage limit reached, try again after the reset"
     # The plan is written first; the connection's words are what the stop after it carries.
     run = paused_run(tmp_path, FakeAdapter(fail=lambda si: None if si["task_type"] in PLANNING_TASKS else

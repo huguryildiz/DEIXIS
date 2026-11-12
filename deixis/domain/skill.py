@@ -25,6 +25,7 @@ RUNTIME_FILES = {
     "question_translation": ("SKILL.md", "references/question-translation.md"),
     "vocabulary_labels": ("SKILL.md", "references/vocabulary-labels.md"),
     "criterion_proposal": ("SKILL.md", "references/criterion-proposal.md"),
+    "search_phrases": ("SKILL.md", "references/search-phrases.md"),
     "search_query": ("SKILL.md", "references/search-query.md"),
     "search_plan": ("SKILL.md", "references/search-plan.md"),
     "abstract_screening": ("SKILL.md", "references/abstract-screening.md"),

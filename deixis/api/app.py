@@ -52,7 +52,7 @@ from deixis.workflow.answer import statement_check
 from deixis.workflow.read import file_restore, text_retry
 from deixis.workflow.run import spend
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
-                                 STUDY_TABLE_COLUMN_CALLS,
+                                 STUDY_TABLE_COLUMN_CALLS, PHRASE_SEARCH_CALLS,
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models import unusable
 from deixis.models.adapter import CodexAdapter, ModelAdapter
@@ -2196,6 +2196,9 @@ def create_app(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
             # The model-written query and its repair and retry.
             extra += SEARCH_QUERY_CALLS
+            # The short phrase step beside the plan and its repair, at a depth that writes phrases.
+            if fast_path.MODES[scope["effort"]].phrase_searches:
+                extra += PHRASE_SEARCH_CALLS
             # The study table's column proposal, opened before the reading starts.
             if settings.study_table == "auto" or store.research(research_id)["intent"] in intent.TABLE_INTENTS:
                 extra += STUDY_TABLE_COLUMN_CALLS

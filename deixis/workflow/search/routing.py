@@ -16,7 +16,7 @@ from typing import Any
 
 from deixis.domain.rules import (ALWAYS_SEARCHED, PREPRINT_SOURCES, ROUTE_SHARE, SOURCE_ROUTES,
                                  SOURCE_ROUTES_VERSION)
-from deixis.providers.query_compiler import quoted
+from deixis.providers.query_compiler import fit_with_forms, phrase_forms_on, quoted, variants_of
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.search.vocabulary import GATE_BLOCKS
 
@@ -24,10 +24,18 @@ def gate_query(vocabulary: dict[str, Any] | None) -> str | None:
     """The gate query of a vocabulary: each gate block's searched terms in one OR group, the groups joined by AND.
 
     It is the query whose count is the vocabulary's `gate_count`, written the same way for a model-written
-    vocabulary (whole phrases) and for the code's (root or phrase, as the term entered the query).
+    vocabulary (whole phrases) and for the code's (root or phrase, as the term entered the query). A vocabulary
+    frozen under the number-form rule gets the OpenAlex query text the compiler writes for it, forms included.
     """
     if not vocabulary:
         return None
+    if phrase_forms_on(vocabulary):
+        # Under the number-form rule the distribution is read for the OpenAlex text the search sends, forms included.
+        terms = [list(dict.fromkeys(t["root"] if t["in_query"] == "root" else t["phrase"]
+                                    for t in vocabulary["terms"] if t["block"] == block and not t["dropped"]))
+                 for block in GATE_BLOCKS]
+        fitted = fit_with_forms("openalex", [group for group in terms if group], variants=variants_of(vocabulary))
+        return fitted[0] if fitted is not None else None
     groups = []
     for block in GATE_BLOCKS:
         forms = [quoted(t["root"] if t["in_query"] == "root" else t["phrase"])

@@ -9,6 +9,7 @@ any reranker orders records better: retrieval quality was not measured.
 import asyncio
 import json
 import sys
+from datetime import timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -16,6 +17,7 @@ import pytest
 
 from deixis.documents import embeddings, local_embedding, rerankers
 from deixis.providers import pacing
+from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.workflow.search import english_question, small_batch
 from deixis.workflow.run.flow import RunStopped
 from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
@@ -370,7 +372,7 @@ class RerankingLocal(FakeLocal):
 
 @pytest.mark.parametrize("fail", [False, True])
 def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(tmp_path, monkeypatch, fail):
-    # Standard: the list waits for the reranker there. Quick freezes its list first (its own test below).
+    # Standard: the list waits for the reranker there, as Quick's now does (its own tests below).
     local = RerankingLocal(fail=fail)
     s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
     s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2, "timeout_seconds": 60})
@@ -405,29 +407,109 @@ def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(t
         assert listing["order"][len(priority) + len(candidates):] == automatic[len(candidates):]
 
 
-def test_quick_freezes_its_list_before_the_reranker_reads_its_small_group(tmp_path, monkeypatch):
-    """At Quick depth the list does not wait for the reranker: it is frozen from the fused order, and the reranker
-    then reads a small group (2 x N) whose scores are kept for the measurement without moving a record. The lookup
-    before the rerank does not run at all there."""
-    local = RerankingLocal()
+def quick_run(tmp_path, monkeypatch, local, **saved):
+    """One Quick discovery run with the built-in reranker; its listing, rerank step, lookup step and frozen rule."""
     s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
-    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
+    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60,
+                                            **saved})
     try:
         rid, run_id, view, run = s.discover(effort="quick")
         listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
         step = s.store.existing_step(run_id, small_batch.RERANK_KEY)
         lookup = s.store.existing_step(run_id, small_batch.PRERANK_LOOKUP_KEY)
-        rule = s.store.run(run_id)["budget"]["inspection"]["rerank"]
+        budget = s.store.run(run_id)["budget"]
     finally:
         s.close()
-    assert lookup is None, "the lookup before the rerank belongs to the depths whose list waits for it"
-    assert local.reranked, "the reranker still read its group"
-    assert step["status"] == "succeeded" and step["output"]["point"] == "after_list"
-    # The frozen list is the fused order, and it holds no reranker at all: it was frozen before the step existed.
+    return listing, step, lookup, budget
+
+
+def test_quick_waits_for_the_reranker_and_its_list_is_in_reranked_order(tmp_path, monkeypatch):
+    """A new Quick run freezes `before_list`, a 400-record window (16 x 25) and Standard's 3 s allowance; its lookup
+    runs before the rerank, and the list it delivers is the reranked order, replayed identically from its manifest."""
+    local = RerankingLocal()
+    listing, step, lookup, budget = quick_run(tmp_path, monkeypatch, local)
+    rule = budget["inspection"]["rerank"]
+    assert (rule["point"], rule["pool_factor"], rule["max_pool_factor"]) == ("before_list", 16.0, 16.0)
+    assert budget["fast_path"]["rerank_allowance"] == {"rule": "rerank_allowance_v1", "ms": 3000}
+    assert lookup is not None and local.reranked
+    assert step["status"] == "succeeded" and step["output"]["point"] == "before_list"
+    candidates, priority = step["output"]["candidate_ids"], listing["manifest"]["user_priority"]
+    assert listing["reranker"]["applied"] is True
+    # The fake scores the reverse of the order it was given: the candidates come back reversed.
+    assert listing["order"][len(priority):len(priority) + len(candidates)] == candidates[::-1]
+    assert listing["order"] != listing["automatic_order"] or len(candidates) < 2
+    # The manifest names no point for a reranker that read before the list, so it replays in the same order.
+    assert "point" not in listing["manifest"]["reranker"]
+    assert small_batch.build_list(listing["manifest"])["order"] == listing["order"]
+
+
+def test_a_quick_reranker_that_times_out_leaves_the_fused_order_and_says_why(tmp_path, monkeypatch):
+    listing, step, lookup, budget = quick_run(tmp_path, monkeypatch, RerankingLocal(fail=True))
+    assert step["status"] == "failed" and listing["reranker"]["applied"] is False
+    assert listing["reranker"]["fallback"] == "fused_order"
+    priority = listing["manifest"]["user_priority"]
+    assert listing["order"][len(priority):] == [r for r in listing["automatic_order"] if r not in priority]
+
+
+def test_a_factor_saved_lower_in_settings_still_wins_at_quick(tmp_path, monkeypatch):
+    listing, step, lookup, budget = quick_run(tmp_path, monkeypatch, RerankingLocal(), pool_factor=2)
+    assert step["output"]["pool_factor"] == 2.0 and len(step["output"]["candidate_ids"]) <= 2 * 25
+
+
+def test_a_quick_run_frozen_before_the_change_keeps_after_list_and_replays_in_fused_order(tmp_path, monkeypatch):
+    # The budget a Quick run was frozen with before its list waited for the reranker.
+    from deixis.workflow.run import fast_path
+    monkeypatch.setitem(fast_path.MODES, "quick", fast_path.MODES["quick"]._replace(
+        rerank_pool=2.0, rerank_point="after_list", rerank_allowance=0))
+    monkeypatch.setitem(small_batch.RERANK_RULE, "pool_factor", 8.0)
+    monkeypatch.setitem(small_batch.RERANK_RULE, "max_pool_factor", 8.0)
+    local = RerankingLocal()
+    listing, step, lookup, budget = quick_run(tmp_path, monkeypatch, local)
+    rule = budget["inspection"]["rerank"]
+    assert (rule["point"], rule["pool_factor"], rule["max_pool_factor"]) == ("after_list", 2.0, 2.0)
+    assert "rerank_allowance" not in budget["fast_path"]
+    assert lookup is None, "the lookup before the rerank belongs to the runs whose list waits for it"
+    assert local.reranked and step["status"] == "succeeded" and step["output"]["point"] == "after_list"
+    # The frozen list is the fused order and holds no reranker: it was frozen before the step existed.
     assert listing["order"] == listing["automatic_order"] and "reranker" not in listing
-    # This depth's own window: 2 x N, under the eight the deeper depths read.
-    assert (rule["pool_factor"], rule["max_pool_factor"]) == (2.0, 2.0)
+    assert small_batch.build_list(listing["manifest"])["order"] == listing["order"]
     assert len(step["output"]["candidate_ids"]) <= 2 * step["output"]["read_top"]
+    # Built again with that reranker's record, as freeze_list now copies it, the list still keeps the fused order.
+    output = step["output"]
+    again = listing["manifest"] | {"reranker": {key: output.get(key) for key in (
+        "status", "provider", "model", "candidate_ids", "scores", "error_code")} | {"point": "after_list"}}
+    rebuilt = small_batch.build_list(again)
+    assert rebuilt["order"] == listing["order"] and rebuilt["reranker"]["reason"] == "read_after_list"
+
+
+def test_quick_reads_a_real_400_record_window_and_standard_keeps_its_own(monkeypatch):
+    # 500 records, N = 25: Quick's frozen rule takes 16 x 25 = 400, the reranker's own ceiling.
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER}, RerankingLocal())
+    pool = [{"id": f"r{i:03d}", "work_id": f"w-{i}", "title": f"SYNTHETIC title {i}", "abstract": f"SYNTHETIC {i}"}
+            for i in range(500)]
+    monkeypatch.setattr(small_batch, "manifest_for", lambda *args: {"pool": pool, "user_priority": [],
+                                                                    "fused": [row["id"] for row in pool]})
+    budgets = {}
+    for effort in ("quick", "standard", "detailed"):
+        budgets[effort] = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
+    quick = {"id": "run-q", "scope_revision": 1, "budget": {"fast_path": {"N": 25},
+                                                           "inspection": budgets["quick"]["inspection"]}}
+    asyncio.run(small_batch.rerank_list(flow, quick, SCOPE, {}))
+    output = store.steps[small_batch.RERANK_KEY]["output"]
+    assert len(output["candidate_ids"]) == 400 and output["candidate_ids"] == [row["id"] for row in pool[:400]]
+    # Standard and Detailed freeze what they froze before.
+    for effort in ("standard", "detailed"):
+        rule = budgets[effort]["inspection"]["rerank"]
+        assert (rule["pool_factor"], rule["max_pool_factor"]) == (8.0, 8.0)
+
+
+def test_a_candidate_set_that_moved_keeps_the_fused_order_and_says_not_applied():
+    # The reranker answered, but the records it scored are no longer the window's: the list stays fused, so the
+    # abstract stage's word rule reads "not applied" and works as before.
+    manifest = {"user_priority": [], "reranker": {"status": "applied", "provider": "builtin", "model": RER,
+                                                  "candidate_ids": ["b", "x"], "scores": [0.1, 0.9]}}
+    order, told = small_batch.reranked(manifest, ["a", "b", "c"])
+    assert order == ["a", "b", "c"] and told["applied"] is False and told["reason"] == "candidates_changed"
 
 
 def test_a_run_queued_with_candidate_embedding_off_embeds_nothing_and_says_why(tmp_path, monkeypatch):
@@ -709,3 +791,226 @@ def test_with_nothing_saved_and_no_voyage_key_the_run_records_that_the_reranker_
     assert step["status"] == "failed" and step["error_code"] == "reranker_unavailable" and sent == []
     assert (step["output"]["provider"], step["output"]["model"], step["output"]["fallback"]) == (
         "voyage", "rerank-3-lite", "fused_order")
+
+
+# ---- the reranker's own allowance (`rerank_allowance_v1`) --------------------------------------------
+
+class ClockLocal:
+    """The fake built-in reranker, taking `seconds` of the run's clock and scoring the reverse of its order."""
+
+    def __init__(self, clock, seconds):
+        self.clock, self.seconds, self.reranked = clock, seconds, []
+
+    async def rerank(self, model_id, query, documents, seconds):
+        self.reranked.append(documents)
+        self.clock.advance(self.seconds)
+        return [i / len(documents) for i in range(len(documents))], []
+
+
+def allowance_run(tmp_path, monkeypatch, plan_seconds, *, policy_edit=None, evidence=False):
+    """A Standard discovery run on a fake clock whose plan took `plan_seconds` (its share is 8 s) and whose lookups
+    before the rerank used all that was left of the ranking stage, with a reranker that takes 2 s. Without `evidence`
+    the run is frozen as before the evidence minimum, whose debt-free carry these numbers do not assume."""
+    from deixis.domain import canonical
+    from deixis.domain.rules import TEST_EFFORT_BUDGETS
+    from deixis.storage import db
+    from deixis.workflow.run import fast_path
+    from deixis.workflow.run.store import Store
+    from test_fast_path_clock import FakeClock
+
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    clock = FakeClock()
+    store = Store(conn, clock)
+    clock.store = store
+    store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
+    rid = store.create_research("SYNTHETIC allowance", "academic", "standard", ["openalex"], "fake", "fake-model", "en")
+    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
+    policy = fast_path.freeze_budget(budget, "standard")
+    if policy_edit or not evidence:
+        policy = {k: v for k, v in policy.items() if k != "policy_hash"}
+        if policy_edit:
+            policy_edit(policy)
+        if not evidence:
+            policy.pop("evidence_minimum")
+        policy["policy_hash"] = canonical.sha256_hex(policy)
+    budget["fast_path"] = policy
+    run = store.create_run(rid, "discovery", budget, None)
+    store.update_run(run["id"], status="running")
+    run = store.run(run["id"])
+    for stage, seconds in (("plan", plan_seconds), ("search", 12)):
+        fast_path.enter_stage(store, run, stage)
+        clock.advance(seconds)
+        fast_path.close_stage(store, run["id"], stage)
+    fast_path.enter_stage(store, run, "ranking")
+    # The lookups before the rerank stop at the stage cutoff, as they always did, and use all of it.
+    clock.advance(max(0.0, (fast_path.stage_deadline(store, run, "ranking") - clock.now()).total_seconds()))
+    local = ClockLocal(clock, 2)
+    flow = SimpleNamespace(store=store, deps=SimpleNamespace(http=None, local_embedder=local),
+                           _checkpoint=lambda *args: None, _stop_requested=lambda *args: False)
+    pool = [{"id": rid_, "work_id": f"w-{rid_}", "title": f"SYNTHETIC title {rid_}",
+             "abstract": f"SYNTHETIC abstract {rid_}"} for rid_ in ("a", "b", "c")]
+    monkeypatch.setattr(small_batch, "manifest_for", lambda *args: {"pool": pool, "user_priority": [], "fused": ["a", "b", "c"]})
+    monkeypatch.setattr(small_batch, "replay", lambda m: {"fused": list(m["fused"]), "ranks": {}, "reasons": {}})
+    return SimpleNamespace(store=store, conn=conn, clock=clock, run=run, flow=flow, local=local, fast_path=fast_path)
+
+
+def _rerank_then_read(lab):
+    """Rerank, close the ranking stage, open the read stage; the step, the list and the read stage's ledger row."""
+    asyncio.run(small_batch.rerank_list(lab.flow, lab.run, SCOPE, {}))
+    step = lab.store.existing_step(lab.run["id"], small_batch.RERANK_KEY)
+    stored = {key: step["output"].get(key) for key in ("status", "provider", "model", "candidate_ids", "scores",
+                                                       "error_code")}
+    listing = small_batch.build_list(manifest(["a", "b", "c"], reranker=stored))
+    lab.fast_path.close_stage(lab.store, lab.run["id"], "ranking")
+    lab.fast_path.enter_stage(lab.store, lab.run, "read")
+    read = lab.conn.execute("SELECT * FROM fast_path_stages WHERE ledger_run_id = ? AND stage = 'read'",
+                            (lab.run["id"],)).fetchone()
+    return step, listing, dict(read)
+
+
+def test_the_reranker_keeps_its_allowance_after_the_plan_overran_and_the_lookups_used_the_stage(tmp_path, monkeypatch):
+    # The plan took 40 s of its 8, so ranking got its 4.25 s floor and the lookups used all of it; the reranker still
+    # runs on its own 3 s and the list is in its order. Read is given back the 2 s the reranker ran past the cutoff.
+    lab = allowance_run(tmp_path, monkeypatch, 40)
+    try:
+        step, listing, read = _rerank_then_read(lab)
+        started = lab.fast_path.ledger_started_at(lab.store, lab.run)
+        read_deadline = lab.fast_path.stage_deadline(lab.store, lab.run, "read")
+    finally:
+        lab.conn.close()
+    assert lab.local.reranked and step["status"] == "succeeded"
+    assert listing["reranker"]["applied"] is True and listing["order"] == ["c", "b", "a"]
+    assert step["output"]["allowance"] == {"rule": lab.fast_path.RERANK_ALLOWANCE_RULE, "ms": 3000,
+                                           "past_cutoff": "stage", "stage_left_ms": 0, "earlier_ms": 0,
+                                           "past_cutoff_ms": 2000}
+    # Read's allocation is the one it would have had had the reranker not run: 33 s, minus the plan's 32 s debt,
+    # plus what ranking left of its 17 s base before the reranker (17 - 4.25).
+    assert read["alloc_ms"] == 33000 - 32000 + (17000 - 4250)
+    # The handover cap moves by the same 2 s, so the answer comes 2 s later instead of read losing them.
+    assert read_deadline == started + timedelta(seconds=72)
+
+
+def test_under_the_evidence_minimum_the_reranker_time_is_not_given_back_twice(tmp_path, monkeypatch):
+    # No stage carries debt under the rule: the plan's 32 s overrun is not charged, ranking keeps its 17 s, and the
+    # 2 s the reranker ran past the ranking cutoff are an overrun of ranking, so read gets its own base and no more.
+    lab = allowance_run(tmp_path, monkeypatch, 40, evidence=True)
+    try:
+        step, listing, read = _rerank_then_read(lab)
+        ranking = lab.conn.execute("SELECT * FROM fast_path_stages WHERE ledger_run_id = ? AND stage = 'ranking'",
+                                   (lab.run["id"],)).fetchone()
+    finally:
+        lab.conn.close()
+    assert step["status"] == "succeeded" and step["output"]["allowance"]["past_cutoff_ms"] == 2000
+    assert (ranking["balance_before_ms"], ranking["alloc_ms"]) == (0, 17000)
+    assert (read["balance_before_ms"], read["alloc_ms"]) == (0, 33000)
+
+
+def test_the_reranker_keeps_its_allowance_when_the_handover_moment_has_already_passed(tmp_path, monkeypatch):
+    lab = allowance_run(tmp_path, monkeypatch, 80)  # the plan alone ran past Standard's 70 s handover
+    try:
+        step, listing, _ = _rerank_then_read(lab)
+        started = lab.fast_path.ledger_started_at(lab.store, lab.run)
+        read_deadline = lab.fast_path.stage_deadline(lab.store, lab.run, "read")
+        passed = lab.conn.execute("SELECT handover_passed_at FROM fast_path_ledgers").fetchone()[0]
+    finally:
+        lab.conn.close()
+    assert step["status"] == "succeeded" and listing["order"] == ["c", "b", "a"]
+    assert (step["output"]["allowance"]["past_cutoff"], step["output"]["allowance"]["past_cutoff_ms"]) == (
+        "handover", 2000)
+    # Read had nothing left before and has nothing now; the missed target is still recorded at the real moment.
+    assert read_deadline == started + timedelta(seconds=72) < lab.clock.now()
+    assert passed is not None
+
+
+def test_a_run_frozen_before_the_allowance_gives_the_reranker_only_what_the_stage_left(tmp_path, monkeypatch):
+    lab = allowance_run(tmp_path, monkeypatch, 40, policy_edit=lambda p: p.pop("rerank_allowance"))
+    try:
+        step, listing, read = _rerank_then_read(lab)
+    finally:
+        lab.conn.close()
+    assert lab.local.reranked == [] and step["status"] == "failed" and step["error_code"] == "no_time_left"
+    assert "allowance" not in step["output"] and listing["order"] == ["a", "b", "c"]
+    assert read["alloc_ms"] == 33000 - 32000 + (17000 - 4250)
+
+
+class PausingLocal:
+    """A built-in reranker that takes 2 s of the run's clock and is then paused; asked again, it takes 1 s more and
+    never answers."""
+
+    def __init__(self, clock, stop):
+        self.clock, self.stop, self.calls = clock, stop, 0
+
+    async def rerank(self, model_id, query, documents, seconds):
+        self.calls += 1
+        self.clock.advance(2 if self.calls == 1 else 1)
+        if self.calls == 1:
+            self.stop.append(True)  # the person pauses the run while the reranker is out
+        await asyncio.sleep(10)
+
+
+def test_a_paused_rerank_keeps_the_allowance_it_used_and_resume_gets_only_the_rest(tmp_path, monkeypatch):
+    lab = allowance_run(tmp_path, monkeypatch, 40)
+    stop = []
+
+    def checkpoint(run_id, revision):
+        if stop:
+            raise RunStopped
+    local = PausingLocal(lab.clock, stop)
+    lab.flow.deps.local_embedder, lab.flow._checkpoint = local, checkpoint
+    lab.flow._stop_requested = lambda *args: bool(stop)
+    try:
+        with pytest.raises(RunStopped):
+            asyncio.run(small_batch.rerank_list(lab.flow, lab.run, SCOPE, {}))
+        paused = lab.store.existing_step(lab.run["id"], small_batch.RERANK_KEY)
+        assert paused["status"] == "running" and paused["output"]["allowance"]["past_cutoff_ms"] == 2000
+        stop.clear()  # resumed
+        step, listing, read = _rerank_then_read(lab)
+    finally:
+        lab.conn.close()
+    # The second attempt had the 1 s left of the 3 s allowance, not a fresh 3 s, and the list keeps the fused order.
+    assert step["status"] == "failed" and step["error_code"] == "reranker_timeout"
+    assert step["output"]["error"].endswith("within 1 s") and listing["order"] == ["a", "b", "c"]
+    assert (step["output"]["allowance"]["earlier_ms"], step["output"]["allowance"]["past_cutoff_ms"]) == (2000, 3000)
+    # Both attempts' 3 s are given back to read, whose allocation is the one it would have had.
+    assert read["alloc_ms"] == 33000 - 32000 + (17000 - 4250)
+
+
+class SpendingLocal:
+    """A built-in reranker that takes the whole 3 s allowance of the run's clock and is then paused."""
+
+    def __init__(self, clock, stop):
+        self.clock, self.stop, self.calls = clock, stop, 0
+
+    async def rerank(self, model_id, query, documents, seconds):
+        self.calls += 1
+        self.clock.advance(3)
+        self.stop.append(True)  # the person pauses the run while the reranker is out
+        await asyncio.sleep(10)
+
+
+def test_a_rerank_resumed_after_its_whole_allowance_was_used_keeps_the_fused_order_and_the_record(tmp_path, monkeypatch):
+    lab = allowance_run(tmp_path, monkeypatch, 40)
+    stop = []
+
+    def checkpoint(run_id, revision):
+        if stop:
+            raise RunStopped
+    local = SpendingLocal(lab.clock, stop)
+    lab.flow.deps.local_embedder, lab.flow._checkpoint = local, checkpoint
+    lab.flow._stop_requested = lambda *args: bool(stop)
+    try:
+        with pytest.raises(RunStopped):
+            asyncio.run(small_batch.rerank_list(lab.flow, lab.run, SCOPE, {}))
+        paused = lab.store.existing_step(lab.run["id"], small_batch.RERANK_KEY)
+        assert paused["output"]["allowance"]["past_cutoff_ms"] == 3000
+        stop.clear()  # resumed with nothing left of the allowance and the stage cutoff passed
+        step, listing, read = _rerank_then_read(lab)
+    finally:
+        lab.conn.close()
+    # Nothing is asked again; the step fails with no time left and the list keeps its fused order.
+    assert local.calls == 1 and step["status"] == "failed" and step["error_code"] == "no_time_left"
+    assert step["output"]["fallback"] == "fused_order" and listing["order"] == ["a", "b", "c"]
+    assert (step["output"]["allowance"]["earlier_ms"], step["output"]["allowance"]["past_cutoff_ms"]) == (3000, 3000)
+    # The 3 s the first attempt used are given back to read once.
+    assert read["alloc_ms"] == 33000 - 32000 + (17000 - 4250)

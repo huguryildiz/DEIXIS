@@ -291,7 +291,9 @@ def test_a_first_page_that_answered_with_no_work_does_not_offer_the_same_request
     assert run["status"] == "paused" and run["pause_reason"] == "search_query_failed", run
     assert run["error"]["reason"] == "first_page_no_records" and run["error"]["retries_left"] == 0
     assert calls(adapter, "search_plan") == [] and calls(adapter, "search_query") == []
-    assert len(openalex.semantic) == 1 and openalex.searches == []
+    # The question's own request went out once; the short phrase searches beside the plan are requests of their own.
+    assert openalex.semantic.count(openalex.semantic[0]) == 1 and openalex.searches == []
+    assert all(text.startswith("synthetic short phrase") for text in openalex.semantic[1:])
     # Nothing else is searched in the plan's place: code compiles no query of its own, and a resume is refused.
     assert client.post(f"/api/runs/{run_id}/resume").status_code == 409
 

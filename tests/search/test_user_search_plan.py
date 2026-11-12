@@ -223,7 +223,10 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
     assert body["criterion_origin"]["origin"] == "user" and body["exclusion_title_words"] == ["survey"]
     assert [c["phrase"] for c in body["cue_phrases"]] == ["freight train scheduling", "timetable"]
     user_query = next(q for q in body["compiled_queries"] if q.get("origin") == "user")
-    assert user_query["query_text"] == '"rail freight" AND ("timetable scheduling" OR "train dispatching")'
+    # The run's query also searches the other number form of a quoted phrase (none for the gerunds); the preview
+    # above does not.
+    assert user_query["query_text"] == ('("rail freight" OR "rail freights") AND ("timetable scheduling" OR'
+                                        ' "train dispatching")')
     assert user_query["query_text"] in providers.searches
     assert {q.get("origin") for q in body["compiled_queries"]} == {"user"}
 

@@ -105,16 +105,18 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, f
     scripted(flow, calls)
     asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
     semantic = 2 if frozen == "block_semantic" else 1
-    assert [(q, p, n) for _, q, p, n in calls[semantic:]] == [
+    # Under the evidence minimum the semantic requests run beside the keyword pages, so each kind keeps its own order.
+    sent = [call for call in calls if call[0] == "semantic"]
+    assert [(q, p, n) for e, q, p, n in calls if e != "semantic"] == [
         (QUERIES[0]['query_text'], 0, 100), (QUERIES[1]['query_text'], 0, 100),
         (QUERIES[0]['query_text'], 1, 100), (QUERIES[1]['query_text'], 1, 100),
         (QUERIES[0]['query_text'], 2, 50)]
-    assert calls[0][0] == 'semantic'
+    assert len(sent) == semantic
     block = lib.conn.execute("SELECT sr.result_count FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
                              " WHERE s.operation_key = ?", (fast_search.BLOCK_SEMANTIC_KEY,)).fetchall()
     arms = [q["arm"] for q in fast_search.sent_plan({"fast_path_search": plan, "compiled_queries": QUERIES})]
     if frozen == "block_semantic":
-        assert calls[1] == ('semantic', 'synthetic setting words synthetic task words', 0, 50)
+        assert sent[1] == ('semantic', 'synthetic setting words synthetic task words', 0, 50)
         assert [tuple(r) for r in block] == [(2,)]
         assert arms[:2] == ["semantic", "block_semantic"]
     else:
@@ -343,7 +345,8 @@ def test_a_question_in_another_language_goes_to_openalex_as_written(library, tmp
     calls = []
     scripted(flow, calls)
     asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
-    assert calls[0] == ("semantic", question, 0, plan["semantic"]["limit"])
+    # The first semantic request; under the evidence minimum the keyword pages may go out beside it.
+    assert next(call for call in calls if call[0] == "semantic") == ("semantic", question, 0, plan["semantic"]["limit"])
     step = lib.store.existing_step(lib.run["id"], "search:fast:semantic")
     assert step["status"] == "succeeded" and step["error_code"] is None
 
@@ -436,7 +439,8 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         assert (run["status"], run["pause_reason"]) == ("completed", None)
         keyword = lambda view: [(s["provider"], s["status"]) for s in view["search_runs"] if s["query_text"] == attempts[0]]
         assert keyword(view) == [("openalex", "rate_limited")]
-        assert [(s["operation_key"], s["status"]) for s in run["steps"] if s["operation_key"].startswith("search:")] == [
+        assert [(s["operation_key"], s["status"]) for s in run["steps"] if s["operation_key"].startswith("search:")
+                and not s["operation_key"].startswith(fast_search.PHRASE_KEY)] == [
             ("search:fast:semantic", "succeeded"), ("search:0", "failed")]
         assert view["counts"]["unique"] == 1
         assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
@@ -461,6 +465,9 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
 
 
 def test_sw_pause_resume_keeps_frozen_protocol_and_does_not_repeat_search(tmp_path, monkeypatch):
+    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
+    from fakes import without_evidence_minimum
+    without_evidence_minimum(monkeypatch)
     down = True
     def failure(si):
         if down and si["task_type"] == "abstract_screening":

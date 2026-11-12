@@ -19,6 +19,7 @@ than the plan's is not closed by code.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Awaitable, Callable
 
 from deixis.domain.contracts import SEARCH_QUERY_MAX_TERMS
@@ -40,6 +41,7 @@ THRESHOLDS = {"attempts": ATTEMPTS, "max_count_requests": MAX_COUNT_REQUESTS}
 # The providers whose keyword search takes an author filter (a statement research's named authors, R5). Semantic
 # Scholar's bulk search, arXiv and the others are searched without one and named so in the vocabulary.
 AUTHOR_FILTER_PROVIDERS = ("openalex",)
+COUNT_PROVIDER = "openalex"  # the provider every count is read from (`flow._count_probe`)
 
 
 def _other(block: str) -> str:
@@ -111,6 +113,32 @@ def _with_other(phrase: str, alone: int | None, other: list[str]) -> str | None:
     return f"{quoted(phrase)} AND {_group(other)}" if other and alone != 0 else None
 
 
+def _formed(groups: list[list[str]], variants: dict[str, str | None]) -> str | None:
+    """The OpenAlex text the compiler writes for these blocks under the forms rule, or None when it writes none."""
+    fitted = query_compiler.fit_with_forms(COUNT_PROVIDER, groups, variants=variants)
+    return fitted[0] if fitted is not None else None
+
+
+def spelled_variants(answer: dict[str, Any]) -> dict[str, str | None]:
+    """The other number form of every term the answer gives, read from the term as it was spelled.
+
+    The stored phrase is lower-cased (`norm`), which would turn an acronym such as `graph BERT` into a word the rule
+    pluralises; the rule reads the spelling the model or the person wrote instead. A block term is keyed by its stored
+    phrase, a focused concept by its text as the focused query writes it.
+    """
+    variants: dict[str, str | None] = {}
+    for block in (*GATE_BLOCKS, *(f"{block}_backup" for block in GATE_BLOCKS)):
+        for row in answer.get(block) or []:
+            if (phrase := norm(row["term"])) and phrase not in variants:
+                # The spelling as written, with `norm`'s spacing and edges but not its lower case.
+                spelled = re.sub(r"^\W+|\W+$", "", " ".join(row["term"].split()))
+                variant = query_compiler.number_variant(spelled)
+                variants[phrase] = norm(variant) if variant else None
+    for row in answer.get("focused") or []:
+        variants.setdefault(row["term"], query_compiler.number_variant(row["term"]))
+    return variants
+
+
 def _queried(terms: list[dict[str, Any]]) -> dict[str, list[str]]:
     return {block: [t["phrase"] for t in terms if t["block"] == block and not t["dropped"]] for block in GATE_BLOCKS}
 
@@ -123,7 +151,8 @@ def _warnings(row: dict[str, Any]) -> list[str]:
     return []
 
 
-async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | None]]) -> dict[str, Any]:
+async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | None]],
+                *, phrase_forms: bool = False) -> dict[str, Any]:
     """Count the answer's chosen terms, put a backup in place of each one no record holds, and search a backup
     beside a term that finds nothing together with the other block.
 
@@ -135,7 +164,13 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
     query. Every count, every replacement and every warning is returned, so the approval card and the protocol show
     the numbers that decided the query. A block left with no term is returned as it is: the caller treats that answer
     as one that cannot be searched.
+
+    With `phrase_forms` (a run frozen under the forms rule) a term is counted alone and with the other block exactly
+    as before, without any other number form, so it keeps or loses its place on the same evidence; only the whole
+    query is counted as the compiler writes it for OpenAlex, forms included. The result names the rule and each
+    term's form, read from its own spelling. Without it every count is asked as before.
     """
+    variants = spelled_variants(answer) if phrase_forms else None
     chosen, backups = answer_terms(answer)
     counter = _Counter(count)
     meta = {row["phrase"]: {"kind": row["kind"], "why": row["why"], "backup_for": None}
@@ -204,6 +239,9 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
     await pair([row for row in checks if kept(row)
                 and _with_other(row["phrase"], row["alone"], queried[_other(row["block"])]) != against[id(row)]])
     gate = f"{_group(queried['setting'])} AND {_group(queried['task'])}" if all(queried.values()) else None
+    if gate is not None and variants is not None:
+        # Under the forms rule the whole query is counted as the compiler writes it for OpenAlex.
+        gate = _formed([queried[block] for block in GATE_BLOCKS], variants) or gate
     return {
         "terms": terms,
         "meta": meta,
@@ -216,6 +254,9 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
         "probes": counter.probes,
         "probes_skipped": counter.skipped,
         "searchable": all(queried.values()),
+        # The rule the counts were read under; the vocabulary built from them names it too.
+        **({"phrase_forms": {"rule": query_compiler.PHRASE_FORMS_RULE, "variants": variants}}
+           if variants is not None else {}),
     }
 
 
@@ -248,7 +289,39 @@ def vocabulary(code_vocabulary: dict[str, Any], checked: dict[str, Any],
                          "warnings": checked["warnings"], **record},
         # The question's own words, kept whole: nothing searches them, and the gate and the ranking read them.
         **({"question_vocabulary": code_vocabulary} if question_words else {}),
+        # Counted under the forms rule: the queries compiled from this vocabulary search the same forms.
+        **({"phrase_forms": phrase_forms(checked)}
+           if (checked.get("phrase_forms") or {}).get("rule") == query_compiler.PHRASE_FORMS_RULE else {}),
     }
+
+
+def phrase_forms(checked: dict[str, Any]) -> dict[str, Any]:
+    """The forms rule, each term's other number form, and per quoted phrase the plan searches what became of it.
+
+    `searched` and `left_out` are filled from the OpenAlex query once it is compiled (`with_compiled`); until then a
+    row says it was not compiled. The record also says the counts were read without the forms.
+    """
+    variants = checked["phrase_forms"]["variants"]
+    rows = [{"phrase": term["phrase"], "block": term["block"], "variant": variants.get(term["phrase"]),
+             "searched": False, "left_out": "not_compiled"}
+            for term in checked["terms"] if not term["dropped"] and len(term["phrase"].split()) >= 2
+            and quoted(term["phrase"]) != term["phrase"]]
+    return {"rule": query_compiler.PHRASE_FORMS_RULE, "counts": "without_variants", "variants": variants,
+            "terms": rows}
+
+
+def with_forms_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """The vocabulary with each phrase's form marked searched, or left out with the reason, as the main OpenAlex
+    query of the round compiled it. A vocabulary frozen without the forms rule is returned as it is."""
+    if not query_compiler.phrase_forms_on(vocabulary):
+        return vocabulary
+    main = next((query for query in queries if query["provider_id"] == COUNT_PROVIDER
+                 and query.get("origin") in ("model", "user") and query.get("role") != "focused"), None)
+    done = {row["phrase"]: row for row in ((main or {}).get("phrase_forms") or {}).get("terms") or []}
+    rows = [row | ({"searched": done[row["phrase"]]["searched"], "left_out": done[row["phrase"]]["left_out"]}
+                   if row["phrase"] in done else {"searched": False, "left_out": "not_compiled"})
+            for row in vocabulary["phrase_forms"]["terms"]]
+    return vocabulary | {"phrase_forms": vocabulary["phrase_forms"] | {"terms": rows}}
 
 
 def seed_terms(terms: list[dict[str, Any]], question_texts: list[str], passages: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -301,7 +374,7 @@ def with_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> 
     """The vocabulary with a statement research's author record read from the first round's compiled queries
     (`with_authors_compiled`), and, for a research searched with the question's own code query, whether that query
     really was compiled within the request limit. Nothing writes that query now; this keeps reading it."""
-    vocabulary = with_authors_compiled(vocabulary, queries)
+    vocabulary = with_forms_compiled(with_authors_compiled(vocabulary, queries), queries)
     if "code_query" not in vocabulary:
         return vocabulary
     compiled = any(query.get("origin") == "code" for query in queries)

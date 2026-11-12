@@ -76,11 +76,13 @@ def test_a_seeded_run_asks_the_unseeded_question_then_each_seed_then_the_keyword
         run_id, view = discovery(client, rid)
         store = app.state.store
         plan = protocol_body(store, run_id)["fast_path_search"]
-        assert plan["version"] == 2 and set(plan) == PLAN_KEYS | {"seed_semantic"}
+        assert plan["version"] == 2 and set(plan) == PLAN_KEYS | {"seed_semantic", "phrase_search"}
         assert plan["semantic"]["query_text"] == QUESTION and set(plan["semantic"]) == {
             "provider_id", "endpoint", "query_text", "limit", "query_origin"}
         assert [(s["source_version_id"], s["limit"]) for s in plan["seed_semantic"]] == [(a, 25), (b, 25)]
-        semantic = [entry for entry in transport.log if entry[0] == "semantic"]
+        # The short phrase requests beside the plan are requests of their own, apart from the seeds' order.
+        phrases = {spec["query_text"] for spec in plan["phrase_search"]["requests"]}
+        semantic = [entry for entry in transport.log if entry[0] == "semantic" and entry[1] not in phrases]
         question = semantic.index(("semantic", QUESTION, 50))
         # B had no DOI: its lookup went before the plan; then the question, then A and B by their own text. The
         # block terms' request is off since that change, and no plan word is recorded as part of a semantic request.
@@ -88,8 +90,9 @@ def test_a_seeded_run_asks_the_unseeded_question_then_each_seed_then_the_keyword
         assert {w["semantic"] for w in plan["words"]} == {False}
         assert [entry[1] for entry in semantic[question + 1:]] == [s["query_text"] for s in plan["seed_semantic"]]
         assert [entry[2] for entry in semantic[question + 1:]] == [25, 25]
-        first_keyword = next(i for i, entry in enumerate(transport.log) if entry[0] == "keyword")
-        assert transport.log.index(semantic[-1]) < first_keyword
+        # Under the evidence minimum the keyword pages no longer wait for the seeds' requests, so no order between
+        # them is asserted here; both went out.
+        assert any(entry[0] == "keyword" for entry in transport.log)
         for i in (0, 1):
             step = store.existing_step(run_id, f"search:fast:semantic:seed:{i}")
             assert step["status"] == "succeeded" and step["output"]["fast_path_request"]["class"] == 0
@@ -103,6 +106,40 @@ def test_a_seeded_run_asks_the_unseeded_question_then_each_seed_then_the_keyword
         listing = output(store, run_id, small_batch.LIST_KEY)
         assert listing["manifest"]["graph_rule"] == "seed_max_v2"
         assert small_batch.replay(listing["manifest"])["fused"] == listing["automatic_order"]
+
+
+def test_the_keyword_query_is_sent_and_stored_while_the_seed_requests_take_longer_than_the_search_minimum(
+        tmp_path, monkeypatch):
+    import asyncio
+
+    class SlowSeeds(Scripted):
+        """Each seed's own semantic request answers after 11 s, past the search stage's 10 s minimum."""
+
+        def __call__(self, request):
+            response = super().__call__(request)
+            text = request.url.params.get("search.semantic", "")
+            if request.url.host == "api.openalex.org" and (SEED_TITLE in text or TITLE_B in text):
+                async def late():
+                    await asyncio.sleep(11)
+                    return response
+                return late()
+            return response
+
+    transport = SlowSeeds(records(), records(), seeded=[titled(4000, SEED_ONLY_TITLE)], by_doi=[seed_work()])
+    app, _ = app_for(tmp_path, monkeypatch, transport=transport)
+    with client_of(app) as client:
+        rid = research(client)
+        a, b = upload(client, rid, "a.pdf", SEED_PDF), upload(client, rid, "b.pdf", pdf_of(TITLE_B))
+        select(client, rid, source_version_ids=[a, b])
+        run_id, _ = discovery(client, rid)
+        store = app.state.store
+        assert protocol_body(store, run_id)["fast_path_search"]["seed_semantic"]
+        keyword = store.existing_step(run_id, "search:0")
+        assert keyword["status"] == "succeeded"
+        assert store.conn.execute("SELECT COUNT(*) FROM search_runs WHERE step_id = ?", (keyword["id"],)).fetchone()[0]
+        # It was stored before the first seed's reply came back.
+        seed = store.existing_step(run_id, "search:fast:semantic:seed:0")
+        assert keyword["finished_at"] < seed["finished_at"]
 
 
 # ---- 3. The first chain seeds come only from what the question's request accepted (v4) ------------------------------

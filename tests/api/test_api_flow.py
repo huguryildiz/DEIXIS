@@ -361,6 +361,7 @@ def test_literature_model_runs_search_steps_and_the_research_model_writes_the_an
         view = run_to_end(client, rid, "answer")
         assert set(adapter.sent) == {("search_plan", "lit-model", "low"),
                                      ("criterion_proposal", "lit-model", "low"),
+                                     ("search_phrases", "lit-model", "low"),
                                      ("abstract_screening", "lit-model", "low"),
                                      ("grounded_answer", "answer-model", "high")}
         assert view["answers"][0]["review"] is None and view["reviewer"]["model"] is None  # no reviewer set anywhere

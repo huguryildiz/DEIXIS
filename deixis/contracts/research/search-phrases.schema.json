@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/search-phrases.schema.json",
+  "title": "SearchPhrases",
+  "description": "Short plain phrases written from the research question alone, each sent as one semantic search of its own beside the search plan. The step is given the question, the English sentence where the run already has one, and how many phrases to write; no record, term or block. Code checks the number of phrases, the words in each, operators, repeats and the language limit, and refuses an answer that breaks one. There is no rationale field: nothing would check it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "step_input_id", "scope_revision", "skill_package_hash", "phrases"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.search_phrases.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "phrases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "Exactly the number of phrases phrase_target.count names, each worded differently.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "kind"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Three to seven words of plain text, as a paper's title or abstract would write them. No AND, OR, NOT, quotation marks or wildcards."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["subject", "method", "task", "synonym", "title_wording", "detail"],
+            "description": "What the phrase words: the subject, a method, the task, a synonym, a likely title wording, or one detail of the question."
+          }
+        }
+      }
+    }
+  }
+}

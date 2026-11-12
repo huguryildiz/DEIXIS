@@ -134,6 +134,9 @@ SEARCH_QUERY_CALLS = 4
 # The study table a discovery run opens before it reads proposes its columns with one call and one repair, given on
 # top of the preset like the two above: the reading's own calls must not be short because the table was opened.
 STUDY_TABLE_COLUMN_CALLS = 2
+# The short phrase step beside the plan gets its call and one repair on top of the preset too, so it takes no call the
+# plan or the reading would need.
+PHRASE_SEARCH_CALLS = 2
 TEST_EFFORT_BUDGETS = {
     "quick": EffortBudget(max_model_calls=6, max_provider_requests=3, max_candidates=20,
                           max_answer_passages=16, results_per_query=10),
@@ -171,7 +174,7 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
 # search query is a search step like `search_query`.
 LITERATURE_TASKS = ("question_translation", "vocabulary_labels", "criterion_proposal", "search_query",
                     "search_plan", "abstract_screening",
-                    "fulltext_adjudication", "followup_search_query")
+                    "fulltext_adjudication", "followup_search_query", "search_phrases")
 # Candidate tasks use the research model, the default single schema repair and no timeout resend.
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An

@@ -248,6 +248,12 @@
    "derived_from": [],
    "date": "2026-11-10",
    "change": "Written for DEIXIS, not upstream text. followup.md now says when to set scope_change_requested and what to put in scope_change_note: a follow-up that moves the question to another setting, population or inclusion criterion is offered a linked research of its own instead of widening this one, and the note is the line the person reads beside that offer. The follow-up answer schema is v6. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/search-phrases.md",
+   "derived_from": [],
+   "date": "2026-11-12",
+   "change": "Written for DEIXIS, not upstream text. Loaded only for search_phrases: from the question alone, and the run's English sentence where it has one, write the given number of short plain phrases (three to seven words, kinds subject/method/task/synonym/title_wording/detail), each sent as one OpenAlex semantic search beside the plan. Code checks the count, the words, operators, repeats and the language limit. SKILL.md routes the new task_type. Not measured; the wording was tried against no model."
   }
  ],
  "phrasebank": {

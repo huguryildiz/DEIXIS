@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from dataclasses import replace
 
 from deixis.domain.rules import PROVIDER_WAIT, SOURCE_ROUTES
-from deixis.providers import facade
+from deixis.providers import common, facade
 from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, broad_index_providers, date_bound_form, reading
 from deixis.storage.db import now, transaction
@@ -30,6 +31,11 @@ FIELD_CLASS = 2
 # The admission class of the second independent index's pages: behind the field source's, so a record both
 # bring keeps the place the source the question's own distribution pointed at gave it.
 BROAD_CLASS = 3
+# The admission class of the short phrase searches' pages: behind every planned request, so a record a planned request
+# also brings keeps the place that request gave it.
+PHRASE_CLASS = 4
+# The step key of one short phrase request, by the phrase's place in the step's answer.
+PHRASE_KEY = "search:fast:semantic:phrase:"
 # One more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
 # question's. A plan frozen without `block_semantic`, or with one whose `query_text` is empty, sends none.
 # The 6 Nov rules turned it off for new plans (113 works added, 3 in the top 50, no reference paper in that pilot): they
@@ -128,13 +134,18 @@ def seed_key(spec):
     return f"search:fast:semantic:seed:{spec['index']}"
 
 
+def phrase_key(index):
+    return f"{PHRASE_KEY}{index}"
+
+
 def sent_plan(body):
     """The requests a frozen protocol body plans to send, each with the step key its pages are stored under.
 
     A fast path body sends its `fast_path_search` plan: the semantic request, the block terms' semantic request when the
     plan froze one, one per seed at version 2, the OpenAlex keyword queries, the query of each field source the depth
     searches, the query of the second independent index a depth that pays for one plans, and, at Detailed depth,
-    the Semantic Scholar bulk query. The plan's dropped queries are left out:
+    the Semantic Scholar bulk query; each short phrase request where the plan froze phrases. The plan's dropped
+    queries are left out:
     they stand in `compiled_queries` but were never meant to be sent. A body without the plan sends every compiled
     query under `search:<index>`. A field source's query carries the text that is really sent, which is the
     compiled text with PubMed's own headings written in where the plan froze them. `arm` says which kind of
@@ -163,6 +174,12 @@ def sent_plan(body):
               "origin": spec["origin"], "key": seed_key(spec), "arm": "seed_semantic", "watchable": False,
               **date_bound(years, spec)}
              for spec in plan.get("seed_semantic") or []]
+    # Each short phrase request the plan froze (`phrase_search`); a plan frozen before the rule, or whose phrase step
+    # gave no phrases before the freeze, has none.
+    sent += [{"provider_id": spec["provider_id"], "endpoint": "semantic", "query_text": spec["query_text"],
+              "origin": "phrase", "key": phrase_key(spec["index"]), "arm": "phrase_semantic", "watchable": False,
+              **date_bound(years, spec)}
+             for spec in (plan.get("phrase_search") or {}).get("requests") or []]
     # An author query is not watchable: a watch sends the query text without the author filter. The bound the
     # plan's own copy carries is written in, so a recorded request reads with what it was really sent with.
     sent += [dict(compiled[item["index"]], key=f"search:{item['index']}", arm="keyword",
@@ -591,7 +608,9 @@ def written_blocks(vocabulary, query):
         if forms:
             groups.append(forms)
             names.append(block)
-    fitted = query_compiler.fit_block_counts(query["provider_id"], groups, query.get("endpoint")) if groups else None
+    # Under the forms rule the stored text also holds the other number forms, so it is compiled the same way.
+    fitted = query_compiler.fit_with_forms(query["provider_id"], groups, query.get("endpoint"),
+                                           variants=query_compiler.variants_of(source)) if groups else None
     if fitted is None or fitted[0] != query["query_text"]:
         return None
     return names, [group[:count] for group, count in zip(groups, fitted[1])]
@@ -813,7 +832,8 @@ def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("bu
                 reason = "retry_page_only"
         with transaction(store.conn):
             step = store.step(run_id, key, f"provider_search:{connector.provider_id}")
-            store.start_step(step["id"], started_at=started)
+            if step["status"] != "running":  # a short phrase request is marked running before it is sent
+                store.start_step(step["id"], started_at=started)
             # A version 2 plan keeps the versions the question's request accepted, the only ones its first chain
             # seeds may come from.
             shared["failure"] = flow._record_search(
@@ -863,7 +883,7 @@ async def question_semantic(flow, run, plan, send_page):
     flow._checkpoint(run_id, run["scope_revision"])
 
 
-async def first_semantic(flow, run, scope, seed_context=None, sent=None):
+async def first_semantic(flow, run, scope, seed_context=None, sent=None, handed=None):
     """The question's semantic request, sent before any step that plans (P2).
 
     The design's first step needs no translation, rewriting or model call, so this request goes out in whatever
@@ -871,6 +891,7 @@ async def first_semantic(flow, run, scope, seed_context=None, sent=None):
     step is opened before the request is sent, so it carries `protocol_hash = NULL` as the seed match's requests do
     (Ç1), and it keeps the `search:fast:semantic` key, so the search stage finds it succeeded and sends nothing
     twice. `sent` is set once the request is on its way, so the caller goes on without waiting for the reply.
+    `handed` is set only once the request has passed the pacer and is with the HTTP client.
 
     A request that failed here is not reported: the search stage retries it, as it retries a resumed run's failures
     (`retry_failed`), which is why this call never asks for a retry of its own."""
@@ -902,7 +923,13 @@ async def first_semantic(flow, run, scope, seed_context=None, sent=None):
     finally:
         if sent is not None:
             sent.set()
-    await question_semantic(flow, run, plan, send_page)
+    # Only this request's own attempts set `handed`: the variable lives in this task's context.
+    token = common.on_handed.set(handed.set) if handed is not None else None
+    try:
+        await question_semantic(flow, run, plan, send_page)
+    finally:
+        if token is not None:
+            common.on_handed.reset(token)
     return shared["failure"]
 
 
@@ -914,25 +941,17 @@ async def execute(flow, run, scope, plan, retry_failed):
     # the identical round-robin schedule rather than deriving order from timestamps.
     request_index = 0
     excluded = plan.get("excluded_providers") or []
-    await question_semantic(flow, run, plan, send_page)
-    request_index += 1
     # The block terms' semantic request, after the question's (whose page alone chooses the first chain seeds);
-    # a plan frozen without it, or one that skipped it, sends nothing and keeps its request indexes.
+    # a plan frozen without it, or one that skipped it, sends nothing and keeps its request indexes. Each seed's own
+    # request follows, so every semantic request keeps the index the plan's order gives it.
     blocks = plan.get("block_semantic") or {}
-    if blocks.get("query_text"):
-        result, _ = await send_page(blocks, BLOCK_SEMANTIC_KEY, limit=blocks["limit"], klass=0, index=request_index,
-                                    terminal="single_page")
-        if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
-            cancel_step(store, run_id, BLOCK_SEMANTIC_KEY, "provider_search:openalex", "deadline", None)
-        consumer = flow._fast_consumers.get(run_id)
-        if consumer:
-            consumer.notify()
-        request_index += 1
-        flow._checkpoint(run_id, run["scope_revision"])
-    # Each seed's own semantic request, after the chain chose its first seeds from the question's page and before
-    # the keyword pages; an unseeded plan has none, so its indexes are unchanged. The requests start one pacer gap
-    # apart and their replies overlap (`openalex.SEMANTIC_PACER`); each is written after the one before it, so
-    # admission and candidate order follow seed order.
+    seed_start = 1 + int(bool(blocks.get("query_text")))
+    seed_specs = plan.get("seed_semantic") or []
+
+    # Each seed's own semantic request, after the chain chose its first seeds from the question's page; an unseeded
+    # plan has none, so its indexes are unchanged. The requests start one pacer gap apart and their replies overlap
+    # (`openalex.SEMANTIC_PACER`); each is written after the one before it, so admission and candidate order follow
+    # seed order.
     async def seed_request(spec, index, previous):
         key = seed_key(spec)
         result, _ = await send_page(spec, key, limit=spec["limit"], klass=0, index=index, terminal="single_page",
@@ -946,20 +965,40 @@ async def execute(flow, run, scope, plan, retry_failed):
         if consumer:
             consumer.notify()
 
-    seed_tasks = []
-    for spec in plan.get("seed_semantic") or []:
-        seed_tasks.append(asyncio.create_task(seed_request(spec, request_index, seed_tasks[-1] if seed_tasks else None)))
-        request_index += 1
-    try:
-        for task in seed_tasks:
-            await task
-    finally:
-        for task in seed_tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*seed_tasks, return_exceptions=True)
-    if seed_tasks:
-        flow._checkpoint(run_id, run["scope_revision"])
+    async def semantic_requests():
+        """The question's, the block terms' and each seed's semantic request, in the plan's order."""
+        await question_semantic(flow, run, plan, send_page)
+        if blocks.get("query_text"):
+            result, _ = await send_page(blocks, BLOCK_SEMANTIC_KEY, limit=blocks["limit"], klass=0, index=1,
+                                        terminal="single_page")
+            if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
+                cancel_step(store, run_id, BLOCK_SEMANTIC_KEY, "provider_search:openalex", "deadline", None)
+            consumer = flow._fast_consumers.get(run_id)
+            if consumer:
+                consumer.notify()
+            flow._checkpoint(run_id, run["scope_revision"])
+        seed_tasks = []
+        for number, spec in enumerate(seed_specs):
+            seed_tasks.append(asyncio.create_task(seed_request(spec, seed_start + number,
+                                                               seed_tasks[-1] if seed_tasks else None)))
+        try:
+            for task in seed_tasks:
+                await task
+        finally:
+            for task in seed_tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*seed_tasks, return_exceptions=True)
+        if seed_tasks:
+            flow._checkpoint(run_id, run["scope_revision"])
+
+    request_index = seed_start + len(seed_specs)
+    # Under the evidence minimum the keyword pages go out at once: the semantic requests run beside the keyword
+    # loop instead of ahead of it, and the stage waits for them at its end. A run frozen before it sends them first.
+    semantic_task = (asyncio.create_task(semantic_requests())
+                     if fast_path.evidence_minimum(store, run) is not None else None)
+    if semantic_task is None:
+        await semantic_requests()
 
     async def s2_page():
         if plan["s2_bulk"] is not None:
@@ -1270,6 +1309,13 @@ async def execute(flow, run, scope, plan, retry_failed):
         await resolve_completion(None)
         await finish_subtopic(None)
     finally:
+        if semantic_task is not None:
+            raising = sys.exc_info()[0] is not None
+            if raising:
+                semantic_task.cancel()  # the stage is already ending with an error or a stop
+            outcome = (await asyncio.gather(semantic_task, return_exceptions=True))[0]
+            if not raising and isinstance(outcome, BaseException):
+                raise outcome
         if shared["s2_task"] and not shared["s2_task"].done():
             await shared["s2_task"]
         for task in field_tasks:

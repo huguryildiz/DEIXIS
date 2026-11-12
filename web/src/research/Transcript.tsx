@@ -142,8 +142,8 @@ const heldText = (held: NonNullable<Step['output']>['held']) => [
   held?.no_abstract_lookup_open ? plural(held.no_abstract_lookup_open, '{n} record without an abstract kept its place: its abstract lookup did not finish.', '{n} records without an abstract kept their place: their abstract lookup did not finish.') : '',
 ].filter(Boolean).join(' ')
 const rerankLineText = (step: Step, listed: NonNullable<Step['output']>['reranker'] | null) => {
-  // Quick does not wait for the reranker: its list is frozen from the search ranking and the scores are kept as a
-  // record of what the reranker would have said.
+  // A Quick run frozen before its list waited for the reranker froze the list from the search ranking first and kept
+  // the scores as a record of what the reranker would have said.
   if (step.status === 'succeeded' && step.output?.point === 'after_list') return plural(step.output?.reranked ?? 0, 'The list was ready before the reranker read {n} record, so this depth kept the search ranking’s own order.', 'The list was ready before the reranker read {n} records, so this depth kept the search ranking’s own order.')
   if (step.status === 'succeeded' && listed?.applied) return [plural(listed.reranked ?? step.output?.reranked ?? 0, '{n} record reordered by the reranker', '{n} records reordered by the reranker'), heldText(step.output?.held)].filter(Boolean).join('. ')
   const kept = t('The records kept their fused order.')
@@ -334,8 +334,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
   const answer = view.answers.find(a => a.run_id === run.id)
   const started = present(steps.map(s => s.started_at))[0] ?? run.created_at
-  // A call cut at a read deadline is closed for good: resuming does not repeat it.
-  const unknownSteps = steps.filter(s => s.status === 'outcome_unknown' && s.error_code !== 'model_read_cutoff')
+  // A call cut at a read deadline is closed for good: resuming does not repeat it. Nor does it repeat the short
+  // phrase step or a short phrase request: a run resumed after either was cut goes on without it.
+  const unknownSteps = steps.filter(s => s.status === 'outcome_unknown' && s.error_code !== 'model_read_cutoff'
+    && s.kind !== 'model:search_phrases' && !s.operation_key.startsWith('search:fast:semantic:phrase:'))
   const failedOcrPages = steps.filter(s => s.kind === 'ocr_page' && troubled(s)).map(s => s.operation_key.split(':')[2])
   // A failed search no longer stops the run; name the provider that is missing so the results are not read as
   // complete. Why it failed stays on its query row in the phase details, where the other provider results are.

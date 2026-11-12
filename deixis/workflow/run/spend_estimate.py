@@ -51,6 +51,8 @@ def _tasks(effort: str, reading_on: bool, deep_screening: bool = False) -> list[
         ("vocabulary_labels", "literature", (0, 3), (500, 2000), (100, 600), False),
         ("search_query", "literature", (1, 2), (1000, 4000), (200, 1200), True),
         ("criterion_proposal", "literature", (0, 3), (500, 2500), (150, 800), True),
+        # The short phrases beside the plan, from the question alone: one call and its repair.
+        ("search_phrases", "literature", (0, 2), (300, 1500), (60, 300), True),
         ("abstract_screening", "literature", (ABSTRACT_RUNS, ABSTRACT_RUNS * batches + deep),
          (ABSTRACT_BATCH * ABSTRACT_RECORD_CHARS[0], ABSTRACT_BATCH * ABSTRACT_RECORD_CHARS[1]), (ABSTRACT_BATCH * 25, ABSTRACT_BATCH * 100), False),
     ]

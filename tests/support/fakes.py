@@ -153,6 +153,13 @@ def valid_response(si: dict[str, Any]) -> str:
             "question_elements": [],
             "exclusion_title_words": ["tutorial", "roadmap"],
         })
+    if task == "search_phrases":
+        # SYNTHETIC and field-independent: the asked number of distinct plain phrases, one kind after another, so a
+        # flow test gets valid phrases whose words say nothing about any field or about model behavior.
+        kinds = ("subject", "method", "task", "synonym", "title_wording", "detail")
+        return json.dumps(envelope(si, "deixis.search_phrases.v1") | {"phrases": [
+            {"text": f"synthetic short phrase number {n + 1}", "kind": kinds[n % len(kinds)]}
+            for n in range(si["phrase_target"]["count"])]})
     if task == "search_query":
         # SYNTHETIC and field-independent: one term per block and one backup each, so a flow test gets a model-written
         # query whose words say nothing about any field and nothing about model behavior.
@@ -436,3 +443,15 @@ def PlanOnlyAdapter(**kwargs: Any) -> "FakeAdapter":
     """
     return FakeAdapter(fail=lambda si: None if si["task_type"] in PLANNING_TASKS
                        else ModelStepResult("failed", error="SYNTHETIC model connection is down"), **kwargs)
+
+
+def without_evidence_minimum(monkeypatch) -> None:
+    """New runs frozen as a run queued before the evidence minimum, where a failed abstract read still pauses the run."""
+    from deixis.domain import canonical
+    from deixis.workflow.run import fast_path
+    freeze = fast_path.freeze_budget
+
+    def older(*args, **kwargs):
+        policy = {k: v for k, v in freeze(*args, **kwargs).items() if k not in ("evidence_minimum", "policy_hash")}
+        return policy | {"policy_hash": canonical.sha256_hex(policy)}
+    monkeypatch.setattr(fast_path, "freeze_budget", older)

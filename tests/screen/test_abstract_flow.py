@@ -323,6 +323,9 @@ STAGE_ROWS = {'output': {'batch': 20,
             'limit': 40,
             'not_read': 0,
             'runs': 2,
+            # The reranked-window rule is frozen; no reranker ordered this list, so code still closes as before.
+            'window_word_rule': {'closes_both_blocks_missing': True, 'listing_applied': False,
+                                 'rule': 'reranked_window_open_v1'},
             'works_needing_model': 2},
  'decisions': [('W1', 'abstract', 'candidate', 'blocks_in_title', 'code', 1, True),
                ('W1', 'abstract', 'candidate', 'blocks_in_title', 'code', 2, False),
@@ -452,3 +455,96 @@ def test_with_the_word_filter_off_a_record_naming_neither_block_still_reaches_th
     assert run["status"] == "completed"
     assert policy["lexical_exclusion"] is False and not plan["lexical_exclusion"]
     assert codes["W3"] != "both_blocks_missing" and [t for t in shown if OFF_TOPIC in t]
+
+
+# ---- a reranked window is read by the model, not closed by words (`reranked_window_open_v1`) ------------------------
+
+def reranker_says(monkeypatch, applied):
+    """The frozen list says its reranker was applied (or not), whatever the run's Settings: the rule reads the list."""
+    from deixis.workflow.search import small_batch
+    original = small_batch.reranked
+
+    def told(manifest, fused):
+        automatic, record = original(manifest, fused)
+        return automatic, (record or {"status": "applied"}) | {"applied": applied}
+    monkeypatch.setattr(small_batch, "reranked", told)
+
+
+def before_the_rule(monkeypatch):
+    """New runs are frozen as a run queued before the word rule was: their policy names no `window_word_rule`."""
+    from deixis.workflow.run import fast_path
+    freeze = fast_path.freeze_budget
+
+    def older(*args, **kwargs):
+        policy = freeze(*args, **kwargs)
+        policy.pop("window_word_rule")
+        return policy
+    monkeypatch.setattr(fast_path, "freeze_budget", older)
+
+
+def word_rule_run(tmp_path, monkeypatch, *, applied, older=False):
+    """One Quick run over an on-topic and an off-topic record; its codes, the titles shown and the abstract plan."""
+    reranker_says(monkeypatch, applied)
+    if older:
+        before_the_rule(monkeypatch)
+    app = app_for(tmp_path, monkeypatch, Pool([work(1, ON_TOPIC, ON_ABSTRACT), work(3, OFF_TOPIC, OFF_ABSTRACT)]))
+    client = client_of(app)
+    try:
+        rid, run_id, _, run = discover(client)
+        store = app.state.store
+        result = (run, codes_of(store, rid), shown_titles(store, run_id), step_output(store, run_id, "abstract_stage"))
+    finally:
+        client.__exit__(None, None, None)
+    return result
+
+
+def test_with_the_reranker_applied_a_window_work_naming_neither_block_goes_to_the_model(tmp_path, monkeypatch):
+    run, codes, shown, plan = word_rule_run(tmp_path, monkeypatch, applied=True)
+    assert run["status"] == "completed"
+    assert codes["W3"] != "both_blocks_missing" and [title for title in shown if OFF_TOPIC in title]
+    # The plan says which rule it ran under and the listing fact it rested on.
+    assert plan["window_word_rule"] == {"rule": "reranked_window_open_v1", "listing_applied": True,
+                                        "closes_both_blocks_missing": False}
+    # The rule removes only that close: the policy's own word check is still on.
+    assert "lexical_exclusion" not in plan and "lexical_exclusion" not in run["budget"]["fast_path"]
+
+
+def test_with_the_reranker_not_applied_the_word_check_closes_as_before(tmp_path, monkeypatch):
+    # A reranker that failed, timed out, had no key or whose candidates moved leaves the list saying not applied.
+    run, codes, shown, plan = word_rule_run(tmp_path, monkeypatch, applied=False)
+    assert run["status"] == "completed"
+    assert codes["W3"] == "both_blocks_missing" and not [title for title in shown if OFF_TOPIC in title]
+    assert plan["window_word_rule"]["listing_applied"] is False
+    assert plan["window_word_rule"]["closes_both_blocks_missing"] is True
+
+
+def test_a_run_frozen_before_the_rule_keeps_the_word_check_even_with_the_reranker_applied(tmp_path, monkeypatch):
+    run, codes, shown, plan = word_rule_run(tmp_path, monkeypatch, applied=True, older=True)
+    assert run["status"] == "completed" and "window_word_rule" not in run["budget"]["fast_path"]
+    assert codes["W3"] == "both_blocks_missing" and "window_word_rule" not in plan
+
+
+def test_a_stored_abstract_plan_is_read_back_on_resume_never_derived_again(tmp_path, monkeypatch):
+    # A plan stored before the reranker was applied (or before the rule) is what a resumed run reads, whatever the
+    # listing would say now.
+    app = app_for(tmp_path, monkeypatch, Pool([work(1, ON_TOPIC, ON_ABSTRACT), work(3, OFF_TOPIC, OFF_ABSTRACT)]))
+    client = client_of(app)
+    try:
+        rid, run_id, _, run = discover(client)
+        store, flow = app.state.store, app.state.worker.flow
+        step = next(s for s in store.run_steps(run_id) if s["operation_key"].endswith(":fast:abstract_stage"))
+        stored = store.existing_step(run_id, step["operation_key"])["output"]
+        # The plan as a run frozen before the rule stored it: no word-rule record at all.
+        stored = {key: value for key, value in stored.items() if key != "window_word_rule"}
+        store.set_step_output(step["id"], stored)
+        scope, again = store.scope(rid), store.run(run_id)
+        vocabulary = store.step(run_id, "vocabulary", "code:vocabulary")["output"]
+        read = flow._abstract_code_stage(again, scope, vocabulary, [], batch_key=step["operation_key"][:-len(":abstract_stage")],
+                                         read_limit=25, window_word={"rule": "reranked_window_open_v1",
+                                                                     "listing_applied": True})
+        codes = codes_of(store, rid)
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed"
+    assert read == stored and "window_word_rule" not in read
+    assert codes["W3"] == "both_blocks_missing"

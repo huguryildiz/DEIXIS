@@ -79,7 +79,7 @@ def test_a_replayed_arm_takes_the_baselines_plan_and_stops_rather_than_searching
     taken = [(r["task_type"], r["outcome"], r.get("reason")) for r in rows]
     assert taken[-2:] == [("search_plan", "replayed", None),
                           ("search_plan", "refused", "more_calls_than_baseline")]
-    assert {row[:2] for row in taken[:-2]} == {("criterion_proposal", "replayed")}
+    assert {row[:2] for row in taken[:-2]} == {("criterion_proposal", "replayed"), ("search_phrases", "replayed")}
 
 
 def call(digest="d", key=("search_query:1", 1), **kw):

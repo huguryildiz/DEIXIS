@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
 from deixis.runtime.config import Settings
+from deixis.workflow.search import search as fast_search
 from test_api_flow import create, fake_fetch, openalex_client, session, sw_settings, wait_run
 from test_providers import key_for, run
 from fakes import FakeAdapter
@@ -51,7 +52,9 @@ def fault_run(tmp_path, mode):
 
 
 def step_statuses(run):
-    return {s["operation_key"]: s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")}
+    # The short phrase requests follow the question's request once it is sent and have outcomes of their own.
+    return {s["operation_key"]: s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")
+            and not s["operation_key"].startswith(fast_search.PHRASE_KEY)}
 
 
 @pytest.mark.parametrize("provider", ["openalex", "semantic_scholar"])

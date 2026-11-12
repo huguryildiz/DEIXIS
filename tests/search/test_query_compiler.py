@@ -44,3 +44,81 @@ def test_a_plain_word_query_names_every_term_it_did_not_write_as_dropped():
     assert by_provider["semantic_scholar"]["dropped_terms"] == []
     assert query_compiler._fit_blocks("crossref", groups)[1] == ["SYNTHETIC lagoon", "gardening"]
     assert query_compiler._fit_blocks("serpapi", groups)[1] == ["SYNTHETIC lagoon"]
+
+
+# ---- the other number form of a quoted phrase (`phrase_number_v1`) ------------------------------------------
+
+
+def _formed(setting: list[str], task: list[str]) -> dict:
+    """A vocabulary frozen under the forms rule, each term's form stored as the plan stores it."""
+    variants = {term: query_compiler.number_variant(term) for term in setting + task}
+    return _blocks(setting, task) | {"phrase_forms": {"rule": query_compiler.PHRASE_FORMS_RULE, "variants": variants}}
+
+
+def test_a_quoted_phrase_is_searched_in_both_numbers_beside_it_and_the_query_says_so():
+    # OpenAlex matched "mixtures of experts" in a title and not "mixture of experts"; the word before " of " turns.
+    (query, bulk) = query_compiler.compile_block_queries(
+        _formed(["mixture of experts", "mixture-of-experts"], ["differentiable"]), ["openalex", "semantic_scholar"], 8)
+    assert query["query_text"] == ('("mixture of experts" OR "mixtures of experts" OR "mixture-of-experts")'
+                                   ' AND differentiable')
+    assert query["dropped_terms"] == []
+    assert query["phrase_forms"] == {"rule": query_compiler.PHRASE_FORMS_RULE, "terms": [
+        {"phrase": "mixture of experts", "variant": "mixtures of experts", "searched": True, "left_out": None}]}
+    # Only OpenAlex gets the form: the other providers' queries are the ones compiled before the rule.
+    assert bulk["provider_id"] == "semantic_scholar" and "phrase_forms" not in bulk
+    assert "mixtures" not in bulk["query_text"]
+
+
+def test_a_form_only_takes_room_the_plan_s_own_terms_left_and_says_which_it_left_out():
+    # Three terms a block fill OpenAlex's five operators; no form fits, and every plan term is still written. The
+    # gerund "graph clustering" takes no plural at all.
+    setting = ["graph neural network", "message passing network", "graph attention model"]
+    task = ["link prediction", "node classification", "graph clustering"]
+    (formed,) = query_compiler.compile_block_queries(_formed(setting, task), ["openalex"], 8)
+    (before,) = query_compiler.compile_block_queries(_blocks(setting, task), ["openalex"], 8)
+    assert formed["query_text"] == before["query_text"] and formed["dropped_terms"] == before["dropped_terms"] == []
+    assert all(f'"{term}"' in formed["query_text"] for term in setting + task)
+    assert [(row["phrase"], row["searched"], row["left_out"]) for row in formed["phrase_forms"]["terms"]] == [
+        (term, False, "no_variant" if term == "graph clustering" else "operator_cap") for term in setting + task]
+    # With one term fewer, the first form in the plan's order takes the one operator left; the rest stay out.
+    (room,) = query_compiler.compile_block_queries(_formed(setting, task[:2]), ["openalex"], 8)
+    assert room["query_text"] == ('("graph neural network" OR "graph neural networks" OR "message passing network" OR'
+                                  ' "graph attention model") AND ("link prediction" OR "node classification")')
+    assert [row["searched"] for row in room["phrase_forms"]["terms"]] == [True, False, False, False, False]
+
+
+def test_a_form_that_would_pass_the_length_cap_is_left_out_and_the_plan_term_stays():
+    long = "SYNTHETIC " * 14 + "network"  # 147 characters: the term fits, the term and its form do not
+    (query,) = query_compiler.compile_block_queries(_formed([long], ["routing"]), ["openalex"], 8)
+    assert query["query_text"] == f'"{long}" AND routing'
+    assert query["phrase_forms"]["terms"] == [
+        {"phrase": long, "variant": long + "s", "searched": False, "left_out": "length_cap"}]
+
+
+def test_a_plan_frozen_before_the_rule_compiles_to_its_old_query():
+    vocabulary = _blocks(["mixture of experts", "mixture-of-experts"], ["differentiable"])
+    (query,) = query_compiler.compile_block_queries(vocabulary, ["openalex"], 8)
+    assert query["query_text"] == '("mixture of experts" OR "mixture-of-experts") AND differentiable'
+    assert "phrase_forms" not in query
+
+
+def test_the_rule_leaves_alone_the_words_whose_number_it_cannot_tell():
+    for phrase in ("time series", "sentiment analysis", "gene species", "large LLMS", "layer conv3d", "user focus",
+                   "text corpus", "power bias",
+                   # Gerunds and words that are not counted take no plural.
+                   "federated learning", "graph clustering", "big data", "internet of things", "sensor information",
+                   "wireless traffic", "network security", "user privacy", "random access", "user behaviour"):
+        assert query_compiler.number_variant(phrase) is None, phrase
+    # A single word and an unquoted term get no form; a form equal to a plan term is not added twice.
+    assert query_compiler.number_variant("experts") is None
+    (query,) = query_compiler.compile_block_queries(
+        _formed(["time series", "neural network", "neural networks"], ["forecasting"]), ["openalex"], 8)
+    assert query["query_text"] == '("time series" OR "neural network" OR "neural networks") AND forecasting'
+    assert [(row["phrase"], row["left_out"]) for row in query["phrase_forms"]["terms"]] == [
+        ("time series", "no_variant"), ("neural network", "in_plan"), ("neural networks", "in_plan")]
+    # The fixed rule in both directions, its plural-to-singular step only where the plural rule turns it back.
+    assert [query_compiler.number_variant(p) for p in ("query strategy", "search boxes", "prompt databases",
+                                                       "graph classes", "label batches")] == [
+        "query strategies", "search box", "prompt database", "graph class", "label batch"]
+    # Plural to singular is unchanged for those words.
+    assert query_compiler.number_variant("deep learnings") == "deep learning"

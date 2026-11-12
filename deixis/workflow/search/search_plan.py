@@ -216,20 +216,24 @@ def focused_queries(answer: dict[str, Any], vocabulary: dict[str, Any], provider
     if not entries or not terms:
         return []
     queries = []
+    # A vocabulary frozen under the forms rule also searches the other number form of its quoted phrases here.
+    variants = query_compiler.variants_of(vocabulary)
     for entry in entries:
         blocks = [[entry["term"]], terms]
         for provider in query_compiler._searchable(list(providers), broad=broad):
             extra = CONNECTORS[provider].sw_query
-            fitted = query_compiler.fit_block_counts(provider, blocks, extra.get("endpoint"))
+            fitted = query_compiler.fit_with_forms(provider, blocks, extra.get("endpoint"), variants=variants)
             if fitted is None:
                 continue
-            text, used = fitted
+            text, used, record = fitted
             queries.append({
                 "provider_id": provider, "query_text": text,
                 "rationale": f"Focused query: {entry['term']} AND the main query's terms",
                 "dropped_terms": [term for group, count in zip(blocks, used) for term in group[count:]],
                 "origin": "model", "role": "focused", "focused_rule": FOCUSED_RULE,
-                "focused": {"term": entry["term"], "gap": entry["gap"]}, **extra})
+                "focused": {"term": entry["term"], "gap": entry["gap"]},
+                **({"phrase_forms": {"rule": query_compiler.PHRASE_FORMS_RULE, "terms": record}}
+                   if record is not None else {}), **extra})
     return queries
 
 

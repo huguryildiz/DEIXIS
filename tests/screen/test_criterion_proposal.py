@@ -19,10 +19,12 @@ from deixis.domain.skill import RUNTIME_FILES, integrity_issues, load_skill_pack
 from deixis.workflow.search.criterion import PARTS_PER_PROPOSAL, PHRASES_PER_PART, PROPOSAL_MAJORITY, PROPOSAL_RUNS, THRESHOLDS, consensus
 from fastapi.testclient import TestClient
 
-from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, PHRASE_SEARCH_CALLS,
                                  SEARCH_QUERY_CALLS, TEST_EFFORT_BUDGETS)
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.screen.abstract_stage import model_calls
+from deixis.workflow.run import fast_path
+from deixis.workflow.search import search as fast_search
 from fakes import FakeAdapter, envelope, valid_response
 from test_vocabulary_flow import TURKISH, CountingOpenAlex, app_for, no_fetch, start, store_at, wait
 
@@ -310,6 +312,10 @@ def test_the_proposals_and_the_calls_beside_them_keep_the_persons_concurrency_li
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
+    # The short phrase step is the one call sent outside the limiter, so that it never holds the plan call up; this
+    # test guards every other call, so the depth writes no phrases here.
+    effort = "quick"
+    monkeypatch.setitem(fast_path.MODES, effort, fast_path.MODES[effort]._replace(phrase_searches=0))
     openalex, adapter = CountingOpenAlex(), proposing()
     adapter.delay = 0.4  # long enough that the proposals are still in flight when the plan call starts
     app = create_app(dataclasses.replace(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off"),
@@ -344,8 +350,10 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     assert keys[keys.index("criterion") - 1] == "source_routing"
     assert keys[keys.index("criterion") + 1:keys.index("criterion") + 4] == [
         "protocol_approval", "mesh_expansion", "protocol"]
-    # Every planned provider search was opened after the protocol step, which already held the criterion.
-    searches = [i for i, key in enumerate(keys) if key.startswith("search:") and key != "search:fast:semantic"]
+    # Every planned provider search was opened after the protocol step, which already held the criterion. The question's
+    # own request and the short phrase requests beside the plan are the exception: they open before it.
+    searches = [i for i, key in enumerate(keys) if key.startswith("search:") and key != "search:fast:semantic"
+                and not key.startswith(fast_search.PHRASE_KEY)]
     assert searches and min(searches) > keys.index("protocol")
     body = body_of(tmp_path, rid, 1)
     assert body["inclusion_criterion"] == RUNS[1]["criterion"]  # run 1 is the base run of these three proposals
@@ -361,15 +369,19 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     assert body["thresholds"]["criterion"] == {
         "proposal_runs": 3, "proposal_majority": 2, "role_consensus_version": 2,
         "match_min_shared_cues": 2, "match_overlap_divisor": 2}
-    # An sw discovery run is given the query-writing calls, the criterion's three and the abstract stage's own
-    # (slice 09) on top of its preset; the preset an answer run reads is untouched.
+    # An sw discovery run is given the query-writing calls, the criterion's three, the short phrase step's and the
+    # abstract stage's own (slice 09) on top of its preset; the preset an answer run reads is untouched.
     presets = {preset.max_model_calls for preset in TEST_EFFORT_BUDGETS.values()}
     abstract_calls = model_calls(ABSTRACT_READ_LIMIT["quick"], ABSTRACT_BATCH, ABSTRACT_RUNS)
-    assert body["budget"]["max_model_calls"] - SEARCH_QUERY_CALLS - CRITERION_CALLS - abstract_calls in presets
+    assert (body["budget"]["max_model_calls"] - SEARCH_QUERY_CALLS - CRITERION_CALLS - PHRASE_SEARCH_CALLS
+            - abstract_calls) in presets
 
 
 def test_a_resumed_run_proposes_nothing_again(tmp_path, monkeypatch):
     """The run stops after its proposals on the first pass; resuming must not pay for them again."""
+    from fakes import without_evidence_minimum
+    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
+    without_evidence_minimum(monkeypatch)
     openalex, adapter = CountingOpenAlex(), proposing()
     down = {"now": True}
 

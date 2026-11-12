@@ -50,6 +50,9 @@ def test_key_test_does_not_echo_body(code, kind):
 
 def test_model_quota_pause_preserves_metadata_without_secrets(tmp_path, monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'SYNTHETIC-private-key')
+    from fakes import without_evidence_minimum
+    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
+    without_evidence_minimum(monkeypatch)
     # The plan is written first, because nothing is searched without one; the quota is reached on a later call,
     # which is the stop whose metadata this checks.
     adapter = FakeAdapter(fail=lambda si: None if si['task_type'] in PLANNING_TASKS else ModelStepResult(

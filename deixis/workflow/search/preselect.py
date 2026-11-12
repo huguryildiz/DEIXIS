@@ -22,12 +22,16 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 RULE = "rrf_v1"
+# The list identity of a run that froze the short phrase searches: provider, endpoint, query text and sort, so a
+# semantic request and a keyword request of the same text are two lists. A manifest frozen without it names no
+# identity and its lists stay keyed by provider, query text and sort, as they were frozen.
+ENDPOINT_IDENTITY = "provider_endpoint_query_sort_v1"
 # The k of the original RRF study (Cormack, Clarke and Buettcher, 2009): a larger k flattens the difference between
 # the leading places, a smaller one widens it. The run freezes the value it used.
 K = 60
 
 
-def lists(hits: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+def lists(hits: Iterable[dict[str, Any]], identity: str | None = None) -> list[dict[str, Any]]:
     """Every query list of one run, with the place it gave each record and whether it votes.
 
     `hits` are the stored hit rows: `head` (the record's work head), `provider`, `query_text`, `sort` (the sorting
@@ -38,14 +42,22 @@ def lists(hits: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
     A list the provider did not order by relevance is kept, with `votes` false: its records are in the pool and count
     as a way in, but the list casts no vote. A row without a place is a member of its list and is not ranked by it.
+
+    With `identity` (`ENDPOINT_IDENTITY`) the hit's `endpoint` is part of the key too and each list names it; without
+    it the key and every list are exactly what they were before the rule.
     """
-    found: dict[tuple[str, str, str], dict[str, Any]] = {}
+    found: dict[tuple[str, ...], dict[str, Any]] = {}
     for hit in hits:
         # The sorting setting is part of the key: the same query asked once in relevance order and once by date is
         # two lists, and only the first of them votes.
         key = (hit["provider"], hit["query_text"], hit.get("sort") or "")
+        named = {}
+        if identity == ENDPOINT_IDENTITY:
+            # The endpoint joins the key, so a semantic request and a keyword request of one text are two lists.
+            key += (hit.get("endpoint") or "",)
+            named = {"endpoint": hit.get("endpoint")}
         entry = found.setdefault(key, {"provider": hit["provider"], "query_text": hit["query_text"],
-                                       "sort": hit.get("sort"), "votes": bool(hit.get("relevance")),
+                                       "sort": hit.get("sort"), **named, "votes": bool(hit.get("relevance")),
                                        "read_total": None, "members": set(), "places": {}})
         entry["members"].add(hit["head"])
         if hit.get("read_total") is not None:
@@ -56,7 +68,8 @@ def lists(hits: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         if place is None or hit["rank"] < place:
             entry["places"][hit["head"]] = hit["rank"]
     return [entry | {"members": sorted(entry["members"]), "size": len(entry["places"])}
-            for entry in sorted(found.values(), key=lambda e: (e["provider"], e["query_text"], e["sort"] or ""))]
+            for entry in sorted(found.values(),
+                                key=lambda e: (e["provider"], e["query_text"], e["sort"] or "", e.get("endpoint") or ""))]
 
 
 def narrow_heads(query_lists: Iterable[dict[str, Any]]) -> list[str]:

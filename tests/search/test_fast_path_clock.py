@@ -64,7 +64,8 @@ def historical_read_policy(monkeypatch, request):
         # carried between stages. The delivery-time handover is a later cap with its own tests
         # (`test_delivery_time.py`), and a policy frozen before that rule keeps exactly this arithmetic, so dropping
         # the two keys here keeps each test on the one rule it was written for.
-        for key in ("approval_mode", "auto_answer", "policy_hash", "handover_rule", "handover_ms"):
+        # The evidence minimum's debt-free carry is a later rule with its own tests (`test_evidence_minimum.py`).
+        for key in ("approval_mode", "auto_answer", "policy_hash", "handover_rule", "handover_ms", "evidence_minimum"):
             policy.pop(key, None)
         return policy | {"policy_hash": canonical.sha256_hex(policy)}
     monkeypatch.setattr(fast_path, "freeze_budget", historical)
@@ -168,6 +169,10 @@ def test_plan_debt_is_charged_after_search(library, frozen):
     policy = fast_path.freeze_budget(budget, "standard")
     if frozen == "before_d152":
         policy = {k: v for k, v in policy.items() if k not in ("protected_stages", "policy_hash")}
+        policy["policy_hash"] = canonical.sha256_hex(policy)
+    if frozen == "d152":
+        # The arithmetic before the evidence minimum: its debt-free carry is tested on its own.
+        policy = {k: v for k, v in policy.items() if k not in ("evidence_minimum", "policy_hash")}
         policy["policy_hash"] = canonical.sha256_hex(policy)
     library.store.update_run(library.run["id"], status="completed")
     run = library.store.create_run(library.rid, "discovery", budget | {"fast_path": policy}, None)

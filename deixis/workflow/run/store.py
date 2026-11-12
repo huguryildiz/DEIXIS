@@ -1630,19 +1630,26 @@ class Store:
         return step
 
     def search_query_of(self, research_id: str, scope_revision: int, run_id: str,
-                        operation_key: str = "search_query", plan_rule: str | None = None) -> dict[str, Any] | None:
+                        operation_key: str = "search_query", plan_rule: str | None = None,
+                        accept: Callable[[dict[str, Any]], bool] | None = None) -> dict[str, Any] | None:
         """The newest succeeded model-query step of another run of this scope revision, or None; with
         `operation_key`, the newest succeeded step of that key (the seed match). With `plan_rule`, only runs whose
         budget froze that plan rule count: a query written under a rule this version no longer carries is not this
-        run's query, and a run frozen under one does not hide a usable one behind it."""
-        row = self.conn.execute(
+        run's query, and a run frozen under one does not hide a usable one behind it. With `accept`, the newest
+        step whose output it accepts, so a newer step it refuses does not hide an older usable one."""
+        rows = self.conn.execute(
             "SELECT s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
             " WHERE r.research_id = ? AND r.scope_revision = ? AND r.id != ? AND s.operation_key = ?"
             " AND s.status = 'succeeded' AND s.output_json IS NOT NULL"
             + (" AND json_extract(r.budget_json, '$.fast_path.plan_rule') = ?" if plan_rule is not None else "")
-            + " ORDER BY r.created_at DESC, s.rowid DESC LIMIT 1",
-            (research_id, scope_revision, run_id, operation_key, *((plan_rule,) if plan_rule is not None else ()))).fetchone()
-        return {"run_id": row["run_id"], "output": json.loads(row["output_json"])} if row else None
+            + " ORDER BY r.created_at DESC, s.rowid DESC" + (" LIMIT 1" if accept is None else ""),
+            (research_id, scope_revision, run_id, operation_key, *((plan_rule,) if plan_rule is not None else ())))
+        for row in rows:
+            output = json.loads(row["output_json"])
+            # The newest row the caller accepts; without a test, the newest row.
+            if accept is None or accept(output):
+                return {"run_id": row["run_id"], "output": output}
+        return None
 
     def run_steps(self, run_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(

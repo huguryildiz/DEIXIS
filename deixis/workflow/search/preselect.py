@@ -5,9 +5,9 @@ froze, so a resumed run and an offline replay choose the same window.
 
 Three rules hold this module together:
 
-- **It decides who is read, not how they are ordered.** The window's own order is the reranker's; the records it
-  never read keep the order the run's signal fusion gave them, behind the window. A pool that fits the window is not
-  touched at all.
+- **It decides who is read, not how they are ordered.** How the reranker's scores then order the list is the rerank
+  rule's (`small_batch.reranked`), and so is the fused order's own reserve the window takes before anything here
+  fills it (`small_batch.window_for`, rerank rule version 6). A pool that fits the window is not touched at all.
 - **One query list, one vote.** A list is one query of one provider: its continuation pages are the same list and a
   resend of the same request is no second vote, so a record is counted once, at the first place that list gave it.
   Only a list the provider ordered by relevance votes; a list ordered by date or citation count does not, and a

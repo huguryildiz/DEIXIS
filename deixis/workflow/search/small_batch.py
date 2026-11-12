@@ -66,11 +66,19 @@ PRERANK_LOOKUP = {"version": 5, "max_records": PRERANK_RECORDS, "seconds": 8, "c
 # keeps a floor for the records only citation chaining found and for the records only a focused query found. The
 # floor sizes are frozen per run; nothing has measured them yet, so they are the pilot's own starting numbers.
 # A rule frozen without `preselect` (version 4 and earlier) takes the fused prefix, as it did.
+# Version 6: the window's first `fused_reserve` places go to the first records of the fused order, before the floors
+# and the votes fill the rest, so a record the run's own ranking put near the top is always read. The delivered order
+# is no longer the window in reranker order ahead of everything else: each record's place comes from the sum
+# `1 / (k + fused rank) + 1 / (k + reranker rank)` (`merge`, `merge_k`), a record the reranker did not score counting
+# at the middle of the unscored tail, and a record kept in place keeping its fused slot. A rule without
+# `fused_reserve` or `merge` (version 5 and earlier) keeps the window and the in-place order it had.
 # The factors are the shared ceiling; each depth freezes the smaller of them and its own `rerank_pool`, so Standard and
 # Detailed freeze 8 and Quick 16 (400 records for its 25), and a factor saved in Settings stays below what was frozen.
-RERANK_RULE = {"version": 5, "pool_factor": 16.0, "max_pool_factor": 16.0, "hold_without_abstract": "with_text_route",
+RERANK_MERGE = "rrf_fused_rerank_v1"
+RERANK_RULE = {"version": 6, "pool_factor": 16.0, "max_pool_factor": 16.0, "hold_without_abstract": "with_text_route",
                "hold_chained": False, "preselect": preselect.RULE, "rrf_k": preselect.K,
-               "floors": {"chain_only": 5, "narrow_only": 5}}
+               "floors": {"chain_only": 5, "narrow_only": 5}, "fused_reserve": 200,
+               "merge": RERANK_MERGE, "merge_k": 60}
 RERANK_RULE_V1 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
 # 5: one closest place for a work whose reading found no criterion part. 6: every abstract-only work's abstract
 # before the closest works' second to fourth pages, and that zero-part work at most 2 passages. 7: the standard
@@ -338,7 +346,9 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
     the records it scored, with the records it kept in place (`kept_in_place`), are still the first records of that order
     that the person did not include themselves; when
     the list moved since (a selection changed while the reranker ran) or the reranker failed, the fused order stands
-    and the listing says why. Everything here is read from the manifest, so the list replays exactly."""
+    and the listing says why. Under a manifest with `rerank_merge` (rerank rule version 6) the scored records are not
+    put in front: every record the person did not include takes its place from its fused rank and its reranker rank
+    together (`merged`). Everything here is read from the manifest, so the list replays exactly."""
     stored = manifest.get("reranker")
     if not stored:
         return fused, None
@@ -361,8 +371,12 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
         window = window_for(manifest, automatic, size)["window"]
         if set(window) != set(candidates) | set(kept) or len(window) != size:
             return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
-        return rerankers.reorder(promoted(fused, window), candidates, stored["scores"]), told | {
-            "applied": True, "reranked": len(candidates), **({"kept_in_place": len(kept)} if kept else {})}
+        done = told | {"applied": True, "reranked": len(candidates), **({"kept_in_place": len(kept)} if kept else {})}
+        merge = manifest.get("rerank_merge")
+        if merge:
+            # Since rerank rule version 6: fused rank and reranker rank are summed, kept records keep their slots.
+            return merged(automatic, candidates, stored["scores"], set(kept), merge["k"]), done
+        return rerankers.reorder(promoted(fused, window), candidates, stored["scores"]), done
     window = automatic[:size]
     if [rid for rid in window if rid not in set(kept)] != candidates or not set(kept) <= set(window):
         return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
@@ -525,7 +539,12 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
         identity = preselect.ENDPOINT_IDENTITY if fast_path.phrase_search(run["budget"]) else None
         manifest["query_lists"] = query_lists(store, run, in_pool, versions, heads, identity)
         manifest["preselect"] = {"rule": rule["preselect"], "k": rule["rrf_k"], "floors": dict(rule["floors"]),
-                                 **({"list_identity": identity} if identity else {})}
+                                 **({"list_identity": identity} if identity else {}),
+                                 # Since version 6: the fused order's first records the window takes before the votes
+                                 **({"fused_reserve": rule["fused_reserve"]} if rule.get("fused_reserve") else {})}
+    if rule.get("merge"):
+        # How the reranker's scores make the delivered order (version 6); a manifest without it orders in place.
+        manifest["rerank_merge"] = {"rule": rule["merge"], "k": rule["merge_k"]}
     from deixis.workflow.search.fast_chain import manifest as chain_manifest
     manifest["fast_path"] = chain_manifest(store, run)
     manifest["cutoff"] = cutoff_record(store, run)
@@ -622,13 +641,18 @@ def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versio
 def window_for(manifest: dict[str, Any], automatic: list[str], size: int) -> dict[str, Any]:
     """The records the reranker is given: all of `automatic` while it fits the window, else what the manifest's own
     query lists choose (rerank rule version 5), else — for a manifest frozen without them — the fused order's own
-    leading records. `automatic` already leaves out what the person included themselves.
+    leading records. Under a manifest with `fused_reserve` (version 6) the window's first places go to that many
+    leading records of `automatic`, and the floors and votes choose the rest among the records after them.
+    `automatic` already leaves out what the person included themselves.
     """
     rule = manifest.get("preselect")
     if len(automatic) <= size:
         return {"window": list(automatic), "floors": {}}
     if not rule:
         return {"window": automatic[:size], "floors": {}}
+    # The fused order's leading records first (none without a reserve); the rest is chosen among what follows them.
+    reserve = min(int(rule.get("fused_reserve") or 0), size)
+    reserved, automatic, size = automatic[:reserve], automatic[reserve:], size - reserve
     entries = manifest.get("query_lists") or []
     contributions = preselect.scores(entries, rule["k"])
     works = {row["id"]: row["work_id"] for row in manifest["pool"]}
@@ -644,7 +668,33 @@ def window_for(manifest: dict[str, Any], automatic: list[str], size: int) -> dic
     voted = [head for head in preselect.order(contributions, works) if head in place]
     chosen = preselect.window(size, automatic, voted,
                               chain_only=chain_only, narrow_only=narrow_only, quota=rule["floors"])
-    return chosen | {"contributions": contributions}
+    return chosen | {"window": reserved + chosen["window"], "contributions": contributions}
+
+
+def merged(automatic: list[str], candidates: list[str], scores: dict[str, float], kept: set[str],
+           k: int) -> list[str]:
+    """The delivered order under rerank rule version 6: each record by `1 / (k + fused rank) + 1 / (k + reranker
+    rank)`, highest first, ranks from one.
+
+    `automatic` is the fused order without the person's own records. The reranker rank orders the scored records by
+    score, an equal score in fused order. A record the reranker did not score counts at the middle of the unscored
+    tail, `(scored + 1 + pool) / 2`, so it neither leads nor sinks for want of a score. A record kept in place keeps
+    its fused slot and takes no sum; the others fill the remaining slots. Equal sums keep the fused order.
+    """
+    fused_rank = {rid: i + 1 for i, rid in enumerate(automatic)}
+    # Reranker rank among the scored records, highest score first, equal scores in fused order
+    by_score = sorted(candidates, key=lambda rid: (-scores[rid], fused_rank[rid]))
+    rerank_rank = {rid: i + 1 for i, rid in enumerate(by_score)}
+    # The neutral rank of a record without a score: the middle of the places after the scored ones
+    tail = (len(candidates) + 1 + len(automatic)) / 2
+    total = {rid: 1 / (k + fused_rank[rid]) + 1 / (k + rerank_rank.get(rid, tail)) for rid in automatic}
+    # Kept records hold their slots; every other record fills the free slots by its sum
+    slots = [i for i, rid in enumerate(automatic) if rid not in kept]
+    movers = sorted((rid for rid in automatic if rid not in kept), key=lambda rid: (-total[rid], fused_rank[rid]))
+    order = list(automatic)
+    for slot, rid in zip(slots, movers):
+        order[slot] = rid
+    return order
 
 
 def promoted(fused: list[str], window: list[str]) -> list[str]:
@@ -769,9 +819,10 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
 
     The candidates are the first records of the automatic (fused) order that the person did not include themselves,
     as many as the run reads (its N) times the setting's pool factor, so the reranker decides which records fall above
-    the read cutoff, not only their order within it; each is sent as its title and abstract with the question. A
-    record of that window that only citation chaining brought (`chain_heads`) is sent like any other since version 4; under
-    a rule frozen before it (version 3 and earlier) it is not sent and keeps its place. Under a rule since
+    the read cutoff, not only their order within it; each is sent as its title and abstract with the question. Since
+    rerank rule version 5 the query lists choose the window when the pool is larger than it, and since version 6 the
+    fused order's first records (`fused_reserve`) take its first places (`window_for`). A record of that window that
+    only citation chaining brought (`chain_heads`) is sent like any other since version 4; under a rule frozen before it (version 3 and earlier) it is not sent and keeps its place. Under a rule since
     version 2, a record still without an abstract after the lookup before the rerank keeps its place too (since
     version 3 only one with a route to text or an unsettled lookup, `text_routes`), and `kept_reasons` says which
     rule kept each. The scores are stored in this step and read into the list's manifest.
@@ -797,7 +848,7 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     automatic = [rid for rid in replay(manifest)["fused"] if rid not in priority]
     size = choice.pool_size(read_top)
     # Which records enter the window: the fused prefix, or — since rerank rule version 5, and only while the pool is
-    # larger than the window — what the query lists themselves choose.
+    # larger than the window — what the query lists themselves choose (since version 6 after the fused reserve).
     chosen = window_for(manifest, automatic, size)
     window = chosen["window"]
     rows = {row["id"]: row for row in manifest["pool"]}

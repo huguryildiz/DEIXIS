@@ -249,8 +249,8 @@ def test_a_chain_only_record_is_reranked_since_d170_and_keeps_its_place_under_an
 
 # ---- the pre-selection of the window (rerank rule version 5) -----------------------------------------
 
-# A run whose budget froze the rule that pre-selects (version 5); the rules before it take the fused prefix.
-V5_RUN = {**RUN, "budget": {**RUN["budget"], "inspection": {"rerank": dict(small_batch.RERANK_RULE)}}}
+# A run whose budget froze a rule that pre-selects (version 5 and later); the rules before it take the fused prefix.
+PRESELECT_RUN = {**RUN, "budget": {**RUN["budget"], "inspection": {"rerank": dict(small_batch.RERANK_RULE)}}}
 
 
 def ranked_list(query, places, focused=False):
@@ -259,10 +259,10 @@ def ranked_list(query, places, focused=False):
             "members": sorted(places), "places": places, "size": len(places), "focused": focused}
 
 
-def lists_manifest(built, *, lists, floors, chain=()):
+def lists_manifest(built, *, lists, floors, chain=(), reserve=None):
     return built | {"chain_heads": list(chain), "query_lists": lists,
                     "preselect": {"rule": small_batch.preselect.RULE, "k": small_batch.preselect.K,
-                                  "floors": floors}}
+                                  "floors": floors, **({"fused_reserve": reserve} if reserve else {})}}
 
 
 def test_the_query_lists_choose_the_window_and_a_floor_brings_in_what_no_list_ranked(monkeypatch):
@@ -274,7 +274,7 @@ def test_the_query_lists_choose_the_window_and_a_floor_brings_in_what_no_list_ra
     lists = [ranked_list("SYNTHETIC main", {"a": 0, "b": 1})]
     monkeypatch.setattr(small_batch, "manifest_for",
                         lambda *args: lists_manifest(built, lists=lists, floors={"chain_only": 1}, chain=["d"]))
-    asyncio.run(small_batch.rerank_list(flow, V5_RUN, SCOPE, {}))
+    asyncio.run(small_batch.rerank_list(flow, PRESELECT_RUN, SCOPE, {}))
     output = store.steps[small_batch.RERANK_KEY]["output"]
     assert sorted(output["candidate_ids"]) == ["a", "d"]
     told = output["preselect"]
@@ -291,7 +291,7 @@ def test_a_pool_that_fits_the_window_is_not_pre_selected_at_all(monkeypatch):
     lists = [ranked_list("SYNTHETIC main", {"d": 0})]
     monkeypatch.setattr(small_batch, "manifest_for",
                         lambda *args: lists_manifest(built, lists=lists, floors={"chain_only": 1}, chain=["a"]))
-    asyncio.run(small_batch.rerank_list(flow, V5_RUN, SCOPE, {}))
+    asyncio.run(small_batch.rerank_list(flow, PRESELECT_RUN, SCOPE, {}))
     output = store.steps[small_batch.RERANK_KEY]["output"]
     # Every record the person did not include is in the window, in the fused order: nothing was chosen or dropped.
     assert output["candidate_ids"] == ["a", "b", "d"] and output["preselect"]["ran"] is False
@@ -307,7 +307,7 @@ def test_a_chain_record_a_query_list_also_ranked_spends_no_floor_place(monkeypat
     lists = [ranked_list("SYNTHETIC main", {"a": 0, "b": 1})]
     monkeypatch.setattr(small_batch, "manifest_for",
                         lambda *args: lists_manifest(built, lists=lists, floors={"chain_only": 1}, chain=["a", "d"]))
-    asyncio.run(small_batch.rerank_list(flow, V5_RUN, SCOPE, {}))
+    asyncio.run(small_batch.rerank_list(flow, PRESELECT_RUN, SCOPE, {}))
     output = store.steps[small_batch.RERANK_KEY]["output"]
     assert sorted(output["candidate_ids"]) == ["a", "d"]
     assert output["preselect"]["floors_taken"] == {"chain_only": ["d"], "narrow_only": []}
@@ -321,9 +321,89 @@ def test_a_record_the_person_included_takes_no_window_place_however_the_lists_vo
     built = small_batch.manifest_for()
     lists = [ranked_list("SYNTHETIC main", {"c": 0, "d": 1})]
     monkeypatch.setattr(small_batch, "manifest_for", lambda *args: lists_manifest(built, lists=lists, floors={}))
-    asyncio.run(small_batch.rerank_list(flow, V5_RUN, SCOPE, {}))
+    asyncio.run(small_batch.rerank_list(flow, PRESELECT_RUN, SCOPE, {}))
     output = store.steps[small_batch.RERANK_KEY]["output"]
     assert "c" not in output["candidate_ids"] and sorted(output["candidate_ids"]) == ["a", "d"]
+
+
+def test_the_fused_order_s_first_records_enter_the_window_before_the_votes(monkeypatch):
+    """Rerank rule version 6: the window's first places go to the leading records of the fused order, and the lists'
+    votes fill only what is left. "a" leads the fused order and no list ranked it: it is read all the same, and the
+    lists' first choice takes the one place left. Without the reserve the votes alone fill the window."""
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2},
+                                 RerankingLocal())
+    built = small_batch.manifest_for()
+    lists = [ranked_list("SYNTHETIC main", {"d": 0, "b": 1})]
+    frozen = lists_manifest(built, lists=lists, floors={}, reserve=1)
+    monkeypatch.setattr(small_batch, "manifest_for", lambda *args: frozen)
+    asyncio.run(small_batch.rerank_list(flow, PRESELECT_RUN, SCOPE, {}))
+    output = store.steps[small_batch.RERANK_KEY]["output"]
+    assert output["candidate_ids"] == ["a", "d"]
+    assert (output["preselect"]["ran"], output["preselect"]["fused_reserve"]) == (True, 1)
+    # A manifest frozen without the reserve (version 5) keeps the window its votes chose.
+    old = lists_manifest(built, lists=lists, floors={})
+    assert small_batch.window_for(old, ["a", "b", "d"], 2)["window"] == ["d", "b"]
+
+
+def test_the_delivered_order_fuses_the_fused_rank_with_the_reranker_rank(fixed_replay):
+    """Rerank rule version 6: each record's place is `1 / (60 + fused rank) + 1 / (60 + reranker rank)`. "f", the
+    reranker's first, rises past "e" and the unread "c" and "d", but not past "a", which leads the fused order; "b",
+    kept in place without an abstract, keeps its slot; "c" and "d", never read, count at the unscored tail's middle.
+    The person's own record stays first, and the list replays exactly. Under version 5 "f" would lead."""
+    body = manifest(["a", "b", "c", "d", "e", "f"], priority=["u"],
+                    reranker=applied(["a", "e", "f"], {"a": 0.1, "e": 0.5, "f": 0.9}) | {"kept_in_place": ["b"]})
+    body |= {"chain_heads": [], "query_lists": [ranked_list("Q", {"e": 0, "f": 1})],
+             "preselect": {"rule": small_batch.preselect.RULE, "k": small_batch.preselect.K, "floors": {},
+                           "fused_reserve": 2},
+             "rerank_merge": {"rule": small_batch.RERANK_MERGE, "k": 60}}
+    listing = small_batch.build_list(body)
+    assert listing["reranker"]["applied"] is True and listing["reranker"]["kept_in_place"] == 1
+    assert listing["order"] == ["u", "a", "b", "f", "e", "c", "d"]
+    assert small_batch.build_list(json.loads(json.dumps(body)))["order_hash"] == listing["order_hash"]
+    # The same window and scores ordered in place, as a version 5 manifest is replayed.
+    window = small_batch.window_for(body, ["a", "b", "c", "d", "e", "f"], 4)["window"]
+    assert rerankers.reorder(small_batch.promoted(["a", "b", "c", "d", "e", "f"], window), ["a", "e", "f"],
+                             {"a": 0.1, "e": 0.5, "f": 0.9})[0] == "f"
+
+
+def test_the_fused_reserve_at_its_edges(fixed_replay):
+    """Rerank rule version 6 at its edges. "u" is the person's own: it leads the fused order but takes no reserve
+    place and stays first in the list. "b" is the chain's own and already inside the reserve, so it spends no floor
+    place: the floor goes to "e", the next chain record. A window no larger than the reserve is the fused prefix, and
+    a pool that fits the window is not chosen from at all."""
+    body = manifest(["u", "a", "b", "c", "d", "e"], priority=["u"],
+                    reranker=applied(["a", "b", "e", "d"], {"a": 0.1, "b": 0.2, "e": 0.3, "d": 0.4}))
+    body |= {"chain_heads": ["b", "e"], "query_lists": [ranked_list("Q", {"d": 0})],
+             "preselect": {"rule": small_batch.preselect.RULE, "k": small_batch.preselect.K,
+                           "floors": {"chain_only": 1}, "fused_reserve": 2},
+             "rerank_merge": {"rule": small_batch.RERANK_MERGE, "k": 60}}
+    automatic = ["a", "b", "c", "d", "e"]
+    chosen = small_batch.window_for(body, automatic, 4)
+    assert chosen["window"] == ["a", "b", "e", "d"]
+    assert chosen["floors"] == {"chain_only": ["e"], "narrow_only": []}
+    # A window smaller than the reserve, or equal to it, is the fused order's own leading records.
+    assert small_batch.window_for(body, automatic, 1)["window"] == ["a"]
+    assert small_batch.window_for(body, automatic, 2)["window"] == ["a", "b"]
+    # A pool that fits the window: every record, in fused order, no floor taken.
+    assert small_batch.window_for(body, automatic, 5) == {"window": automatic, "floors": {}}
+    listing = small_batch.build_list(body)
+    assert listing["reranker"]["applied"] is True and listing["order"][0] == "u"
+    assert sorted(listing["order"]) == ["a", "b", "c", "d", "e", "u"]
+
+
+def test_a_version_5_list_replays_in_its_own_order(fixed_replay):
+    """A list frozen under rerank rule version 5 (pre-selected, no fused reserve, no merge) is rebuilt as it was:
+    the window first, its scored records in score order, the unread records after it in fused order. The same
+    manifest with the version 6 merge added would give another order, so a frozen run never moves."""
+    body = manifest(["a", "b", "c", "d"], reranker=applied(["c", "d"], {"c": 0.1, "d": 0.9}))
+    body |= {"chain_heads": [], "query_lists": [ranked_list("Q", {"c": 0, "d": 1})],
+             "preselect": {"rule": small_batch.preselect.RULE, "k": small_batch.preselect.K, "floors": {}}}
+    listing = small_batch.build_list(body)
+    assert listing["reranker"]["applied"] is True
+    assert listing["order"] == ["d", "c", "a", "b"]
+    assert small_batch.build_list(json.loads(json.dumps(body)))["order_hash"] == listing["order_hash"]
+    assert small_batch.build_list(body | {"rerank_merge": {"rule": small_batch.RERANK_MERGE, "k": 60}})["order"] == [
+        "a", "d", "c", "b"]
 
 
 def test_a_rerank_read_after_the_list_was_frozen_never_moves_a_record(fixed_replay):
@@ -402,9 +482,12 @@ def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(t
         assert listing["order"][len(priority):] == automatic
     else:
         assert step["status"] == "succeeded" and listing["reranker"]["applied"] is True
-        # The fake scores the reverse of the order it was given: the candidates come back reversed, the rest in place.
-        assert listing["order"][len(priority):len(priority) + len(candidates)] == candidates[::-1]
-        assert listing["order"][len(priority) + len(candidates):] == automatic[len(candidates):]
+        # A new run freezes rerank rule version 6: the fused reserve in its window and the rank-fusion merge.
+        assert listing["manifest"]["preselect"]["fused_reserve"] == small_batch.RERANK_RULE["fused_reserve"]
+        assert listing["manifest"]["rerank_merge"] == {"rule": small_batch.RERANK_MERGE, "k": 60}
+        rest = [rid for rid in automatic if rid not in priority]
+        kept = set(step["output"].get("kept_in_place") or [])
+        assert listing["order"][len(priority):] == small_batch.merged(rest, candidates, step["output"]["scores"], kept, 60)
 
 
 def quick_run(tmp_path, monkeypatch, local, **saved):
@@ -433,11 +516,13 @@ def test_quick_waits_for_the_reranker_and_its_list_is_in_reranked_order(tmp_path
     assert budget["fast_path"]["rerank_allowance"] == {"rule": "rerank_allowance_v1", "ms": 3000}
     assert lookup is not None and local.reranked
     assert step["status"] == "succeeded" and step["output"]["point"] == "before_list"
+    assert (rule["version"], rule["fused_reserve"], rule["merge"]) == (6, 200, small_batch.RERANK_MERGE)
     candidates, priority = step["output"]["candidate_ids"], listing["manifest"]["user_priority"]
     assert listing["reranker"]["applied"] is True
-    # The fake scores the reverse of the order it was given: the candidates come back reversed.
-    assert listing["order"][len(priority):len(priority) + len(candidates)] == candidates[::-1]
-    assert listing["order"] != listing["automatic_order"] or len(candidates) < 2
+    # The delivered order fuses each record's fused rank with the rank the reranker's scores give it.
+    rest = [rid for rid in listing["automatic_order"] if rid not in priority]
+    kept = set(step["output"].get("kept_in_place") or [])
+    assert listing["order"][len(priority):] == small_batch.merged(rest, candidates, step["output"]["scores"], kept, 60)
     # The manifest names no point for a reranker that read before the list, so it replays in the same order.
     assert "point" not in listing["manifest"]["reranker"]
     assert small_batch.build_list(listing["manifest"])["order"] == listing["order"]

@@ -214,6 +214,34 @@ def test_a_pause_stops_a_required_read_at_once_and_resume_does_not_repeat_a_fini
             and si["screening_target"]["run"] == 1] == first
 
 
+def test_an_unreachable_model_pauses_a_required_read_and_the_retry_sends_it_again(tmp_path, monkeypatch):
+    from deixis.models.adapter import ModelStepResult
+    late_ledger(monkeypatch)
+    down = {"now": True}
+    # The connection drops before the first abstract call is sent: the model is not reachable.
+    adapter = FakeAdapter(valid_response, fail=lambda si: (
+        ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
+        if down["now"] and si["task_type"] == "abstract_screening" else None))
+    app = app_for(tmp_path, monkeypatch, Pool(list(POOL)), adapter=adapter)
+    client = client_of(app)
+
+    def reads():
+        return [si for si in adapter.calls if si["task_type"] == "abstract_screening"]
+    try:
+        rid, run_id, _, run = discover(client)
+        assert (run["status"], run["pause_reason"]) == ("paused", "model_call_failed"), run
+        sent = len(reads())
+        down["now"] = False
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+        _, run = wait(client, rid, run_id)
+        codes = codes_of(app.state.store, rid)
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed", run
+    # The read that paused the run was sent again, and this time it was read.
+    assert len(reads()) > sent and codes["W2"] not in ("abstract_not_read", None)
+
+
 def test_a_failed_required_read_is_not_sent_again_on_resume(tmp_path, monkeypatch):
     from deixis.models.adapter import ModelStepResult
     late_ledger(monkeypatch)

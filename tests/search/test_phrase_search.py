@@ -172,16 +172,22 @@ def test_phrases_follow_the_questions_send_not_its_reply_one_at_a_time_through_t
 
 def test_the_keyword_search_never_waits_for_a_phrase_and_the_cutoff_cancels_and_records_them(tmp_path, monkeypatch):
     # Every phrase request hangs: the run still ends, and each one is closed at the end of the search stage.
+    # The fast path's OpenAlex start gap is real time and process-wide, so it is taken out here: the run's length then
+    # depends on no sleep, and on nothing an earlier test in this process left in the pacer.
+    from deixis.providers import pacing
+    monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "interval_seconds", 0.0)
+    monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "_next", 0.0)
     openalex = OpenAlex(hang=True)
     rid, run_id, view, run, store = run_once(tmp_path, monkeypatch, openalex, FakeAdapter())
     assert run["status"] == "completed", run
     assert openalex.sent("keyword")
     steps = phrase_steps(store, run_id)
     assert steps and {(s["status"], s["error_code"]) for s in steps} == {("cancelled", phrase_search.CUTOFF)}
-    # Nothing is sent once the stage is closed.
-    sent = len(openalex.sent("phrase"))
-    time.sleep(0.3)
-    assert len(openalex.sent("phrase")) == sent
+    # Nothing is sent once the stage is closed: every phrase request that reached OpenAlex is one whose step had
+    # started before the close (a started one may have been closed at the pacer), and the app is shut by now.
+    started = store.conn.execute("SELECT COUNT(*) FROM run_steps WHERE run_id = ? AND operation_key LIKE ?"
+                                 " AND started_at IS NOT NULL", (run_id, fast_search.PHRASE_KEY + "%")).fetchone()[0]
+    assert len(openalex.sent("phrase")) <= started
 
 
 def test_a_failed_or_refused_phrase_step_does_not_pause_the_run(tmp_path, monkeypatch):

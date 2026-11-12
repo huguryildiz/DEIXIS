@@ -260,6 +260,10 @@ class _StopSeen(Exception):
 CANCEL_GRACE_SECONDS = 3.0
 # The step codes a required abstract read ends with when its call failed after its retries (`_model_step`).
 REQUIRED_READ_FAILED = ("model_failed", "model_unavailable")
+# The service kinds of a call that failed on its own while its model was reachable: under the evidence minimum such a
+# required read is recorded as not read and the run goes on. Every other kind (the connection unreachable, its key,
+# quota or rate limit, the model not served) pauses the run as before.
+CALL_FAILURE_KINDS = ("service_error", "bad_request", "timeout")
 
 
 class RunStopped(Exception):
@@ -1848,13 +1852,12 @@ class ResearchFlow:
         cutoff_batches: set[int] = set()
 
         # Read, not opened: a batch the budget never reaches must not be left with a pending step of its own.
-        # A required read that failed after its retries is settled too: it is not sent again (`_abstract_call`).
+        # A required read whose call failed on its own is settled too: it is not sent again (`_abstract_call`).
         required = getattr(send_window, "required", False)
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:abstract_screening"
                     and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff")
-                         or (required and s["status"] in ("failed", "outcome_unknown")
-                             and s["error_code"] in REQUIRED_READ_FAILED))}
+                         or (required and self._failed_on_its_own(run_id, s)))}
 
         # A fast read whose budget already stopped short keeps that stop on a restart: the batches it left unread
         # are not sent later, so the closure's split between budget and deadline does not move.
@@ -2032,6 +2035,16 @@ class ResearchFlow:
         reserved.update(wanted)
         return True
 
+    def _failed_on_its_own(self, run_id: str, step: dict[str, Any]) -> bool:
+        """Whether a required read's step ended failed after its retries for a reason of its own call, the model
+        reachable: the service kind its last `step_finished` event recorded is one of `CALL_FAILURE_KINDS`."""
+        if step["status"] not in ("failed", "outcome_unknown") or step["error_code"] not in REQUIRED_READ_FAILED:
+            return False
+        row = self.store.conn.execute(
+            "SELECT payload_json FROM events WHERE run_id = ? AND type = 'step_finished'"
+            " AND json_extract(payload_json, '$.step_id') = ? ORDER BY id DESC LIMIT 1", (run_id, step["id"])).fetchone()
+        return row is not None and json.loads(row["payload_json"]).get("service_kind") in CALL_FAILURE_KINDS
+
     async def _abstract_call(self, run: dict[str, Any], scope: dict[str, Any], number: int, run_no: int,
                              rows: list[dict[str, Any]], limiter: ModelCallLimiter | None = None,
                              prefix: str = "abstract_screening",
@@ -2051,9 +2064,10 @@ class ResearchFlow:
             return None
         if step["error_code"] == "model_read_cutoff":
             return {"cutoff": True}  # A resumed run does not send it again
-        if (getattr(send_window, "required", False) and step["status"] in ("failed", "outcome_unknown")
-                and step["error_code"] in REQUIRED_READ_FAILED):
-            return {"cutoff": True}  # A required read that failed stays not read; a resumed run does not resend it
+        if getattr(send_window, "required", False) and self._failed_on_its_own(run["id"], step):
+            # A required read whose call failed on its own stays not read; a resumed run does not resend it. One that
+            # paused the run (its model unreachable) is sent again.
+            return {"cutoff": True}
         output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
                                         screening_target={"runs": runs, "run": run_no}, limiter=limiter,
                                         budget_short="skip", recheck=recheck, send_window=send_window)
@@ -6557,8 +6571,9 @@ class ResearchFlow:
                                                 text=result.error or result.delivery_class or "", surface="model")
                 if error_kind == "model_unavailable" and requested_model:
                     unusable.record(self.store, connection, requested_model, unusable.NOT_SERVED)
-                if getattr(send_window, "required", False):
-                    # A required read that failed is recorded as not read and the run goes on with what was read.
+                if getattr(send_window, "required", False) and error_kind in CALL_FAILURE_KINDS:
+                    # A required read whose call failed on its own, the model reachable, is recorded as not read and
+                    # the run goes on with what was read; an unreachable model pauses the run below.
                     return {"cutoff": True}
                 halt("model_call_failed", {"status": result.status, "error": safe_error(result.error),
                      "error_kind": error_kind,

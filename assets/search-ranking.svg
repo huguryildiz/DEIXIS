@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 640" width="800" height="640" font-family="Inter, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">How DEIXIS ranks the pool</title>
+  <desc id="d">Each signal ranks the whole pool. RRF fuses the ranks. The reranker scores a window of up to 400 works. The delivered order blends the fused rank and the reranker rank. The top N works get abstract screening and up to K get a full-text read.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6475"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="800" height="640" fill="#ffffff"/>
+
+  <!-- Pool -->
+  <rect x="20" y="96" width="136" height="76" rx="8" fill="#ffffff" stroke="#5b6475" stroke-width="1"/>
+  <text x="88" y="124" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">Pool</text>
+  <text x="88" y="144" font-size="13" fill="#3b4046" text-anchor="middle">every work</text>
+  <text x="88" y="161" font-size="13" fill="#3b4046" text-anchor="middle">the search found</text>
+
+  <!-- Signals -->
+  <text x="190" y="14" font-size="13" font-weight="600" fill="#5b6475">Signals: each ranks the whole pool</text>
+  <g font-size="13" fill="#1f2328">
+    <rect x="190" y="24" width="236" height="30" rx="6" fill="#ffffff" stroke="#d9dce1"/>
+    <text x="202" y="44">BM25 on title and abstract</text>
+    <rect x="190" y="62" width="236" height="30" rx="6" fill="#ffffff" stroke="#d9dce1"/>
+    <text x="202" y="82">Concept blocks named</text>
+    <rect x="190" y="100" width="236" height="30" rx="6" fill="#ffffff" stroke="#d9dce1"/>
+    <text x="202" y="120">TF-IDF likeness to seeds</text>
+    <rect x="190" y="138" width="236" height="30" rx="6" fill="#ffffff" stroke="#d9dce1"/>
+    <text x="202" y="158">Citation links to seeds</text>
+    <rect x="190" y="176" width="236" height="30" rx="6" fill="#ffffff" stroke="#d9dce1"/>
+    <text x="202" y="196">Compared terms together</text>
+    <rect x="190" y="214" width="236" height="30" rx="6" fill="#ffffff" stroke="#d9dce1"/>
+    <text x="202" y="234">Embedding similarity, if on</text>
+  </g>
+  <g stroke="#5b6475" stroke-width="1" fill="none">
+    <path d="M156,134 L172,134 L172,39 L188,39" marker-end="url(#arrow)"/>
+    <path d="M172,77 L188,77" marker-end="url(#arrow)"/>
+    <path d="M172,115 L188,115" marker-end="url(#arrow)"/>
+    <path d="M172,134 L172,229 L188,229" marker-end="url(#arrow)"/>
+    <path d="M172,153 L188,153" marker-end="url(#arrow)"/>
+    <path d="M172,191 L188,191" marker-end="url(#arrow)"/>
+  </g>
+  <g stroke="#5b6475" stroke-width="1" fill="none">
+    <path d="M426,39 L444,39 L444,229 L426,229"/>
+    <path d="M426,77 L444,77"/>
+    <path d="M426,115 L444,115"/>
+    <path d="M426,153 L444,153"/>
+    <path d="M426,191 L444,191"/>
+    <path d="M444,134 L466,134" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- RRF -->
+  <rect x="468" y="76" width="312" height="116" rx="8" fill="#ffffff" stroke="#5b6475" stroke-width="1"/>
+  <text x="484" y="100" font-size="14" font-weight="600" fill="#1f2328">Rank fusion (RRF, k = 60)</text>
+  <text x="484" y="122" font-size="13" fill="#3b4046">score = sum of 1 / (60 + rank)</text>
+  <text x="484" y="142" font-size="13" fill="#3b4046">A second pass reorders places 21 to 500.</text>
+  <text x="484" y="162" font-size="13" fill="#3b4046">Ties break by record ID.</text>
+  <text x="484" y="182" font-size="13" fill="#3b4046">Result: the fused order.</text>
+
+  <path d="M624,192 L624,262 L210,262 L210,296" stroke="#5b6475" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Window -->
+  <rect x="20" y="298" width="380" height="140" rx="8" fill="#ebeff7" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="36" y="322" font-size="14" font-weight="600" fill="#1f2328">Reranker window: up to 400 works</text>
+  <text x="36" y="346" font-size="13" fill="#1f2328">1. The first 200 works of the fused order.</text>
+  <text x="36" y="368" font-size="13" fill="#1f2328">2. Floors: 5 chain-only and 5 focused-only</text>
+  <text x="54" y="386" font-size="13" fill="#1f2328">works, best fused place first.</text>
+  <text x="36" y="408" font-size="13" fill="#1f2328">3. Query-list votes fill the other places.</text>
+  <text x="36" y="428" font-size="13" fill="#3b4046">A pool that fits the window is scored whole.</text>
+  <line x1="400" y1="368" x2="420" y2="368" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Reranker -->
+  <rect x="422" y="298" width="128" height="140" rx="8" fill="#ffffff" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="438" y="322" font-size="14" font-weight="600" fill="#1f2328">Reranker</text>
+  <text x="438" y="346" font-size="13" fill="#3b4046">scores each</text>
+  <text x="438" y="366" font-size="13" fill="#3b4046">window work</text>
+  <text x="438" y="386" font-size="13" fill="#3b4046">on its title and</text>
+  <text x="438" y="406" font-size="13" fill="#3b4046">abstract, for</text>
+  <text x="438" y="426" font-size="13" fill="#3b4046">the question</text>
+  <line x1="550" y1="368" x2="570" y2="368" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Blend -->
+  <rect x="572" y="298" width="208" height="140" rx="8" fill="#ffffff" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="588" y="322" font-size="14" font-weight="600" fill="#1f2328">Delivered order</text>
+  <text x="588" y="346" font-size="13" fill="#3b4046">1 / (60 + fused rank)</text>
+  <text x="588" y="366" font-size="13" fill="#3b4046">+ 1 / (60 + reranker rank)</text>
+  <text x="588" y="386" font-size="13" fill="#3b4046">highest sum first.</text>
+  <text x="588" y="406" font-size="13" fill="#3b4046">Unscored works get the</text>
+  <text x="588" y="426" font-size="13" fill="#3b4046">middle rank of the tail.</text>
+
+  <path d="M676,438 L676,466 L400,466 L400,486" stroke="#5b6475" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Funnel bars -->
+  <rect x="20" y="488" width="760" height="34" rx="6" fill="#f1f3f5" stroke="#d9dce1" stroke-width="1"/>
+  <text x="36" y="510" font-size="13" fill="#1f2328">Frozen list: your included works first, then the delivered order</text>
+  <rect x="20" y="534" width="340" height="34" rx="6" fill="#ebeff7" stroke="#bfcce3" stroke-width="1"/>
+  <text x="36" y="556" font-size="13" fill="#1f2328">Top N: abstract screening</text>
+  <text x="376" y="556" font-size="13" fill="#3b4046">N = 25 / 50 / 100</text>
+  <rect x="20" y="580" width="180" height="34" rx="6" fill="#3b5b9a" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="36" y="602" font-size="13" font-weight="600" fill="#ffffff">Up to K: full text</text>
+  <text x="216" y="602" font-size="13" fill="#3b4046">K = 10 / 20 / 40, in list order</text>
+  <text x="20" y="634" font-size="13" fill="#5b6475">The ranking removes nothing. Works below N stay in Sources.</text>
+</svg>

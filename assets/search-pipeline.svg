@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 700" width="800" height="700" font-family="Inter, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">The DEIXIS search pipeline</title>
+  <desc id="d">A question goes through plan, search and ranking, which are the same at every depth, then through abstract screening of the top N, full-text reading of up to K works and the answer, whose numbers the depth sets.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6475"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="800" height="700" fill="#ffffff"/>
+
+  <!-- Question -->
+  <rect x="40" y="16" width="480" height="40" rx="7" fill="#ffffff" stroke="#5b6475" stroke-width="1"/>
+  <text x="280" y="41" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">Your question</text>
+  <line x1="280" y1="56" x2="280" y2="108" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Frame A: shared stages -->
+  <rect x="24" y="76" width="760" height="294" rx="10" fill="none" stroke="#d9dce1" stroke-width="1"/>
+  <text x="40" y="98" font-size="13" font-weight="600" fill="#5b6475">Same at every depth</text>
+  <text x="552" y="98" font-size="13" font-weight="600" fill="#5b6475">Time allocation</text>
+
+  <rect x="40" y="110" width="480" height="72" rx="7" fill="#ffffff" stroke="#d9dce1" stroke-width="1"/>
+  <text x="56" y="134" font-size="14" font-weight="600" fill="#1f2328">Plan</text>
+  <text x="56" y="154" font-size="13" fill="#3b4046">Code picks the question words. A model reads the first</text>
+  <text x="56" y="172" font-size="13" fill="#3b4046">50 results and writes the two-block query and criterion.</text>
+  <text x="552" y="154" font-size="13" fill="#1f2328">8 s, recorded only</text>
+  <line x1="280" y1="182" x2="280" y2="194" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="196" width="480" height="72" rx="7" fill="#ffffff" stroke="#d9dce1" stroke-width="1"/>
+  <text x="56" y="220" font-size="14" font-weight="600" fill="#1f2328">Search</text>
+  <text x="56" y="240" font-size="13" fill="#3b4046">OpenAlex semantic, keyword and plain search, one</text>
+  <text x="56" y="258" font-size="13" fill="#3b4046">citation-chain round, and conditional extra sources.</text>
+  <text x="552" y="240" font-size="13" fill="#1f2328">14 s, never less than 10 s</text>
+  <line x1="280" y1="268" x2="280" y2="280" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="282" width="480" height="72" rx="7" fill="#ffffff" stroke="#d9dce1" stroke-width="1"/>
+  <text x="56" y="306" font-size="14" font-weight="600" fill="#1f2328">Ranking</text>
+  <text x="56" y="326" font-size="13" fill="#3b4046">Signals fused by RRF. A reranker reads up to 400</text>
+  <text x="56" y="344" font-size="13" fill="#3b4046">works. The ranked list is frozen.</text>
+  <text x="552" y="326" font-size="13" fill="#1f2328">15 s. The reranker gets</text>
+  <text x="552" y="344" font-size="13" fill="#1f2328">at least 3 s.</text>
+  <line x1="280" y1="354" x2="280" y2="422" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Frame B: depth-set stages -->
+  <rect x="24" y="390" width="760" height="282" rx="10" fill="#ebeff7" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="40" y="412" font-size="13" font-weight="600" fill="#2e4877">Depth sets these numbers</text>
+  <text x="552" y="412" font-size="13" font-weight="600" fill="#2e4877">Quick / Standard / Detailed</text>
+
+  <rect x="40" y="424" width="480" height="60" rx="7" fill="#ffffff" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="56" y="448" font-size="14" font-weight="600" fill="#1f2328">Abstract screening of the top N</text>
+  <text x="56" y="469" font-size="13" fill="#3b4046">Two model reads per work. It never includes a work.</text>
+  <text x="552" y="458" font-size="13" fill="#1f2328">N = 25 / 50 / 100</text>
+  <line x1="280" y1="484" x2="280" y2="502" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="504" width="480" height="60" rx="7" fill="#ffffff" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="56" y="528" font-size="14" font-weight="600" fill="#1f2328">Full-text reading of up to K works</text>
+  <text x="56" y="549" font-size="13" fill="#3b4046">Two model reads per work. Code checks every quote.</text>
+  <text x="552" y="528" font-size="13" fill="#1f2328">K = 10 / 20 / 40</text>
+  <text x="552" y="549" font-size="13" fill="#1f2328">read time 14 / 33 / 108 s</text>
+  <line x1="280" y1="564" x2="280" y2="590" stroke="#5b6475" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="292" y="582" font-size="13" fill="#2e4877">read cutoff</text>
+
+  <rect x="40" y="592" width="480" height="60" rx="7" fill="#ffffff" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="56" y="616" font-size="14" font-weight="600" fill="#1f2328">Answer</text>
+  <text x="56" y="637" font-size="13" fill="#3b4046">Every citation points to a located passage.</text>
+  <text x="552" y="616" font-size="13" fill="#1f2328">16 / 48 / 80 passages</text>
+  <text x="552" y="637" font-size="13" fill="#1f2328">answer time 25 / 50 / 90 s</text>
+
+  <text x="40" y="692" font-size="13" fill="#5b6475">Full texts not read by the cutoff keep downloading. Late full text can make one revision.</text>
+</svg>

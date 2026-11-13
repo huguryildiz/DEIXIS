@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" width="800" height="560" font-family="Inter, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Where a DEIXIS search goes</title>
+  <desc id="d">Four OpenAlex routes run on every search: semantic search, plain search, keyword search and one citation-chain round. Extra sources run only when their condition holds. All results go into one candidate pool.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6475"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="800" height="560" fill="#ffffff"/>
+
+  <text x="20" y="22" font-size="13" font-weight="600" fill="#5b6475">Every search, at every depth</text>
+
+  <rect x="20" y="34" width="520" height="92" rx="8" fill="#ebeff7" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="36" y="58" font-size="14" font-weight="600" fill="#1f2328">OpenAlex semantic search</text>
+  <text x="36" y="80" font-size="13" fill="#1f2328">Your question as written: 50 results</text>
+  <text x="36" y="99" font-size="13" fill="#1f2328">Each seed PDF with text: 50 results</text>
+  <text x="36" y="118" font-size="13" fill="#1f2328">Each of the six short phrases: 50 results</text>
+
+  <rect x="20" y="140" width="520" height="56" rx="8" fill="#ebeff7" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="36" y="164" font-size="14" font-weight="600" fill="#1f2328">OpenAlex plain search</text>
+  <text x="36" y="186" font-size="13" fill="#1f2328">Each of the six short phrases: 30 results, no sort</text>
+
+  <rect x="20" y="210" width="520" height="74" rx="8" fill="#ebeff7" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="36" y="234" font-size="14" font-weight="600" fill="#1f2328">OpenAlex keyword search</text>
+  <text x="36" y="256" font-size="13" fill="#1f2328">Up to 2 Boolean queries, 400 results each,</text>
+  <text x="36" y="275" font-size="13" fill="#1f2328">1,000 results in all, pages of 100</text>
+
+  <rect x="20" y="298" width="520" height="74" rx="8" fill="#ebeff7" stroke="#3b5b9a" stroke-width="1"/>
+  <text x="36" y="322" font-size="14" font-weight="600" fill="#1f2328">OpenAlex citation chain, one round</text>
+  <text x="36" y="344" font-size="13" fill="#1f2328">1 starting work: 4 pages of 50 works it cites,</text>
+  <text x="36" y="363" font-size="13" fill="#1f2328">2 pages of 100 works that cite it</text>
+
+  <text x="20" y="400" font-size="13" font-weight="600" fill="#5b6475">Only when a condition holds</text>
+  <rect x="20" y="412" width="520" height="132" rx="8" fill="#ffffff" stroke="#d9dce1" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="36" y="436" font-size="14" font-weight="600" fill="#1f2328">Extra sources</text>
+  <text x="36" y="458" font-size="13" fill="#1f2328">One field source: 250 results, if its field share is 0.25 or more</text>
+  <text x="54" y="477" font-size="13" fill="#5b6475">(arXiv, bioRxiv, PubMed or IEEE Xplore)</text>
+  <text x="36" y="498" font-size="13" fill="#1f2328">Scopus: 100 results, if no independent field source</text>
+  <text x="36" y="519" font-size="13" fill="#1f2328">Semantic Scholar: if OpenAlex fails, or for one</text>
+  <text x="54" y="536" font-size="13" fill="#1f2328">concept the main query misses</text>
+
+  <g stroke="#5b6475" stroke-width="1" fill="none">
+    <path d="M540,80 L580,80 L580,290 L606,290" marker-end="url(#arrow)"/>
+    <path d="M540,168 L580,168"/>
+    <path d="M540,247 L580,247"/>
+    <path d="M540,335 L580,335 L580,290"/>
+    <path d="M540,478 L580,478 L580,335" stroke-dasharray="4 3"/>
+  </g>
+
+  <rect x="608" y="240" width="172" height="100" rx="8" fill="#ffffff" stroke="#5b6475" stroke-width="1"/>
+  <text x="694" y="270" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">Candidate pool</text>
+  <text x="694" y="292" font-size="13" fill="#3b4046" text-anchor="middle">every work found,</text>
+  <text x="694" y="311" font-size="13" fill="#3b4046" text-anchor="middle">ranked next</text>
+</svg>

@@ -243,6 +243,9 @@ def no_provider_pacing(request, monkeypatch):
     # the next start an earlier test in this process left in it.
     monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "interval_seconds", 0.0)
     monkeypatch.setattr(pacing.FAST_OPENALEX_PACER, "_next", 0.0)
+    # The plain route's start gate has no gap, but it keeps the last start it saw: one a fake clock set must not
+    # hold back a later test whose real clock is below it.
+    monkeypatch.setattr(openalex.PLAIN_START, "_next", 0.0)
 
 
 @pytest.fixture(autouse=True)

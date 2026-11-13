@@ -175,7 +175,10 @@ def test_the_second_rule_sends_each_phrase_by_plain_search_too_and_its_lists_vot
     assert (frozen["rule"], frozen["status"], frozen["plain_records"]) == (fast_path.PHRASE_SEARCH_RULE, "ready", 30)
     # Six plain requests, one per phrase: the phrase text as `search`, 30 per page, no sort and no cursor.
     texts = [f"{PHRASE} {n}" for n in range(1, 7)]
-    assert sorted(params["search"] for params in openalex.plain) == texts
+    outcomes = [tuple(row) for row in store.conn.execute(
+        "SELECT operation_key, status, error_code FROM run_steps WHERE run_id = ? AND operation_key LIKE ? ORDER BY rowid",
+        (run_id, fast_search.PLAIN_PHRASE_KEY + "%"))]
+    assert sorted(params["search"] for params in openalex.plain) == texts, outcomes  # each plain step's outcome
     assert all(params["per_page"] == "30" and "sort" not in params and "cursor" not in params
                for params in openalex.plain)
     steps = {row["operation_key"]: row["status"] for row in store.conn.execute(

@@ -338,7 +338,7 @@ def test_the_shipped_depths_are_the_ones_the_pilot_can_run():
     """The pilot's depth names are the product's own, and each one's target is the depth's whole budget."""
     assert set(delivery_pilot.DEPTHS) == set(fast_path.MODES)
     for depth, seconds in delivery_pilot.TARGET_SECONDS.items():
-        assert sum(fast_path.MODES[depth].stage_seconds) == seconds
+        assert fast_path.freeze_budget({}, depth)["total_ms"] == seconds * 1000
 
 
 def test_no_question_is_measured_twice_in_a_row_across_a_block_boundary():

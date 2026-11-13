@@ -46,7 +46,7 @@ def issues(draft):
 
 # ---- the depth's budget -------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("effort,plans,focused", [("quick", 1, 0), ("standard", 2, 1), ("detailed", 3, 2)])
+@pytest.mark.parametrize("effort,plans,focused", [("quick", 2, 1), ("standard", 2, 1), ("detailed", 2, 1)])
 def test_each_depth_allows_one_main_query_and_spends_the_rest_on_focused_ones(effort, plans, focused):
     budget = fast_path.freeze_budget({}, effort)
     assert budget["boolean_plans"] == plans
@@ -175,7 +175,7 @@ def test_a_run_compiles_the_focused_query_and_does_not_send_it_when_the_main_que
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
     adapter = FakeAdapter()
     client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
-    # The main query is the round's only other plan, so Deep's budget leaves room for two focused plans; the
+    # The main query is the round's only other plan, so the shared budget leaves room for one focused plan; the
     # model names one (see `test_a_second_plan_in_the_round_spends_a_plan_of_the_budget`).
     rid, run_id = start(client, effort="detailed")
     _, run = wait(client, rid, run_id)
@@ -183,7 +183,7 @@ def test_a_run_compiles_the_focused_query_and_does_not_send_it_when_the_main_que
 
     stored = step_output(client, run_id, "search_query")
     recorded = stored["focused"]
-    assert recorded["rule"] == search_plan.FOCUSED_RULE and recorded["allowance"] == 2
+    assert recorded["rule"] == search_plan.FOCUSED_RULE and recorded["allowance"] == 1
     (named,) = recorded["concepts"]
     assert named["gap"] and named["left_out"] is None and named["query_text"]
     # One plan, rendered once per provider as the main query is; the frozen keyword plan sends the OpenAlex one.
@@ -212,7 +212,7 @@ def test_a_second_plan_in_the_round_spends_a_plan_of_the_budget():
     deep = fast_path.freeze_budget({}, "detailed")
     # Standard allows two plans: the main query spends one and a focused query may spend the other.
     assert search_plan.focused_allowance({"fast_path": standard}, [model]) == 1
-    assert search_plan.focused_allowance({"fast_path": deep}, [model]) == 2
+    assert search_plan.focused_allowance({"fast_path": deep}, [model]) == 1
     # A research searched before the code query was removed still has that plan counted in its own round.
     assert search_plan.focused_allowance({"fast_path": standard}, [model, {"origin": "code", "provider_id": "openalex"}]) == 0
 

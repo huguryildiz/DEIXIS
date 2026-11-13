@@ -107,7 +107,8 @@ def test_off_arm_freezes_nothing_and_keeps_the_earlier_policy_hash():
 @pytest.mark.parametrize("arm", ["conditional", "always"])
 def test_an_arm_freezes_its_records_and_snippet_budget_per_depth(arm):
     for effort, records, snippets in (("quick", 50, 0), ("standard", 100, 1), ("detailed", 200, 2)):
-        frozen = fast_path.completion({"fast_path": fast_path.freeze_budget({}, effort, completion_arm=arm)})
+        frozen = fast_path.completion({"fast_path": fast_path.freeze_budget({}, effort, completion_arm=arm,
+                                                                           uniform_search=False)})
         assert frozen == {"rule": "s2_completion_v1", "arm": arm, "records": records, "snippet_requests": snippets}
 
 
@@ -371,11 +372,9 @@ def test_the_plan_freezes_one_snippet_request_per_focused_concept(lab):
     assert spec["limit"] == 25  # the endpoint's own page, under the arm's 100 records
 
 
-def test_quick_freezes_no_snippet_request(lab):
+def test_quick_freezes_one_snippet_request(lab):
     _, _, _, plan = snippet_plan(lab, effort="quick")
-    # Quick's budget leaves no focused plan, so there is no recorded gap to ask about and its first list waits for
-    # no extra search.
-    assert plan["completion"]["snippet_requests"] == 0 and plan["s2_snippet"] == []
+    assert plan["completion"]["snippet_requests"] == 1 and len(plan["s2_snippet"]) == 1
 
 
 def test_an_unmet_gap_sends_the_snippet_request_and_keeps_every_passage(lab):

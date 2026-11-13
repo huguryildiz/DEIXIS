@@ -467,8 +467,6 @@ def rich_library(tmp_path: Path):
 EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
     "asset_arxiv_versions": "written only by the arXiv source route, which is off in the test settings",
-    "chain_links": "the builder's discovery is Quick, which opens no citation request of its own, and its records"
-                   " carry no reference list, so no link inside the first page is written either",
     "citation_map_resolutions": "written only by a citation map run, which a person starts and this flow does not",
     **{table: "written only by a Verify Citations draft, which this flow does not give" for table in (
         "citation_drafts", "citation_markers", "citation_bib_entries", "citation_pairs", "citation_checks")},

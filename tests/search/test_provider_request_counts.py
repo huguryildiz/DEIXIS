@@ -128,8 +128,7 @@ def test_a_discovery_run_counts_every_request_the_providers_received(tmp_path, m
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed" and unsettled == 0
-    assert received["api.openalex.org"] > 0 and received["api.semanticscholar.org"] > 0
+    assert received["api.openalex.org"] > 0 and received["api.semanticscholar.org"] == 0
     assert usage["requests"] == {"recorded": True, "providers": [
         {"provider": "openalex", "sent": received["api.openalex.org"], "refused": 0, "unknown": 0},
-        {"provider": "semantic_scholar", "sent": received["api.semanticscholar.org"],
-         "refused": received["api.semanticscholar.org"], "unknown": 0}]}
+        {"provider": "semantic_scholar", "sent": 0, "refused": 0, "unknown": 0}]}

@@ -9,8 +9,9 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT, SW_READ_LIMIT
+from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES
 from deixis.providers.registry import reading
+from deixis.workflow.run import fast_path
 
 
 @dataclass(frozen=True)
@@ -37,9 +38,10 @@ def page_allowance(query: dict[str, Any], effort: str, budget: dict[str, Any]) -
     answered first. Both figures are this research's effort: a lighter effort reads fewer records per query
     and waits out fewer 429s.
     """
-    read_limit = SW_READ_LIMIT[effort]
+    policy = budget.get("fast_path") or {}
+    read_limit = fast_path.search_read(policy, effort, "read_limit_per_query")
     connector = reading(query)  # the endpoint the query names pages its own way
-    per_page = connector.requests_per_search * (1 + PROVIDER_WAIT[effort]) + MAX_TRANSIENT_NETWORK_RETRIES
+    per_page = connector.requests_per_search * (1 + fast_path.search_read(policy, effort, "provider_wait")) + MAX_TRANSIENT_NETWORK_RETRIES
     pages = 1 if connector.paging == "single_page" else math.ceil(
         min(read_limit, connector.max_reachable or read_limit) / connector.max_results)
     return pages * per_page + budget.get("retry_provider_requests", 0)

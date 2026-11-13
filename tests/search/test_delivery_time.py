@@ -28,7 +28,7 @@ from delivery_time import anchors, ledgers, reports, summary  # noqa: E402
 # What the design asks of each depth, in seconds: the end-to-end target for the first sourced answer, and the
 # latest moment the run hands over to writing it. Frozen here so a later change to the stage split cannot drift
 # away from the design without this test saying so.
-TARGETS = {"quick": (60, 35), "standard": (120, 70), "detailed": (300, 210)}
+TARGETS = {"quick": (76, 51), "standard": (120, 70), "detailed": (235, 145)}
 
 
 @pytest.fixture
@@ -76,7 +76,8 @@ def _finish(lab_run, stage, seconds):
 @pytest.mark.parametrize("effort", sorted(TARGETS))
 def test_every_depth_keeps_the_designs_target_and_handover(effort):
     target, handover = TARGETS[effort]
-    bases = fast_path.MODES[effort].stage_seconds
+    frozen = fast_path.freeze_budget({}, effort)["stage_base_ms"]
+    bases = tuple(frozen[stage] // 1000 for stage in fast_path.STAGES)
     assert sum(bases) == target, f"{effort}: the stage bases must sum to the end-to-end target"
     assert sum(bases[:len(fast_path.PRE_ANSWER)]) == handover, f"{effort}: the pre-answer bases must sum to the handover"
     # The answer stage is what is left of the target after the handover, which is the design's own arithmetic.

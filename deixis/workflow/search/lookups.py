@@ -28,7 +28,6 @@ import httpx
 from deixis.runtime.config import Settings
 from deixis.domain import survey
 from deixis.domain.record_identity import record_kind
-from deixis.domain.rules import PROVIDER_WAIT
 from deixis.providers import facade, lookup, scopus
 from deixis.providers import common
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
@@ -37,6 +36,7 @@ from deixis.storage.db import dumps, now, transaction
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.search import user_plan
 from deixis.workflow.run.store import Store
+from deixis.workflow.run import fast_path
 
 MAX_LOOKUP_REQUESTS = 200  # planned requests of one run over both sources; hand-picked, not measured
 CROSSREF_CHUNK = 25  # Crossref requests that share one step
@@ -316,7 +316,7 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     # How many 429s one batch waits out is this research's effort. `quick` waits for none: the refused batch
     # is recorded with its status, its records stay without an abstract, and the next batch is still sent.
-    waits = PROVIDER_WAIT[scope["effort"]]
+    waits = fast_path.search_read(run["budget"].get("fast_path") or {}, scope["effort"], "provider_wait")
 
     def halted() -> bool:
         checkpoint()
@@ -792,7 +792,7 @@ def flag_and_decide(store: Store, run: dict[str, Any], scope: dict[str, Any], wo
                     (rid, revision, row["source_version_id"], signal.flag, signal.evidence, step["id"],
                      protocol["hash"] if protocol else None, now()),
                 ).rowcount
-        code, note = _wanted_decision(store, decisions, rid, row, found, abstract, scope)
+        code, note = _wanted_decision(store, decisions, rid, row, found, abstract, scope, run)
         if code and _should_write(decisions, rid, row["source_version_id"], code):
             decisions.record(rid, row["source_version_id"], code, step_id=step["id"], note=note)
             written[code] = written.get(code, 0) + 1
@@ -813,7 +813,7 @@ def _abstract(store: Store, source_version_id: str) -> str | None:
 
 def _wanted_decision(store: Store, decisions: DecisionStore, research_id: str, row: dict[str, Any],
                      found: list[survey.SurveySignal], abstract: str | None,
-                     scope: dict[str, Any]) -> tuple[str | None, str | None]:
+                     scope: dict[str, Any], run: dict[str, Any]) -> tuple[str | None, str | None]:
     """The abstract-stage code this record asks for now, and the note that says what was asked.
 
     A self-describing abstract and a reference count write no decision at all: they are labels, and the record
@@ -827,7 +827,7 @@ def _wanted_decision(store: Store, decisions: DecisionStore, research_id: str, r
         asked = [source for source in SOURCES if in_scope(scope, source)]
         # An effort that does not wait on a rate limit does not ask again in this run either, so a refused batch is
         # as final here as an answer without an abstract.
-        settled = answered if PROVIDER_WAIT[scope["effort"]] else asked_out
+        settled = answered if fast_path.search_read(run["budget"].get("fast_path") or {}, scope["effort"], "provider_wait") else asked_out
         if all(settled(store, row["source_version_id"], source) for source in asked):
             # Either every source in scope answered without an abstract, or no source is in scope to ask.
             return "abstract_not_found", ", ".join(asked) or "no_source_in_scope"

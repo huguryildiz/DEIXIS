@@ -544,6 +544,9 @@ def test_a_factor_saved_lower_in_settings_still_wins_at_quick(tmp_path, monkeypa
 def test_a_quick_run_frozen_before_the_change_keeps_after_list_and_replays_in_fused_order(tmp_path, monkeypatch):
     # The budget a Quick run was frozen with before its list waited for the reranker.
     from deixis.workflow.run import fast_path
+    freeze = fast_path.freeze_budget
+    monkeypatch.setattr(fast_path, "freeze_budget", lambda *args, **kwargs: freeze(
+        *args, **(kwargs | {"uniform_search": False})))
     monkeypatch.setitem(fast_path.MODES, "quick", fast_path.MODES["quick"]._replace(
         rerank_pool=2.0, rerank_point="after_list", rerank_allowance=0))
     monkeypatch.setitem(small_batch.RERANK_RULE, "pool_factor", 8.0)
@@ -911,7 +914,7 @@ def allowance_run(tmp_path, monkeypatch, plan_seconds, *, policy_edit=None, evid
     store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
     rid = store.create_research("SYNTHETIC allowance", "academic", "standard", ["openalex"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
-    policy = fast_path.freeze_budget(budget, "standard")
+    policy = fast_path.freeze_budget(budget, "standard", uniform_search=False)
     if policy_edit or not evidence:
         policy = {k: v for k, v in policy.items() if k != "policy_hash"}
         if policy_edit:

@@ -79,7 +79,7 @@ def test_a_seeded_run_asks_the_unseeded_question_then_each_seed_then_the_keyword
         assert plan["version"] == 2 and set(plan) == PLAN_KEYS | {"seed_semantic", "phrase_search"}
         assert plan["semantic"]["query_text"] == QUESTION and set(plan["semantic"]) == {
             "provider_id", "endpoint", "query_text", "limit", "query_origin"}
-        assert [(s["source_version_id"], s["limit"]) for s in plan["seed_semantic"]] == [(a, 25), (b, 25)]
+        assert [(s["source_version_id"], s["limit"]) for s in plan["seed_semantic"]] == [(a, 50), (b, 50)]
         # The short phrase requests beside the plan are requests of their own, apart from the seeds' order.
         phrases = {spec["query_text"] for spec in plan["phrase_search"]["requests"]}
         semantic = [entry for entry in transport.log if entry[0] == "semantic" and entry[1] not in phrases]
@@ -89,7 +89,7 @@ def test_a_seeded_run_asks_the_unseeded_question_then_each_seed_then_the_keyword
         assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF
         assert {w["semantic"] for w in plan["words"]} == {False}
         assert [entry[1] for entry in semantic[question + 1:]] == [s["query_text"] for s in plan["seed_semantic"]]
-        assert [entry[2] for entry in semantic[question + 1:]] == [25, 25]
+        assert [entry[2] for entry in semantic[question + 1:]] == [50, 50]
         # Under the evidence minimum the keyword pages no longer wait for the seeds' requests, so no order between
         # them is asserted here; both went out.
         assert any(entry[0] == "keyword" for entry in transport.log)

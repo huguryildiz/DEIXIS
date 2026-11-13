@@ -17,8 +17,12 @@ from deixis.providers.common import ProviderRecord, SearchOutcome
 from deixis.workflow.search import english_question, fast_embedding, search as fast_search, ranking, small_batch
 from deixis.workflow.run import fast_path
 from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.store import Store
 from test_fast_path_clock import library
+from test_fast_path_clock import FakeClock
 from deixis.api.app import create_app
+from deixis.storage import db
+from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.providers.registry import CONNECTORS
 from fakes import FakeAdapter
 from test_abstract_flow import ON_TOPIC
@@ -108,9 +112,7 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, f
     # Under the evidence minimum the semantic requests run beside the keyword pages, so each kind keeps its own order.
     sent = [call for call in calls if call[0] == "semantic"]
     assert [(q, p, n) for e, q, p, n in calls if e != "semantic"] == [
-        (QUERIES[0]['query_text'], 0, 100), (QUERIES[1]['query_text'], 0, 100),
-        (QUERIES[0]['query_text'], 1, 100), (QUERIES[1]['query_text'], 1, 100),
-        (QUERIES[0]['query_text'], 2, 50)]
+        (QUERIES[i % 2]['query_text'], i // 2, 100) for i in range(8)]
     assert len(sent) == semantic
     block = lib.conn.execute("SELECT sr.result_count FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
                              " WHERE s.operation_key = ?", (fast_search.BLOCK_SEMANTIC_KEY,)).fetchall()
@@ -121,18 +123,67 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, f
         assert arms[:2] == ["semantic", "block_semantic"]
     else:
         assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF and not block and "block_semantic" not in arms
-    assert len(rows(lib)) == 450 + 2 * semantic
+    assert len(rows(lib)) == 800 + 2 * semantic
     assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, semantic]
     # The arXiv query of this synthetic plan names a source this research does not hold, so that is the reason it
     # is dropped with, and not the old blanket one (a depth that searches no field source says so: its own test).
     assert plan['dropped'][0]['reason'] == 'not_in_scope'
     assert lib.store.existing_step(lib.run['id'], 'vocabulary_expansion') is None
     searches = [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]
-    assert searches[-1]['stop_reason'] == 'record_cap'
-    assert searches[-2]['stop_reason'] == 'record_cap'
+    assert searches[-1]['stop_reason'] == 'read_limit'
+    assert searches[-2]['stop_reason'] == 'read_limit'
     before = list(calls), rows(lib), searches
     asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
     assert (calls, rows(lib), [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]) == before
+
+
+def test_shared_search_stops_each_keyword_query_at_its_record_limit(library, tmp_path):
+    lib = library
+    flow, scope, _ = setup(lib, tmp_path)
+    queries = [QUERIES[0] | {"origin": "model"},
+               QUERIES[1] | {"origin": "model", "role": "focused",
+                             "focused": {"term": "unfound concept", "gap": "SYNTHETIC gap"}}]
+    plan = fast_search.build_plan(lib.store, lib.run, scope, queries)
+    calls = []
+    scripted(flow, calls)
+    asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
+    keyword = [call for call in calls if call[0] != "semantic"]
+    assert [(query, page, limit) for _, query, page, limit in keyword] == [
+        (queries[i // 4]["query_text"], i % 4, 100) for i in range(8)]
+    pages = lib.conn.execute(
+        "SELECT s.operation_key, sr.read_total, sr.read_limit, sr.stop_reason FROM search_runs sr "
+        "JOIN run_steps s ON s.id = sr.step_id WHERE sr.request_class = 1 ORDER BY sr.rowid").fetchall()
+    assert [(row["read_total"], row["read_limit"], row["stop_reason"]) for row in pages if row["stop_reason"]] == [
+        (400, 400, "read_limit"), (400, 400, "read_limit")]
+    assert sum(row["read_total"] == 400 for row in pages) == 2
+
+
+def test_old_standard_keyword_query_keeps_its_total_cap(tmp_path):
+    conn = db.connect(tmp_path / "old-standard.sqlite")
+    db.migrate(conn)
+    clock = FakeClock()
+    store = Store(conn, clock)
+    clock.store = store
+    rid = store.create_research("SYNTHETIC old search", "academic", "standard", ["openalex"],
+                                "fake", "fake-model", "en")
+    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
+    budget["fast_path"] = fast_path.freeze_budget(budget, "standard", uniform_search=False)
+    run = store.create_run(rid, "discovery", budget, None)
+    store.update_run(run["id"], status="running")
+    lib = SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run["id"]))
+    try:
+        flow, scope, _ = setup(lib, tmp_path)
+        plan = fast_search.build_plan(store, lib.run, scope, [QUERIES[0]])
+        calls = []
+        scripted(flow, calls)
+        asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
+        keyword = [call for call in calls if call[0] != "semantic"]
+        assert sum(limit for _, _, _, limit in keyword) == plan["keyword_cap"]
+        assert plan["keyword_cap"] > 400
+        assert max(row[0] for row in conn.execute(
+            "SELECT read_total FROM search_runs WHERE request_class = 1")) == plan["keyword_cap"]
+    finally:
+        conn.close()
 
 
 def test_failed_page_retries_same_slot_without_resending_success(library, tmp_path):
@@ -316,7 +367,7 @@ def test_a_reply_written_after_the_stage_cutoff_is_recorded_as_late(library, tmp
 
 
 def test_deep_reserves_for_the_bulk_request_only_when_the_plan_names_one(library):
-    library.run['budget']['fast_path'] = fast_path.freeze_budget({}, 'detailed')
+    library.run['budget']['fast_path'] = fast_path.freeze_budget({}, 'detailed', uniform_search=False)
     plan = fast_search.build_plan(library.store, library.run, library.store.scope(library.rid), QUERIES)
     # No bulk query was planned, so nothing is held back for it and the keyword queries keep the whole cap; why the
     # depth sent none is recorded beside it.
@@ -328,6 +379,19 @@ def test_deep_reserves_for_the_bulk_request_only_when_the_plan_names_one(library
     assert [q['index'] for q in planned['dropped']] == [2, 4]
     # Planned, so the reservation is taken and the cap is the depth's less those records.
     assert planned['keyword_cap'] == 1500 and planned['s2_reserved'] == 500 and 's2_skipped' not in planned
+
+
+def test_new_detailed_policy_sends_no_semantic_scholar_bulk(library, tmp_path):
+    library.run['budget']['fast_path'] = fast_path.freeze_budget({}, 'detailed')
+    s2 = {'provider_id': 'semantic_scholar', 'query_text': 'SYNTHETIC bulk', 'endpoint': 'bulk'}
+    flow, scope, _ = setup(library, tmp_path)
+    plan = fast_search.build_plan(library.store, library.run, scope, QUERIES + [s2])
+    assert plan['s2_bulk'] is None and plan['s2_reserved'] == 0
+    assert plan['s2_skipped'] == 'uniform_search_off'
+    calls = []
+    scripted(flow, calls, short=True)
+    asyncio.run(fast_search.execute(flow, library.run, scope, plan, False))
+    assert all(endpoint != 'bulk' for endpoint, *_ in calls)
 
 
 def test_a_question_in_another_language_goes_to_openalex_as_written(library, tmp_path):
@@ -390,9 +454,8 @@ def test_quick_question_runs_every_fast_path_stage_and_answers_unattended(tmp_pa
     assert stages == dict.fromkeys(("plan", "search", "ranking", "read", "answer"), "done")
     assert outcome == "structurally_valid"
     assert kinds["provider_search:openalex"] >= 1
-    # Quick opens no citation request of its own; its chain steps are the ones that cost nothing (the links inside
-    # the first semantic page, the seed snapshot and the plan).
-    assert "provider_chain:openalex" not in kinds
+    # Quick can send a chain request when its first page names a usable seed.
+    assert kinds["provider_chain:openalex"] >= 1
     assert kinds["code:fast_chain"] >= 1
     assert len(fetcher.calls) == kinds["fetch_pdf"] == 10  # Quick reads the first K = 10 eligible works
     assert kinds["model:fulltext_adjudication"] == 20  # two reads per work
@@ -441,7 +504,7 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         assert keyword(view) == [("openalex", "rate_limited")]
         assert [(s["operation_key"], s["status"]) for s in run["steps"] if s["operation_key"].startswith("search:")
                 and not s["operation_key"].startswith((fast_search.PHRASE_KEY, fast_search.PLAIN_PHRASE_KEY))] == [
-            ("search:fast:semantic", "succeeded"), ("search:0", "failed")]
+            ("search:fast:semantic", "succeeded"), ("search:0", "failed"), ("search:2", "failed")]
         assert view["counts"]["unique"] == 1
         assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
         assert any(s["operation_key"].startswith("small_batch:v1:")
@@ -458,7 +521,7 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         view, run = wait_run(client, rid, run_id)
         assert run["status"] == "completed", run
         assert keyword(view) == [("openalex", "rate_limited"), ("openalex", "completed")]
-        assert attempts == [attempts[0], attempts[0]]
+        assert attempts[:2] == attempts[2:]
         assert store.current_protocol(rid, 1) == frozen
         assert store.conn.execute("SELECT COUNT(*) FROM protocol_records WHERE research_id = ?", (rid,)).fetchone()[0] == 1
         assert [call for call in adapter.calls if call["task_type"] in ("vocabulary_labels", "criterion_proposal")] == planning_calls

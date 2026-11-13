@@ -37,7 +37,8 @@ def _tasks(effort: str, reading_on: bool, deep_screening: bool = False) -> list[
     """Each step type the fast path may call: its role, how many calls (fewest, most), the characters its input adds to
     the fixed instructions (smallest, largest), the output tokens of one call (smallest, largest), and whether an invalid
     answer is repaired once."""
-    _, n, k, *_ = fast_path.MODES[effort]
+    mode = fast_path.MODES[effort]
+    n, k = mode.read_top, mode.fulltext_works
     batches = math.ceil(n / ABSTRACT_BATCH)
     # The deeper window's batches, one read each, at most; none when code settles every window work.
     deep = (math.ceil(fast_path.DEEP_SCREENING_WORKS / ABSTRACT_BATCH)

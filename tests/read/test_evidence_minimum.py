@@ -368,7 +368,7 @@ def test_the_search_stage_keeps_its_minimum_and_no_stage_carries_debt(tmp_path, 
     clock.store = store
     rid = store.create_research("SYNTHETIC minimum", "academic", "quick", ["openalex"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, "quick")
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick", uniform_search=False)
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     run = store.run(run["id"])
@@ -409,7 +409,7 @@ def test_past_the_handover_ranking_keeps_its_own_time_and_the_miss_is_split_by_c
     clock.store = store
     rid = store.create_research("SYNTHETIC causes", "academic", "quick", ["openalex"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, "quick")
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick", uniform_search=False)
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     run = store.run(run["id"])

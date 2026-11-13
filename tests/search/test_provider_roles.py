@@ -57,7 +57,7 @@ def test_an_sw_research_with_scopus_configured_neither_searches_it_nor_names_it_
         body = store.current_protocol(rid, 1)["body"]
     assert "scopus" in view["scope"]["providers"]  # in scope, for the abstract lookup
     assert "scopus" not in view["scope"]["search_providers"]
-    assert "scopus" not in [q["provider_id"] for q in compiled]
+    assert "scopus" in [q["provider_id"] for q in compiled]  # compiled under the shared limit, not sent
     assert "scopus" not in [s["provider"] for s in view["search_runs"]]
     assert "scopus" not in body["providers"] and "scopus" in body["verification_providers"]
     # The only Scopus request is the one access check of the lookup plan; no search went there.

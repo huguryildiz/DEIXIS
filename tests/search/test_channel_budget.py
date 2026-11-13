@@ -31,7 +31,8 @@ def _library(tmp_path, name, effort="detailed"):
     clock.store = store
     rid = store.create_research(QUESTION, "academic", effort, ["openalex", "semantic_scholar"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, effort)
+    # Bulk reservations are exercised on the older Detailed policy that sent bulk requests.
+    budget["fast_path"] = fast_path.freeze_budget(budget, effort, uniform_search=False)
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     return SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run["id"]))

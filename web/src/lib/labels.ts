@@ -177,7 +177,7 @@ const recoveryReasons: Record<string, string> = {
 // Why a field source was not searched, in the words the plan and the routing record stored.
 const fieldSourceReasons: Record<string, string> = {
   after_the_depth_s_field_source: 'another source’s fields hold more of this question',
-  depth_searches_no_field_source: 'this depth searches no field source',
+  depth_searches_no_field_source: 'this run searches no field source',
   field_share_not_read: 'the field distribution could not be read',
   share_below: 'its fields hold too little of this question',
   query_not_compiled: 'no query was compiled for it',
@@ -194,10 +194,10 @@ export const fieldSourceReasonText = (reason: string | null) => t(fieldSourceRea
 // Why the second independent index was not searched; the reasons it shares with a field source are read from
 // the list above.
 const broadIndexReasons: Record<string, string> = {
-  depth_pays_for_no_broad_index: 'this depth searches no second index',
+  depth_pays_for_no_broad_index: 'this run searches no second index',
   independent_field_source_planned: 'this research already searched an index of its own',
   entitlement_missing: 'this network has no access to its records',
-  depth_pays_for_no_subtopic_search: 'this depth sends no sub-topic search',
+  depth_pays_for_no_subtopic_search: 'sub-topic search is off for this run',
   broad_index_planned: 'it was searched as an index of its own instead',
   no_field_source_planned: 'no field source was searched to leave a part of the question open',
   no_subtopic_named: 'the search plan named no part of the question to ask about',

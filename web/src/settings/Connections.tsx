@@ -23,14 +23,14 @@ const providerNames: Record<string, string> = {
 const providerKeyEnv: Record<string, string> = { openalex: 'OPENALEX_API_KEY', biorxiv: 'OPENALEX_API_KEY', semantic_scholar: 'S2_API_KEY', pubmed: 'NCBI_API_KEY', ieee_xplore: 'IEEE_API_KEY', scopus: 'SCOPUS_API_KEY', core: 'CORE_API_KEY', serpapi: 'SERPAPI_API_KEY' }
 // The mockup's order comes first (plan ST7); every other registered connector follows in the registry's order.
 const PROVIDER_ORDER = ['openalex', 'semantic_scholar', 'crossref', 'scopus', 'arxiv']
-// What the fast path asks each source for (search.py, read.py, documents/acquisition.py). Standard and Detailed
+// What the fast path asks each source for (search.py, read.py, documents/acquisition.py). Every depth may
 // search one field source beside OpenAlex: the one whose fields hold the largest share of the question's records
 // (`field_search` in the frozen policy). SerpApi is asked for a web result only by the full-text search.
 const FIELD_SOURCE_USE = 'Searched when its fields hold the largest share of a question’s records'
 const providerUse: Record<string, string> = {
-  openalex: 'Search, citation chain and PDF lookup', semantic_scholar: 'Abstracts; bulk search in Detailed mode',
+  openalex: 'Search, citation chain and PDF lookup', semantic_scholar: 'Abstracts and conditional search completion',
   crossref: 'Abstracts, metadata checks and PDF lookup',
-  scopus: 'Searched in Detailed mode as a second index of its own; abstracts, once its full view is confirmed',
+  scopus: 'Searched as a second index when no independent field source is planned; abstracts when its full view is available',
   arxiv: FIELD_SOURCE_USE, biorxiv: 'Not searched on its own; OpenAlex brings its preprints',
   pubmed: 'Searched when its fields hold the largest share of a question’s records, with the subject headings NCBI confirms for the searched words',
   ieee_xplore: FIELD_SOURCE_USE, core: 'PDF lookup by DOI',
@@ -40,7 +40,7 @@ const providerUse: Record<string, string> = {
 const providerNoKey: Record<string, string> = {
   openalex: 'Without a key, DEIXIS uses the daily budget OpenAlex gives to requests without a key. When it runs out, requests wait until it resets, and a run can pause.',
   biorxiv: 'bioRxiv is searched through OpenAlex, so without the OpenAlex key it shares the same keyless daily budget.',
-  semantic_scholar: 'Without a key, Semantic Scholar often turns requests away at busy times. DEIXIS retries, so abstracts and bulk search results come in more slowly and some may be missing.',
+  semantic_scholar: 'Without a key, Semantic Scholar often turns requests away at busy times. DEIXIS retries, so abstracts and conditional search results may arrive slowly or be missing.',
   pubmed: 'Without a key, PubMed allows 3 requests per second instead of 10, so searches can be slower.',
   ieee_xplore: 'Without a key, IEEE Xplore is not searched.',
   scopus: 'Without a key, Scopus is not used: it is not searched and no Scopus abstracts are read.',
@@ -2053,7 +2053,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
 
     <h2 data-panel="sources">{t('Scholarly sources')}</h2>
     <div className="grid3" data-group="sources" data-panel="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode, p.key_broken)))}</div>
-    <p className="foot-note sources-note" data-panel="sources">{t('Searches run on OpenAlex, joined by Semantic Scholar in Detailed mode. The other sources fill in abstracts, check records or find PDFs.')}</p>
+    <p className="foot-note sources-note" data-panel="sources">{t('Searches run on OpenAlex and a selected field source. Scopus may add a second index; other sources complete records or find PDFs.')}</p>
 
     <h2 data-panel="sources">{t('Reference managers')}</h2>
     <div className="grid3" data-group="references" data-panel="sources">

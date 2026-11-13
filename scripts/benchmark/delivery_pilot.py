@@ -57,7 +57,7 @@ DEPTHS = ('quick', 'standard', 'detailed')
 # How long to wait for one run of each depth, as a multiple of the depth's own target. A run far past its target
 # has missed it; the wait is long enough that the run's own end, not this script's patience, is what stops it.
 WAIT_FACTOR = 10
-TARGET_SECONDS = {'quick': 60, 'standard': 120, 'detailed': 300}
+TARGET_SECONDS = {'quick': 76, 'standard': 120, 'detailed': 235}
 # After the discovery run ends, the answer run is queued a moment later. Below this many seconds of a finished
 # discovery run with no answer run named, the ledger is read again rather than called done.
 GRACE_SECONDS = 20

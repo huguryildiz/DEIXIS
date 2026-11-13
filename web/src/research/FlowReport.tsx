@@ -226,7 +226,7 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
         {stage.lost && <div className="lost">{stage.lost}</div>}
       </div>
     </div>)}</div>
-    {limits && effort !== 'detailed' && detailed && <div className="notice"><Info size={16} aria-hidden /><span>{t('Want a wider net? Detailed depth screens up to {n} abstracts and reads up to {k} works in their full text (selected pages); it also adds one Semantic Scholar bulk query when that source is searched.', { n: number(detailed.papers), k: number(detailed.fulltext ?? 0) })}</span></div>}
+    {limits && effort !== 'detailed' && detailed && <div className="notice"><Info size={16} aria-hidden /><span>{t('Want to read more? Detailed depth screens up to {n} abstracts and reads up to {k} works in full text (selected pages).', { n: number(detailed.papers), k: number(detailed.fulltext ?? 0) })}</span></div>}
     <FlowBlock researchId={researchId} counts={counts} />
   </div>
 }

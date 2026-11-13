@@ -305,7 +305,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
           const note = provider.required ? t('semantic and keyword · required: the search and the citation chain run on OpenAlex')
             : !provider.in_scope ? t('not among this research’s sources')
             : !provider.configured ? t('not set up · needs a key in Settings')
-            : provider.provider_id === 'semantic_scholar' ? t('abstracts, and one bulk query at Detailed depth')
+            : provider.provider_id === 'semantic_scholar' ? t('abstracts and conditional search completion')
             : provider.provider_id === 'scopus' ? t('abstracts, once its full view is confirmed')
             : t('abstracts')
           return <label key={provider.provider_id}><input type="checkbox" checked={checked} disabled={disabled} onChange={e => toggleProvider(provider.provider_id, e.target.checked)} />

@@ -22,7 +22,8 @@ import re
 from typing import Any, Iterable
 
 from deixis.domain import canonical
-from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT
+from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES
+from deixis.workflow.run import fast_path
 from deixis.domain.vocabulary import words
 from deixis.workflow.search.ranking import blocks_in
 
@@ -51,7 +52,7 @@ def attempt_limit(fast: dict[str, Any], effort: str) -> int:
     (`MAX_TRANSIENT_NETWORK_RETRIES`). `fast_chain.Round.fetch` enforces this number and `policy` records it.
     """
     return ((fast["backward_requests"] + fast["forward_requests"])
-            * (1 + PROVIDER_WAIT[effort]) * (1 + MAX_TRANSIENT_NETWORK_RETRIES))
+            * (1 + fast_path.search_read(fast, effort, "provider_wait")) * (1 + MAX_TRANSIENT_NETWORK_RETRIES))
 
 
 def policy(budget: dict[str, Any], effort: str) -> dict[str, Any] | None:

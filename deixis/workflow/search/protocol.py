@@ -14,8 +14,9 @@ from deixis.runtime.config import Settings
 from deixis.domain.record_identity import THRESHOLDS
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
-                                 FULLTEXT_READ_LIMIT, FULLTEXT_RUNS, FULLTEXT_WORK_LIMIT, PROVIDER_WAIT,
-                                 SCREENING_BATCH, SW_READ_LIMIT, effective_reviewer, step_model)
+                                 FULLTEXT_READ_LIMIT, FULLTEXT_RUNS, FULLTEXT_WORK_LIMIT,
+                                 SCREENING_BATCH, effective_reviewer, step_model)
+from deixis.workflow.run import fast_path
 from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
 from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS as SURVEY_PATTERNS
 from deixis.providers import query_compiler
@@ -142,6 +143,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     # The second independent index this depth searches, which no routing chose: the plan names it, and it is a
     # database this run searched, so the record reports it as one rather than as a source kept to verify a DOI.
     broad = (fast_path_search or {}).get("broad")
+    subtopic = (fast_path_search or {}).get("subtopic")
+    if (budget.get("fast_path") or {}).get("uniform_search") and fast_path_search is not None and broad is None and subtopic is None:
+        # A compiled Scopus query is not a search when neither of its arms planned a request.
+        searched = [provider for provider in searched if provider != "scopus"]
     if broad is not None and broad["query"]["provider_id"] not in searched:
         searched = [*searched, broad["query"]["provider_id"]]
         in_scope = [*in_scope, broad["query"]["provider_id"]]
@@ -248,8 +253,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                                        "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS},
                 # How many records one query reads and how many 429s the read waits out, both this research's
                 # own effort. No effort stops a run at a time: the minute targets are measured, not enforced.
-                "search_read": {"read_limit_per_query": SW_READ_LIMIT[scope["effort"]],
-                                "rate_limit_retries": PROVIDER_WAIT[scope["effort"]]},
+                "search_read": {"read_limit_per_query": fast_path.search_read(budget.get("fast_path") or {}, scope["effort"], "read_limit_per_query"),
+                                "rate_limit_retries": fast_path.search_read(budget.get("fast_path") or {}, scope["effort"], "provider_wait")},
                 # How many works one full-text retrieval run fetches. This research's own effort, so it says
                 # how many works were tried, not how many have a full text.
                 "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]},

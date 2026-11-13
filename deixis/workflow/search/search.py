@@ -7,7 +7,7 @@ import json
 import sys
 from dataclasses import replace
 
-from deixis.domain.rules import PROVIDER_WAIT, SOURCE_ROUTES
+from deixis.domain.rules import SOURCE_ROUTES
 from deixis.providers import common, facade
 from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, broad_index_providers, date_bound_form, reading
@@ -430,7 +430,8 @@ def broad_plan(run, scope, queries, excluded, field_specs):
         return None, told | {"reason": "query_not_compiled"}
     # The records of one page, frozen here: the walk reserves what a page asked for, and a provider whose adapter
     # serves fewer records than the page asked for would spend the whole share on one page.
-    page_records = min(KEYWORD_PAGE_SIZE, reading(queries[index]).max_results)
+    page_size = (run["budget"]["fast_path"].get("uniform_search") or {}).get("keyword_page_size", KEYWORD_PAGE_SIZE)
+    page_records = min(page_size, reading(queries[index]).max_results)
     return ({"index": index, "query": queries[index], "records": rule["records"], "page_records": page_records,
              "request_index": 0, "arm": rule["arm"]}, told)
 
@@ -509,9 +510,10 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     if seeded_question(seed_context):
         # The question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
         plan = build_plan(store, run, scope, queries, vocabulary=vocabulary)
-        return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2,
+        seed_top = (policy.get("uniform_search") or {}).get("seed_semantic_top", policy["semantic_top"] // 2)
+        return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, seed_top,
                                                                    policy.get("date_scope"))}
-    deep = policy["mode"] == "deep"
+    deep = policy["mode"] == "deep" and "uniform_search" not in policy
     # The providers a person left out of a saved search plan get no request (S23a); OpenAlex cannot be left out.
     excluded = user_plan.excluded(scope)
     # The years this run searches in, frozen with the rest of the policy before the first request opened. Every
@@ -534,6 +536,7 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     # would have paid for one, is recorded beside it: a reservation that buys nothing is not silently kept.
     s2_records = S2_RESERVED_RECORDS if (deep and s2 is not None) else 0
     s2_skipped = None if s2_records else (
+        "uniform_search_off" if "uniform_search" in policy else
         "not_deep" if not deep else user_plan.EXCLUDED if "semantic_scholar" in excluded else "not_planned")
     # The field sources this depth searches, their records taken off the same keyword cap. A source the depth does
     # not send gives its records back to the keyword queries and keeps no admission place: the places belong to the
@@ -594,7 +597,8 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
             **({"subtopic": subtopic_spec} if subtopic_spec else {}),
             **({"subtopic_not_sent": {"provider_id": subtopic_told["provider_id"], "reason": subtopic_told["reason"]}}
                if subtopic_told and "reason" in subtopic_told else {}),
-            "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query",
+            "page_size": (policy.get("uniform_search") or {}).get("keyword_page_size", KEYWORD_PAGE_SIZE),
+            "order": "page_then_query",
             # The bulk route takes a year range of its own, so the depth that pays for this request sends it
             # inside the same years as the question's own index.
             "s2_bulk": with_date_scope(s2, years) if deep and s2 is not None else None,
@@ -769,11 +773,13 @@ def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("bu
             return store.step_output(step["id"]), 0
         connector = reading(query)
         allowance = search_page.page_allowance(query, effort, run["budget"])
-        # What this query may read in all, which is not this page's own limit: the keyword arm reads the cap, a
-        # field source its own share, and a request that has only one page reads what that page asked for.
-        page = Page(number, cursor, before, total,
-                    plan["keyword_cap"] if klass == 1 else cap if cap is not None else limit,
-                    PROVIDER_WAIT[effort], key.split(":page:")[0], allowance)
+        # The keyword read records its smaller per-query or arm cap; other requests keep their own limit.
+        page_read_limit = plan["keyword_cap"] if klass == 1 else cap if cap is not None else limit
+        if klass == 1 and cap is not None:
+            page_read_limit = min(page_read_limit, cap)
+        page = Page(number, cursor, before, total, page_read_limit,
+                    fast_path.search_read(run["budget"].get("fast_path") or {}, effort, "provider_wait"),
+                    key.split(":page:")[0], allowance)
         step = store.existing_step(run_id, key)
         old = (step or {}).get("output") or {}
         retry_cancelled = bool(step and step["status"] == "cancelled" and step["error_code"] in retry_cancels and retry_failed)
@@ -835,15 +841,17 @@ def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("bu
                                  "cutoff_at": cutoff.isoformat(timespec="milliseconds") if cutoff else None,
                                  "late": bool(cutoff is not None and arrived >= cutoff)}
         ok = answer.status in ("completed", "zero_results")
-        reason = "page_failed" if not ok else terminal
+        # A short reply has not reached a per-query read limit even when its page asked for the remainder.
+        reason = "page_failed" if not ok else (None if terminal == "read_limit" and before + returned < page.read_limit
+                                                 else terminal)
         if ok:
             if klass == 1 and fast_path.past_deadline(store, run, "search"):
                 reason = "deadline"
-            elif terminal is None and (not answer.next_cursor or not returned):
+            elif reason is None and (not answer.next_cursor or not returned):
                 reason = "exhausted"
-            elif terminal is None and flow._query_requests(run_id, page.query_key) >= allowance:
+            elif reason is None and flow._query_requests(run_id, page.query_key) >= allowance:
                 reason = "budget_exhausted"
-            elif retry_page_only and terminal is None:
+            elif retry_page_only and reason is None:
                 reason = "retry_page_only"
         with transaction(store.conn):
             step = store.step(run_id, key, f"provider_search:{connector.provider_id}")
@@ -1021,7 +1029,7 @@ async def execute(flow, run, scope, plan, retry_failed):
                                         index=1, terminal="single_page")
             if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
                 cancel_step(store, run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar", "deadline", None)
-        elif plan.get("s2_skipped") and plan["s2_skipped"] != "not_deep":
+        elif plan.get("s2_skipped") and plan["s2_skipped"] not in ("not_deep", "uniform_search_off"):
             # A depth that would have sent a bulk request records why it did not. The records it would have read are
             # already back with the keyword queries, so the step says what was skipped, not what was held.
             cancel_step(store, run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar", plan["s2_skipped"])
@@ -1031,7 +1039,7 @@ async def execute(flow, run, scope, plan, retry_failed):
     # decided by the stored admission key, not by which reply came back first.
     s2_skipped = plan.get("s2_skipped")
     shared["s2_task"] = (asyncio.create_task(s2_page())
-                         if plan["s2_bulk"] is not None or (s2_skipped and s2_skipped != "not_deep") else None)
+                         if plan["s2_bulk"] is not None or (s2_skipped and s2_skipped not in ("not_deep", "uniform_search_off")) else None)
     request_index += int(plan["s2_reserved"] > 0)
     # The completion arm's own sender, with its own failure slot: an arm that is sent only when OpenAlex could not
     # complete must not itself fail the search stage. Its failure is recorded on its own step and the run goes on with
@@ -1253,6 +1261,9 @@ async def execute(flow, run, scope, plan, retry_failed):
             consumer.notify()
 
     slots = 0
+    policy = run["budget"].get("fast_path") or {}
+    query_read_limit = (fast_path.search_read(policy, scope["effort"], "read_limit_per_query")
+                        if (policy.get("uniform_search") or {}).get("rule") == fast_path.UNIFORM_SEARCH_RULE else None)
     try:
         # Each page is recorded when its own reply arrives, whatever another arm is still waiting for. Which record
         # heads a work, and which search a candidate names, are decided by the admission key the request stored, so
@@ -1266,6 +1277,10 @@ async def execute(flow, run, scope, plan, retry_failed):
                 if focused and state["number"] == 0 and any(not states[i]["ended"] for i in main_indexes):
                     # The condition is read against what the main query really brought, so it waits until that query
                     # has read its last page: a later page can carry the concept the first one did not.
+                    continue
+                if query_read_limit is not None and state["before"] >= query_read_limit:
+                    close_queries(flow, run, [spec], "read_limit")
+                    state["ended"] = True
                     continue
                 key = f"search:{spec['index']}" + (f":page:{state['number']}" if state["number"] else "")
                 old = store.existing_step(run_id, key)
@@ -1292,14 +1307,17 @@ async def execute(flow, run, scope, plan, retry_failed):
                         state["ended"] = True
                         continue
                 flow._checkpoint(run_id, run["scope_revision"])
-                limit = min(plan["page_size"], plan["keyword_cap"] - slots)
+                limit = min(plan["page_size"], plan["keyword_cap"] - slots,
+                            query_read_limit - state["before"] if query_read_limit is not None else plan["page_size"])
                 old_admission = ((old or {}).get("output") or {}).get("fast_path_request")
                 if old_admission:
                     limit = old_admission["limit"]
-                terminal = "record_cap" if slots + limit >= plan["keyword_cap"] else None
+                terminal = ("record_cap" if slots + limit >= plan["keyword_cap"] else
+                            "read_limit" if query_read_limit is not None and state["before"] + limit >= query_read_limit
+                            else None)
                 result, reserved = await send_page(spec["query"], key, number=state["number"], cursor=state["cursor"],
                                                    before=state["before"], total=state["total"], limit=limit, klass=1,
-                                                   index=request_index, terminal=terminal)
+                                                   index=request_index, terminal=terminal, cap=query_read_limit)
                 if result is None:
                     flow._checkpoint(run_id, run["scope_revision"])
                     close_queries(flow, run, specs, "deadline")

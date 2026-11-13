@@ -315,7 +315,7 @@ def test_the_proposals_and_the_calls_beside_them_keep_the_persons_concurrency_li
     # The short phrase step is the one call sent outside the limiter, so that it never holds the plan call up; this
     # test guards every other call, so the depth writes no phrases here.
     effort = "quick"
-    monkeypatch.setitem(fast_path.MODES, effort, fast_path.MODES[effort]._replace(phrase_searches=0))
+    monkeypatch.setitem(fast_path.UNIFORM_SEARCH, "phrase_searches", 0)
     openalex, adapter = CountingOpenAlex(), proposing()
     adapter.delay = 0.4  # long enough that the proposals are still in flight when the plan call starts
     app = create_app(dataclasses.replace(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off"),

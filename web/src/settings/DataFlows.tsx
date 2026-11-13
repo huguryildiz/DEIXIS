@@ -5,7 +5,8 @@ import { connectionName } from '../lib/labels'
 
 // Where your data goes (F3): one place that says which kind of data reaches which service, built from the settings as
 // they are now. It describes flows and promises nothing the code does not enforce. What the fast path sends where:
-// OpenAlex gets the search words (Semantic Scholar too in Detailed mode); Semantic Scholar, Crossref and Scopus get DOIs
+// OpenAlex and a selected field source or second index get search words. Semantic Scholar can get question words or a
+// concept when a search gap or OpenAlex failure calls for completion. Semantic Scholar, Crossref and Scopus get DOIs
 // for abstracts and metadata; OpenAlex, Unpaywall (only with an email), CORE (only with a key) and Europe PMC get DOIs
 // to find a PDF. SerpApi gets a title only from the "Find PDF" action (acquire_for_source with web_search on), never
 // from a research run. Nothing here was measured on the network.
@@ -65,7 +66,7 @@ function dataFlowRows({ defaults, connections, semantic, email, optional, update
 
   return [
     [t('Model calls'), models],
-    [t('Search queries'), t('Words from your question are sent to OpenAlex, and in Detailed mode to Semantic Scholar too.')],
+    [t('Search queries'), t('Words from your question are sent to OpenAlex, a selected field source and sometimes Scopus. Semantic Scholar may receive question words or a concept when a search gap or OpenAlex failure calls for it.')],
     [t('Lookups by DOI'), dois],
     [t('PDF downloads'), t('To fetch a PDF, DEIXIS requests it from the publisher, repository or preprint server that hosts it, so that server sees the request.')],
     [t('Email address'), mail],

@@ -232,8 +232,8 @@ def test_semantic_scholar_fills_one_abstract_and_crossref_the_one_it_did_not(tmp
 
 def test_a_batch_skipped_in_the_cooldown_leaves_its_records_as_a_refused_batch_does(tmp_path, monkeypatch):
     """During a Semantic Scholar 429 cooldown the read stage's lookup sends it nothing; its records are stored
-    `failed`, as after a refused batch, so in Quick they reach `abstract_not_found` (and full-text admission) instead
-    of waiting for a lookup the succeeded step will never send again. The step says why and for how many."""
+    `failed`, as after a refused batch. With the shared retry allowance, Quick leaves them as `no_abstract` for a
+    later lookup. The step says why and for how many."""
     sources = Sources(works=[work(1, doi="10.1/a"), work(2, doi="10.1/b")],
                       s2={"10.1/a": paper(abstract=ABSTRACT, doi="10.1/a")})
     monkeypatch.delattr(common.SEMANTIC_SCHOLAR_PACER, "cool_down")  # the real cooldown, off elsewhere in the suite
@@ -257,7 +257,7 @@ def test_a_batch_skipped_in_the_cooldown_leaves_its_records_as_a_refused_batch_d
     assert (s2_step["skipped"], s2_step["not_asked"], s2_step["failed"]) == ("s2_cooldown", 2, 2)
     assert rows == {by_id["W1"]: "failed", by_id["W2"]: "failed"}
     assert sorted(sources.lookups) == ["10.1/a", "10.1/b"]  # Crossref was asked about both
-    assert codes == {"W1": "abstract_not_found", "W2": "abstract_not_found"}
+    assert codes == {"W1": "no_abstract", "W2": "no_abstract"}
     assert (event["skipped"], event["skipped_count"]) == ("s2_cooldown", 2)
 
 

@@ -147,7 +147,7 @@ def _library(tmp_path, name="library.sqlite", effort="standard", providers=None,
                                providers or ["openalex", "semantic_scholar", "pubmed", "arxiv"],
                                "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, effort)
+    budget["fast_path"] = fast_path.freeze_budget(budget, effort, uniform_search=False)
     if not evidence_minimum:
         # A run frozen before the evidence minimum, under which the handover still ends the plan stage.
         policy = {k: v for k, v in budget["fast_path"].items() if k not in ("evidence_minimum", "policy_hash")}

@@ -127,7 +127,7 @@ def app_for(tmp_path, clock=None, adapter=None):
 
 @pytest.mark.parametrize("effort,bases,n,k,cap,seeds,back,forward", [
     # Quick opens no citation request of its own, so its seed and request numbers are zero.
-    ("quick", (7, 7, 7, 14, 25), 25, 10, 450, 0, 0, 0),
+    ("quick", (8, 14, 15, 14, 25), 25, 10, 1000, 1, 4, 2),
 ])
 def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, n, k, cap, seeds, back, forward):
     clock = FakeClock()
@@ -136,6 +136,7 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
         rid, run_id, _, run = discover(client, effort)
         assert run["status"] == "completed", run
         policy = run["budget"]["fast_path"]
+        assert run["budget"]["max_provider_requests"] == 8
         assert tuple(policy["stage_base_ms"].get(s) for s in fast_path.STAGES) == tuple(v * 1000 for v in bases)
         assert (policy["N"], policy["K"], policy["keyword_record_cap"], policy["chain_seeds"],
                 policy["backward_requests"], policy["forward_requests"]) == (n, k, cap, seeds, back, forward)
@@ -159,14 +160,14 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
 def test_04_unused_time_carries_forward(library):
     finish(library, "plan", 3)
     fast_path.enter_stage(library.store, library.run, "search")
-    # Quick's plan base is 7 s; finishing in 3 carries 4 s forward to search's own 7.
-    assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (4000, 11000)
+    # Quick's plan base is 8 s; finishing in 3 carries 5 s forward to search's own 14.
+    assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (5000, 19000)
 
 
 @pytest.mark.parametrize("frozen", ["d152", "before_d152"])
 def test_plan_debt_is_charged_after_search(library, frozen):
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
-    policy = fast_path.freeze_budget(budget, "standard")
+    policy = fast_path.freeze_budget(budget, "standard", uniform_search=False)
     if frozen == "before_d152":
         policy = {k: v for k, v in policy.items() if k not in ("protected_stages", "policy_hash")}
         policy["policy_hash"] = canonical.sha256_hex(policy)

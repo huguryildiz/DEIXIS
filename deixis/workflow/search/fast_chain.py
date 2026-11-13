@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 from deixis.domain import canonical
-from deixis.domain.rules import PROVIDER_WAIT, MAX_TRANSIENT_NETWORK_RETRIES
+from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES
 from deixis.documents import acquisition
 from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE
@@ -424,7 +424,7 @@ class Round:
                 if left <= 0 or self.past_cutoff() or self.flow._openalex_budget_of(self.run["id"]).exhausted:
                     self.store.finish_step(step["id"], "cancelled", output={"unsent": "request_budget" if left <= 0 else "cutoff" if self.past_cutoff() else "openalex_budget", "returned": 0})
                     return
-                retries = max(0, min(PROVIDER_WAIT[self.scope["effort"]], left - 1))
+                retries = max(0, min(fast_path.search_read(self.policy, self.scope["effort"], "provider_wait"), left - 1))
                 self.store.add_usage(self.run["id"], "chain_requests", 1 + retries)
                 key = CONNECTORS["openalex"].api_key()
                 if spec["direction"] == "forward":

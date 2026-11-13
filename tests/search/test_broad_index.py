@@ -53,8 +53,9 @@ def _library(tmp_path, name="library.sqlite", effort="detailed", arm="conditiona
     clock.store = store
     rid = store.create_research(QUESTION, "academic", effort, list(sources or SOURCES), "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
+    # These arm mechanics also protect policies frozen before shared search.
     budget["fast_path"] = fast_path.freeze_budget(budget, effort, broad_index_arm=arm,
-                                                 subtopic_arm=subtopic_arm)
+                                                 subtopic_arm=subtopic_arm, uniform_search=False)
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     return SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run["id"]))
@@ -223,6 +224,16 @@ def test_a_depth_that_pays_for_no_second_index_keeps_the_whole_share(tmp_path, e
     lib.conn.close()
 
 
+def test_shared_quick_policy_can_plan_the_conditional_second_index(tmp_path):
+    lib = _library(tmp_path, "shared-quick.sqlite", effort="quick")
+    lib.run["budget"]["fast_path"] = fast_path.freeze_budget({}, "quick", broad_index_arm="conditional")
+    _routing(lib, [{"provider_id": "biorxiv", "reason": "share", "share": 0.9}])
+    plan = _plan(lib)
+    assert plan["broad"]["records"] == 100
+    assert plan["keyword_cap"] == 650
+    lib.conn.close()
+
+
 def test_a_second_index_outside_the_research_s_sources_is_not_searched(tmp_path):
     lib = _library(tmp_path, "scope.sqlite", sources=["openalex", "semantic_scholar", "biorxiv"])
     _routing(lib, [{"provider_id": "biorxiv", "reason": "share", "share": 0.9}])
@@ -325,6 +336,22 @@ def test_the_protocol_names_the_second_index_among_the_databases_searched(tmp_pa
                                    Settings(data_dir=tmp_path / "data"), routing=routing_record,
                                    fast_path_search=plan)
     assert "scopus" in body["providers"] and "scopus" not in body["verification_providers"]
+    lib.conn.close()
+
+
+def test_unsent_scopus_is_removed_only_from_a_shared_search_protocol(tmp_path):
+    lib = _library(tmp_path, "protocol-policy.sqlite")
+    routing = _routing(lib, [{"provider_id": "scopus", "reason": "share", "share": 0.9}])
+    plan = {"broad": None, "subtopic": None}
+    scope = lib.store.scope(lib.rid)
+    settings = Settings(data_dir=tmp_path / "data")
+    old = protocol.build_protocol(scope, lib.run["budget"], None, QUERIES, "SYNTHETIC", settings,
+                                  routing=routing, fast_path_search=plan)
+    shared_budget = lib.run["budget"] | {"fast_path": fast_path.freeze_budget(lib.run["budget"], "detailed")}
+    shared = protocol.build_protocol(scope, shared_budget, None, QUERIES, "SYNTHETIC", settings,
+                                     routing=routing, fast_path_search=plan)
+    assert "scopus" in old["providers"]
+    assert "scopus" not in shared["providers"]
     lib.conn.close()
 
 

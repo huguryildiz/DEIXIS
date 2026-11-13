@@ -184,7 +184,8 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
     # The model-made plan the panel starts from: the model's own query, read-only.
     view = client.get(f"/api/researches/{rid}/search-plan").json()
     assert view["origin"] == "model" and view["plan"]["providers"][0] == "openalex"
-    assert [(q["label"], q["origin"]) for q in view["queries"]] == [("Query 1", "model")]
+    assert [(q["label"], q["origin"]) for q in view["queries"]] == [
+        ("Query 1", "model"), ("Query 2", "model")]
     assert {p["provider_id"]: p["required"] for p in view["providers"]}["openalex"] is True
     # The two calls a run makes before its first search: the plan and the inclusion criterion.
     assert set(planning_calls(adapter, 1)) == {"search_plan", "criterion_proposal"}

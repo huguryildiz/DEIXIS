@@ -117,12 +117,14 @@ def test_a_depth_that_pays_for_a_field_source_takes_its_records_off_the_keyword_
     lib.conn.close()
 
 
-def test_a_depth_that_searches_no_field_source_keeps_the_whole_cap(tmp_path):
+def test_an_older_quick_policy_searches_no_field_source(tmp_path):
     lib = _library(tmp_path, "quick.sqlite", effort="quick")
+    lib.run["budget"]["fast_path"] = fast_path.freeze_budget({}, "quick", uniform_search=False)
     _routing(lib, [{"provider_id": "pubmed", "reason": "share", "share": 0.9}])
     plan = fast_search.build_plan(lib.store, lib.run, lib.store.scope(lib.rid), QUERIES)
     assert plan["field"] == [] and plan["keyword_cap"] == lib.run["budget"]["fast_path"]["keyword_record_cap"]
     assert {row["reason"] for row in plan["dropped"]} == {"depth_searches_no_field_source"}
+    assert not [provider for provider, _ in _sent(lib, tmp_path, plan) if provider == "pubmed"]
     lib.conn.close()
 
 
@@ -190,6 +192,17 @@ def test_the_field_source_is_searched_beside_the_keyword_queries(tmp_path):
     assert row["result_count"] == 2
     # What the request may read in all is its own share, not the page it asked for.
     assert row["read_limit"] == plan["field"][0]["records"] == 250
+    lib.conn.close()
+
+
+def test_new_quick_run_searches_its_field_source(tmp_path):
+    lib = _library(tmp_path, "quick-field.sqlite", effort="quick")
+    _routing(lib, [{"provider_id": "pubmed", "reason": "share", "share": 0.9}])
+    plan = fast_search.build_plan(lib.store, lib.run, lib.store.scope(lib.rid), QUERIES)
+    sent = _sent(lib, tmp_path, plan)
+    assert ("pubmed", 100) in sent
+    assert plan["field"][0]["records"] == 250
+    assert plan["keyword_cap"] == 750
     lib.conn.close()
 
 

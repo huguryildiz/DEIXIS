@@ -131,7 +131,7 @@ def test_a_measurement_s_own_cutoff_is_a_scope_of_its_own_origin():
 
 def _budget(effort="standard", years=None):
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, effort, date_scope=years)
+    budget["fast_path"] = fast_path.freeze_budget(budget, effort, date_scope=years, uniform_search=False)
     return budget
 
 

@@ -2188,6 +2188,8 @@ def create_app(
             raise HTTPException(422, "A date scope is named only for a search run")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "discovery":
+            # A discovery's compiled search gets the same request limit at every reading depth.
+            budget = budget | {"max_provider_requests": fast_path.UNIFORM_SEARCH["max_provider_requests"]}
             years = run_date_scope(store, research_id, scope, body.date_scope)
             # The criterion proposal before the first search and the abstract stage's two runs over the
             # works the read limit reaches are given on top of the preset, so the preset itself — which an
@@ -2197,7 +2199,7 @@ def create_app(
             # The model-written query and its repair and retry.
             extra += SEARCH_QUERY_CALLS
             # The short phrase step beside the plan and its repair, at a depth that writes phrases.
-            if fast_path.MODES[scope["effort"]].phrase_searches:
+            if fast_path.UNIFORM_SEARCH["phrase_searches"]:
                 extra += PHRASE_SEARCH_CALLS
             # The study table's column proposal, opened before the reading starts.
             if settings.study_table == "auto" or store.research(research_id)["intent"] in intent.TABLE_INTENTS:

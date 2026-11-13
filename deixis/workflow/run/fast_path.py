@@ -8,10 +8,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple, Protocol
 
 from deixis.domain import canonical
-from deixis.domain.rules import ROUTE_SHARE, SOURCE_ROUTES_VERSION
+from deixis.domain.rules import PROVIDER_WAIT, ROUTE_SHARE, SOURCE_ROUTES_VERSION, SW_READ_LIMIT
 from deixis.storage.db import new_id, transaction
 
 POLICY = "fast_path_v1"
+UNIFORM_SEARCH_RULE = "uniform_search_v1"
 RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
 # The stages that must be done before the answer is written. Their bases sum to the depth's handover moment.
@@ -112,14 +113,38 @@ TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
 DEEP_SCREENING_EFFORTS = ("standard", "detailed")
 
+# Discovery search has one frozen setting at every reading depth. MODES below retains the older per-depth
+# search settings so a stored policy without this rule keeps its original hash and behavior.
+UNIFORM_SEARCH = {
+    "rule": UNIFORM_SEARCH_RULE, "semantic_top": 50, "seed_semantic_top": 50,
+    "phrase_searches": 6, "phrase_records": PHRASE_SEARCH_RECORDS, "phrase_plain_records": PHRASE_PLAIN_RECORDS,
+    "keyword_record_cap": 1000, "read_limit_per_query": 400, "keyword_page_size": 100,
+    "boolean_plans": 2, "max_provider_requests": 8,
+    "chain_seeds": 1, "backward_requests": 4, "backward_page_size": 50,
+    "forward_requests": 2, "forward_page_size": 100, "chain_rescue": 10,
+    "field_sources": 1, "field_records": 250, "field_share": ROUTE_SHARE,
+    "broad_index_records": 100, "subtopic_records": 0, "s2_bulk_records": 0,
+    "completion_records": 100, "snippet_requests": 1, "provider_wait": 1,
+    "plan_seconds": 8, "search_seconds": 14, "ranking_seconds": 15,
+    "evidence_search_ms": EVIDENCE_SEARCH_MS, "rerank_allowance_seconds": 3,
+}
+
+
+def search_read(policy: dict[str, Any], effort: str, key: str) -> int:
+    """A frozen discovery search limit, or the older effort limit when the rule is absent."""
+    shared = policy.get("uniform_search") or {}
+    if shared.get("rule") == UNIFORM_SEARCH_RULE:
+        return shared[key]
+    return {"read_limit_per_query": SW_READ_LIMIT, "provider_wait": PROVIDER_WAIT}[key][effort]
+
 
 class Mode(NamedTuple):
-    """One research depth's numbers, frozen into a run's budget by `freeze_budget`."""
+    """Reading numbers and legacy search numbers; new runs use UNIFORM_SEARCH for search."""
     stage_seconds: tuple[int, int, int, int, int]  # soft deadline of each of STAGES, in order
     read_top: int  # N: the top of the ranking a run reads
     fulltext_works: int  # K: the most works a run reads in full text
     keyword_record_cap: int
-    chain_seeds: int  # the works citation chaining starts from: none in Quick, one in Standard, three in Deep
+    chain_seeds: int  # legacy starting works for citation chaining
     backward_requests: int
     forward_requests: int
     boolean_plans: int  # the most distinct Boolean query plans a run of this depth sends: one main, the rest focused
@@ -129,8 +154,8 @@ class Mode(NamedTuple):
     file_asks: int  # the most works this depth asks the person for a file for, over the research's whole life
     fulltext_searches: int  # the most works this depth sends an open-web full-text search for, over the same life
     completion_records: int  # records the completion arm may read, taken off the keyword cap while the arm is frozen
-    snippet_requests: int  # snippet queries this depth may send; Quick names no focused concept, so none
-    field_sources: int  # field sources this depth searches beside OpenAlex: none in Quick, one in Standard and Deep
+    snippet_requests: int  # legacy snippet queries
+    field_sources: int  # legacy field sources beside OpenAlex
     field_records: int  # records each of them may read, taken off the same keyword cap
     broad_index_records: int  # records the second independent index may read; none at the depths that pay for none
     subtopic_records: int  # records the one sub-topic search may read; none where a depth searches that index anyway
@@ -138,8 +163,8 @@ class Mode(NamedTuple):
     phrase_searches: int  # short semantic phrase searches beside the plan; 0 turns the route off
 
 
-# The stage seconds are the delivery-time targets split across the stages: the four pre-answer stages sum to the
-# depth's handover moment (35 s / 1 min 10 s / 3 min 30 s) and all five to its end-to-end target (1 / 2 / 5 minutes).
+# These stage seconds and search fields remain for policies frozen before the shared search rule.
+# New runs use their reading fields and the shared pre-answer stage seconds above.
 # The split inside the handover is today's pilot configuration, each stage scaled from the budget it had before the
 # targets were applied; which split and which K/N actually hold the targets is measured, not assumed.
 MODES = {
@@ -224,7 +249,8 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
                   deep_screening: bool = False,
                   lexical_exclusion: bool = True, candidate_embedding: bool = True,
                   completion_arm: str = "off", broad_index_arm: str = "off",
-                  subtopic_arm: str = "off", date_scope: dict[str, Any] | None = None) -> dict[str, Any]:
+                  subtopic_arm: str = "off", date_scope: dict[str, Any] | None = None,
+                  uniform_search: bool = True) -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -259,7 +285,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     if subtopic_arm not in SUBTOPIC_ARMS:
         raise ValueError(f"unknown sub-topic search arm {subtopic_arm!r}")
     mode = MODES[effort]
-    bases = mode.stage_seconds
+    shared = UNIFORM_SEARCH if uniform_search else None
+    bases = (tuple(shared[stage + "_seconds"] for stage in ("plan", "search", "ranking"))
+             + mode.stage_seconds[3:] if shared else mode.stage_seconds)
     policy = {
         "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read", "answer"],
         "enforced_stages": ["search", "ranking", "read", "answer"], "background_fetch_slots": 4,
@@ -269,24 +297,33 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "stage_base_ms": dict(zip(STAGES, (s * 1000 for s in bases))), "total_ms": sum(bases) * 1000,
         # The delivery-time target and the handover moment, both on the person's clock from the question's submission.
         "handover_rule": HANDOVER_RULE, "handover_ms": sum(bases[:len(PRE_ANSWER)]) * 1000,
-        "N": mode.read_top, "K": mode.fulltext_works, "keyword_record_cap": mode.keyword_record_cap, "semantic_top": 50,
-        "chain_seeds": mode.chain_seeds, "backward_requests": mode.backward_requests, "backward_page_size": 50,
-        "forward_requests": mode.forward_requests, "forward_page_size": 25,
+        "N": mode.read_top, "K": mode.fulltext_works,
+        "keyword_record_cap": shared["keyword_record_cap"] if shared else mode.keyword_record_cap,
+        "semantic_top": shared["semantic_top"] if shared else 50,
+        "chain_seeds": shared["chain_seeds"] if shared else mode.chain_seeds,
+        "backward_requests": shared["backward_requests"] if shared else mode.backward_requests,
+        "backward_page_size": shared["backward_page_size"] if shared else 50,
+        "forward_requests": shared["forward_requests"] if shared else mode.forward_requests,
+        "forward_page_size": shared["forward_page_size"] if shared else 25,
         # The chain matches the protocol's frozen word forms and keeps the rescue quota: `chain_rescue` linked
         # records the gate's words do not reach are written as ranked candidates, and the gate's own verdict on
         # them is still recorded.
-        "chain_in_flight": 5, "chain_rule": CHAIN_RULE, "chain_rescue": mode.chain_rescue,
+        "chain_in_flight": 5, "chain_rule": CHAIN_RULE,
+        "chain_rescue": shared["chain_rescue"] if shared else mode.chain_rescue,
         "acquire_rule": ACQUIRE_RULE,
         # The model writes the plan from the first semantic page and the chain starts from the works it names.
         # `boolean_plans` counts the distinct Boolean query plans the run may send, the main one included; one plan
         # still goes to every enabled provider in that provider's syntax, and those requests are counted elsewhere.
-        "plan_rule": PLAN_RULE, "boolean_plans": mode.boolean_plans,
+        "plan_rule": PLAN_RULE, "boolean_plans": shared["boolean_plans"] if shared else mode.boolean_plans,
         "file_ask_rule": FILE_ASK_RULE, "file_asks": mode.file_asks,
         # Which other sources this depth searches, and by what share of the question's field distribution they are
         # chosen. The share is frozen here so a run decides by the value it started with, and a pilot that moves the
         # table or the share cannot change what a waiting run sends.
-        "field_search": {"rule": FIELD_SEARCH_RULE, "sources": mode.field_sources, "records": mode.field_records,
-                         "share": ROUTE_SHARE, "table_version": SOURCE_ROUTES_VERSION},
+        "field_search": {"rule": FIELD_SEARCH_RULE,
+                         "sources": shared["field_sources"] if shared else mode.field_sources,
+                         "records": shared["field_records"] if shared else mode.field_records,
+                         "share": shared["field_share"] if shared else ROUTE_SHARE,
+                         "table_version": SOURCE_ROUTES_VERSION},
         "fulltext_search_rule": FULLTEXT_SEARCH_RULE, "fulltext_searches": mode.fulltext_searches,
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
@@ -304,20 +341,22 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     if completion_arm != "off":
         # The records come off the keyword cap (`search.build_plan`), so every arm of the measurement reads the same
         # total; what the arm did not spend is recorded, which is how the pilot sees the cost of the reservation.
-        policy["completion"] = {"rule": COMPLETION_RULE, "arm": completion_arm, "records": mode.completion_records,
-                                "snippet_requests": mode.snippet_requests}
+        policy["completion"] = {"rule": COMPLETION_RULE, "arm": completion_arm,
+                                "records": shared["completion_records"] if shared else mode.completion_records,
+                                "snippet_requests": shared["snippet_requests"] if shared else mode.snippet_requests}
     if broad_index_arm != "off":
         # The records come off the keyword cap too (`search.build_plan`). A policy frozen with the `off` arm names
         # no block, which is byte for byte the policy frozen before the rule: a run queued then sends none either.
         policy["broad_index"] = {"rule": BROAD_INDEX_RULE, "arm": broad_index_arm,
-                                 "records": mode.broad_index_records}
+                                 "records": shared["broad_index_records"] if shared else mode.broad_index_records}
     if subtopic_arm != "off":
         # These records come off no cap: whether the request is sent can only be read after the field source's
         # last page, which is after the keyword loop that would spend them has ended, so records taken off that
         # loop's cap would be lost on every question where nothing is sent and the arms would read different
         # keyword totals. A run that sends it reads these records on top of the keyword cap. An `off` policy
         # names no key, which is the policy frozen before the rule.
-        policy["subtopic_search"] = {"rule": SUBTOPIC_RULE, "arm": subtopic_arm, "records": mode.subtopic_records}
+        policy["subtopic_search"] = {"rule": SUBTOPIC_RULE, "arm": subtopic_arm,
+                                     "records": shared["subtopic_records"] if shared else mode.subtopic_records}
     if date_scope is not None:
         if date_scope.get("rule") != DATE_SCOPE_RULE:
             raise ValueError(f"unknown date scope rule {date_scope.get('rule')!r}")
@@ -332,18 +371,24 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     # The rule that also searches the other number form of a quoted phrase: every depth, every model.
     from deixis.providers.query_compiler import PHRASE_FORMS_RULE
     policy["phrase_forms_rule"] = PHRASE_FORMS_RULE
-    if mode.rerank_allowance and not local_model:
+    if (shared["rerank_allowance_seconds"] if shared else mode.rerank_allowance) and not local_model:
         # A depth without an allowance, and a local-model run, name no key: their policy is the one frozen before.
-        policy["rerank_allowance"] = {"rule": RERANK_ALLOWANCE_RULE, "ms": mode.rerank_allowance * 1000}
-    if mode.phrase_searches:
+        policy["rerank_allowance"] = {"rule": RERANK_ALLOWANCE_RULE,
+                                       "ms": (shared["rerank_allowance_seconds"] if shared else mode.rerank_allowance) * 1000}
+    if (shared["phrase_searches"] if shared else mode.phrase_searches):
         # The short phrase searches: how many phrases the step writes and what each semantic and each plain request
         # reads. A depth set to none names no key, which is the policy frozen before the rule.
-        policy["phrase_search"] = {"rule": PHRASE_SEARCH_RULE, "count": mode.phrase_searches,
-                                   "records": PHRASE_SEARCH_RECORDS, "plain_records": PHRASE_PLAIN_RECORDS}
+        policy["phrase_search"] = {"rule": PHRASE_SEARCH_RULE,
+                                   "count": shared["phrase_searches"] if shared else mode.phrase_searches,
+                                   "records": shared["phrase_records"] if shared else PHRASE_SEARCH_RECORDS,
+                                   "plain_records": shared["phrase_plain_records"] if shared else PHRASE_PLAIN_RECORDS}
+    if shared:
+        policy["uniform_search"] = dict(shared)
     # The word rule of a reranked window, frozen before the hash below: every depth, every model.
     policy["window_word_rule"] = WINDOW_WORD_RULE
     # The evidence minimum, frozen before the hash below: every depth, every model.
-    policy["evidence_minimum"] = {"rule": EVIDENCE_MINIMUM_RULE, "search_ms": EVIDENCE_SEARCH_MS,
+    policy["evidence_minimum"] = {"rule": EVIDENCE_MINIMUM_RULE,
+                                  "search_ms": shared["evidence_search_ms"] if shared else EVIDENCE_SEARCH_MS,
                                   "abstract_ceiling_ms": EVIDENCE_ABSTRACT_CEILING_MS}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False

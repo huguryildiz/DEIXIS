@@ -664,7 +664,7 @@ def test_a_plain_request_cut_by_the_deadline_while_out_leaves_no_open_reservatio
     # The real send path over a transport that never answers: the cut closes each reservation to the one attempt that
     # was handed to the client, for the run and for the request's own count. Two 429 waits are allowed, so each
     # request reserves three attempts, as a Detailed run's do.
-    monkeypatch.setitem(fast_search.PROVIDER_WAIT, "quick", 2)
+    monkeypatch.setitem(fast_path.UNIFORM_SEARCH, "provider_wait", 2)
     release = asyncio.Event()
 
     async def hang(request):

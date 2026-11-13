@@ -98,6 +98,15 @@ def removed_rule(run: dict[str, Any]) -> str | None:
             return "rerank_rule"
         if (inspection.get("prerank_lookup") or {}).get("version") != 5:
             return "prerank_lookup"
+        from deixis.providers.query_compiler import PHRASE_FORMS_RULE
+        if fast.get("phrase_forms_rule") != PHRASE_FORMS_RULE:
+            return "phrase_forms_rule"
+        if (fast.get("evidence_minimum") or {}).get("rule") != fast_path.EVIDENCE_MINIMUM_RULE:
+            return "evidence_minimum"
+        if fast.get("window_word_rule") != fast_path.WINDOW_WORD_RULE:
+            return "window_word_rule"
+        if fast.get("handover_rule") != fast_path.HANDOVER_RULE:
+            return "handover_rule"
     if (run["kind"] == "answer" and inspection.get("policy") == POLICY
             and inspection.get("answer_allocation_version", 0) < ANSWER_ALLOCATION_VERSION):
         return "answer_allocation"
@@ -803,18 +812,15 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     if deadline is not None:
         left = (deadline - store.clock.now()).total_seconds()
         if allowance is None:
-            # A run frozen before the allowance has only what is left of the ranking stage.
+            # A local-model run has only what is left of the ranking stage.
             seconds = min(seconds, left)
         else:
-            # The reranker keeps what is left of its own allowance however little of the stage, or of the
-            # handover, is left; an earlier attempt's use is taken off it.
+            # The reranker keeps its remaining allowance beyond the ranking cutoff.
             remaining = max(0, allowance - spent) / 1000
             seconds = min(seconds, max(left, remaining))
             if remaining > left:
-                # Under the evidence minimum the handover cuts no stage, so only the stage's own cutoff is reached past.
-                handover = (fast_path.handover_deadline(store, run)
-                            if fast_path.evidence_minimum(store, run) is None else None)
-                beyond = {"cutoff": "handover" if handover is not None and deadline >= handover else "stage",
+                # Record how much of the reranker's allowance runs past ranking.
+                beyond = {"cutoff": "stage",
                           "at": deadline, "left_ms": int(left * 1000)}
 
     def used(now: Any) -> dict[str, Any]:
@@ -1001,10 +1007,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             flow._pause(run["id"], "benchmark_list_barrier")
     flow._enter_clock_stage(run, "read")
     only = {svid for item in listing["items"][:run["budget"]["fast_path"]["N"]] for svid in item["versions"]}
-    # Under the evidence minimum the read stage's own deadline ends these lookups; a run frozen before it asks as it did.
-    stop = ((lambda: fast_path.past_deadline(flow.store, run, "read"))
-            if fast_path.evidence_minimum(flow.store, run) is not None else None)
-    await flow._second_sources(run, scope, vocabulary, only=only, stop=stop, stop_inside=stop is not None)
+    # The read stage's deadline ends these lookups.
+    stop = lambda: fast_path.past_deadline(flow.store, run, "read")
+    await flow._second_sources(run, scope, vocabulary, only=only, stop=stop, stop_inside=True)
     from deixis.workflow.search.fast_chain import read_versions
     snapshot = read_versions(flow, run, listing)
     await fast_read.execute(flow, run, scope, vocabulary, listing, read_versions=snapshot["versions"])

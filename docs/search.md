@@ -227,7 +227,7 @@ The run measures time on your clock, from the moment you send the question. The 
 
 Both targets are recorded, and the run shows by how much it missed each one and why. Neither target cuts a stage. Each stage stops at its own deadline, counted from its own start (rule `evidence_minimum_v1`). Time the reranker uses past the ranking cutoff is not taken from the read stage, so the answer comes that much later.
 
-A run on a model that runs on your computer keeps no read or answer deadline, no handover and no reranker allowance. Search and ranking keep their deadlines.
+A run on a model that runs on your computer keeps no read or answer deadline, no reranker allowance and no handover moment. Search and ranking keep their deadlines.
 
 ## Resume and frozen rules
 
@@ -269,11 +269,9 @@ A run keeps the rules it froze when you started it. The policy, with its hash, i
 A completed run keeps its stored list, screening and answer. A discovery run frozen before `uniform_search_v1` can be viewed but stops on resume, as do runs with `phrase_search_v1` or no phrase rule, rerank versions 1 to 5, lookup versions 1 to 4, or a reranker point of `after_list`. Those older rules covered depth-specific search limits, phrase requests, list windows and lookup behavior. A missing `search_plan_v1`, `fast_chain_v1` or `fast_chain_v2` also stops a discovery run; an answer allocation older than version 7 stops an answer run. The run names the removed rule when it stops. Start a new search to use the current rules.
 
 Other stored differences remain visible where the run recorded them:
+
 - **No `phrase_number_v1`:** quoted phrases get no other number form.
 - **`seed_pdf_v1`:** one seed PDF, whose text joins the question's semantic request.
 - **`block_terms_v1`:** one extra semantic request with the setting and task terms joined.
 - **No `evidence_minimum_v1`:** the handover moment cuts the stages before the answer, and an earlier stage's overrun is taken from later stages.
-- **No `rerank_allowance_v1`:** the reranker has only what is left of the ranking stage.
 - **No `reranked_window_open_v1`:** abstract screening sets a top-N work aside for naming neither block, whatever ordered the list.
-- **No candidate-embedding choice:** the run embedded candidates whenever Settings named an embedding model.
-- **No handover rule:** stage deadlines alone.

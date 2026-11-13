@@ -957,14 +957,10 @@ class ResearchFlow:
             return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
                                   stored["queries"])
         seed_sha, seed_rows = self._seed_passages(run_id, scope)
-        # A stored output holds the decision of the rule its run froze, so only a run that froze this same plan
-        # rule is reused; a run frozen under a rule this version no longer carries does not hide a usable query.
-        forms_on = fast_path.phrase_forms_on(run["budget"])
-
         def reusable(output: dict[str, Any]) -> bool:
-            """Written with this run's seed pages and counted under the number-form rule this run froze."""
+            """Written with this run's seed pages and the current number-form rule."""
             return (output.get("seed_passages_sha256") == seed_sha
-                    and query_compiler.phrase_forms_on(output.get("vocabulary") or {}) == forms_on)
+                    and query_compiler.phrase_forms_on(output.get("vocabulary") or {}))
         # The newest earlier query that passes both checks; a newer one that fails them does not hide it.
         earlier = (self.store.search_query_of(rid, revision, run_id, plan_rule=fast_path.PLAN_RULE, accept=reusable)
                    if step["output"] is None else None)
@@ -1055,9 +1051,9 @@ class ResearchFlow:
             if stored is not None and stored["attempt"] == attempt:
                 checked = stored["result"]
             else:
-                # Counted under the forms rule only where this run froze it.
+                # Count the current forms of quoted phrases.
                 checked = await search_query_rules.check(answer["result"], self._count_probe(scope, run_id),
-                                                         phrase_forms=fast_path.phrase_forms_on(run["budget"]))
+                                                         phrase_forms=True)
                 output["checked"] = {"attempt": attempt, "result": checked}
                 self.store.set_step_output(step["id"], output)
             if not checked["searchable"]:
@@ -1201,9 +1197,9 @@ class ResearchFlow:
         if output.get("checked") is not None:
             checked = output["checked"]
         else:
-            # Counted under the forms rule only where this run froze it.
+            # Count the current forms of quoted phrases.
             checked = await search_query_rules.check(user_plan_rules.answer(plan), self._count_probe(scope, run_id),
-                                                     phrase_forms=fast_path.phrase_forms_on(run["budget"]))
+                                                     phrase_forms=True)
             # The person, not a model, chose these terms; the record says so wherever a term's origin is read.
             checked["terms"] = [term | {"origin": user_plan_rules.ORIGIN} for term in checked["terms"]]
             self.store.set_step_output(step["id"], {"checked": checked})

@@ -94,21 +94,14 @@ def scripted(flow, calls, *, advance=None, fail_at=None, short=False):
     flow._send_search = send
 
 
-@pytest.mark.parametrize("frozen", ["block_semantic", "since_d155"])
-def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, frozen):
-    # A plan frozen with the block terms' semantic request sends it once, after the question's, and its hits
-    # enter the pool. A new plan freezes that it is off and skips that request; a plan frozen under `block_terms_v1`
-    # still sends it.
+def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path):
+    # The current plan freezes the block request as off, so only the question's semantic request is sent.
     lib = library
     flow, scope, plan = setup(lib, tmp_path, VOCABULARY)
-    if frozen == "block_semantic":
-        plan = plan | {"block_semantic": {"rule": "block_terms_v1", "provider_id": "openalex", "endpoint": "semantic",
-                                          "query_text": "synthetic setting words synthetic task words", "limit": 50,
-                                          "query_origin": "block_terms"}}
     calls = []
     scripted(flow, calls)
     asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
-    semantic = 2 if frozen == "block_semantic" else 1
+    semantic = 1
     # Under the evidence minimum the semantic requests run beside the keyword pages, so each kind keeps its own order.
     sent = [call for call in calls if call[0] == "semantic"]
     assert [(q, p, n) for e, q, p, n in calls if e != "semantic"] == [
@@ -117,12 +110,7 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, f
     block = lib.conn.execute("SELECT sr.result_count FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
                              " WHERE s.operation_key = ?", (fast_search.BLOCK_SEMANTIC_KEY,)).fetchall()
     arms = [q["arm"] for q in fast_search.sent_plan({"fast_path_search": plan, "compiled_queries": QUERIES})]
-    if frozen == "block_semantic":
-        assert sent[1] == ('semantic', 'synthetic setting words synthetic task words', 0, 50)
-        assert [tuple(r) for r in block] == [(2,)]
-        assert arms[:2] == ["semantic", "block_semantic"]
-    else:
-        assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF and not block and "block_semantic" not in arms
+    assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF and not block and "block_semantic" not in arms
     assert len(rows(lib)) == 800 + 2 * semantic
     assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, semantic]
     # The arXiv query of this synthetic plan names a source this research does not hold, so that is the reason it
@@ -393,14 +381,13 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
 
 
 def test_sw_pause_resume_keeps_frozen_protocol_and_does_not_repeat_search(tmp_path, monkeypatch):
-    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
-    from fakes import without_evidence_minimum
-    without_evidence_minimum(monkeypatch)
+    # Pause during the current read stage, after the protocol and requests are stored.
+    holder = {}
     down = True
-    def failure(si):
+    def before(si):
         if down and si["task_type"] == "abstract_screening":
-            return ModelStepResult("failed", error="SYNTHETIC paused connection")
-    adapter = FakeAdapter(fail=failure)
+            holder["app"].state.store.update_run(si["run_id"], status="pause_requested")
+    adapter = FakeAdapter(before=before)
 
     def plan_from_its_own_record(request):
         # The question's own request answers with a record whose words the pool's titles do not carry, so the
@@ -412,6 +399,7 @@ def test_sw_pause_resume_keeps_frozen_protocol_and_does_not_repeat_search(tmp_pa
                  "authorships": [], "abstract_inverted_index": {"We": [0], "zzqmeasure": [1], "zzqoutcome": [2]}}]})
         return routed(request)
     app = app_for(tmp_path, plan_from_its_own_record, adapter)
+    holder["app"] = app
     with TestClient(app) as raw:
         client = session(raw)
         rid, run_id = start(client)

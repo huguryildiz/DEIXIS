@@ -77,19 +77,15 @@ SUBTOPIC_RULE = "subtopic_search_v1"
 # (`search.date_scope`). Frozen here with the rest of the policy, before the first request opens: the question's
 # own semantic request goes out before the protocol is frozen, so a bound kept only in the protocol would miss it.
 DATE_SCOPE_RULE = "date_scope_v1"
-# The reranker's own time: once the pool is ranked, the reranker may run for the depth's allowance even when the
-# ranking stage's time, or the depth's handover moment, is already gone. The time it runs past that cutoff is not
-# taken from the read stage: read keeps the allocation and the handover cap it would have had, so the answer comes
-# later by that time. Frozen in the policy with the number; a run queued before the rule carries none and keeps the
-# old arithmetic, in which the reranker had only what was left of the ranking stage.
+# The reranker may use its own allowance past the ranking cutoff. Read keeps its allocation. A local-model run
+# freezes no allowance, so its reranker uses only the time left in ranking.
 RERANK_ALLOWANCE_RULE = "rerank_allowance_v1"
 # One model step writes phrases from the question alone; each uses OpenAlex semantic and plain search.
 # The phrase count and records per request are frozen with the rule.
 PHRASE_SEARCH_RULE = "phrase_search_v2"
 PHRASE_SEARCH_RECORDS = 50  # records one phrase request reads: one semantic page
 PHRASE_PLAIN_RECORDS = 30  # records one plain phrase request reads: one page of the plain route
-# Where the reranker was applied to the frozen list, the abstract stage does not close a work of the top-N window for
-# naming neither gate block: the model reads it. A run frozen before the rule names no key and closes as it did.
+# Where reranking applied to the frozen list, the model reads top-N works that name neither gate block.
 WINDOW_WORD_RULE = "reranked_window_open_v1"
 # The evidence a run must gather before it answers, whatever its handover moment says: the search stage keeps at least
 # `search_ms` from its own start, and the model's reads of the top N abstracts are waited for up to `abstract_ceiling_ms`
@@ -422,13 +418,6 @@ def scope_years(store, research_id: str, scope_revision: int) -> dict[str, Any] 
     return None
 
 
-def phrase_forms_on(budget: dict[str, Any]) -> bool:
-    """Whether this run froze the rule that also searches the other number form of a quoted phrase; a run queued
-    before it counts and compiles its plan as it always did."""
-    from deixis.providers.query_compiler import PHRASE_FORMS_RULE
-    return (budget.get("fast_path") or {}).get("phrase_forms_rule") == PHRASE_FORMS_RULE
-
-
 def evidence_minimum(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
     """The evidence minimum the run's ledger froze (`EVIDENCE_MINIMUM_RULE`), or None for a run frozen before it."""
     binding = run["budget"].get("fast_path") or {}
@@ -436,11 +425,6 @@ def evidence_minimum(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
     policy = binding if ledger_id == run["id"] else (store.run(ledger_id)["budget"].get("fast_path") or {})
     rule = policy.get("evidence_minimum") or {}
     return rule if rule.get("rule") == EVIDENCE_MINIMUM_RULE else None
-
-
-def window_word_rule(policy: dict[str, Any]) -> bool:
-    """Whether this run froze the rule that keeps a reranked top-N window open to the model (`WINDOW_WORD_RULE`)."""
-    return policy.get("window_word_rule") == WINDOW_WORD_RULE
 
 
 def phrase_search(budget: dict[str, Any]) -> dict[str, Any] | None:
@@ -519,23 +503,9 @@ def handover_deadline(store: Any, run: dict[str, Any]) -> datetime | None:
 
 
 def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | None:
-    """A stage's own soft deadline, never later than the run's handover moment for a stage that must be done before
-    the answer is written, except under the evidence minimum, where the handover cuts no stage. The handover is the harder of the two: a stage that carried time forward, or a protected
-    stage that keeps its whole base, cannot push the first answer past the depth's target.
-
-    The handover stands even where the stage has no deadline of its own, which is how it reaches the two places the
-    stage accounting does not: a stage this policy does not enforce, the plan stage above all, and a stage working in
-    a rework interval, which is what retrying a failed search of a completed run opens. The person's clock has run
-    out in both cases."""
-    # Under the evidence minimum the handover is a recorded target and cuts no stage.
-    evidence = evidence_minimum(store, run)
-    handover = handover_deadline(store, run) if stage in PRE_ANSWER and evidence is None else None
-    if handover is not None and stage in AFTER_RANKING:
-        # The time the reranker ran past the ranking cutoff on its own allowance moves the cap with it, so the read
-        # stage keeps the time it would have had and the answer comes that much later.
-        handover += timedelta(milliseconds=rerank_carry_ms(store, run))
+    """A stage's soft deadline. Search keeps its evidence minimum; rework keeps its own allocation."""
     if not enforces(run["budget"], stage) or stage in run["budget"]["fast_path"].get("no_deadline_stages", ()):
-        return handover
+        return None
     ledger = run["budget"]["fast_path"].get("ledger_run_id", run["id"])
     row = store.conn.execute(
         "SELECT i.started_at, s.alloc_ms, s.used_ms FROM fast_path_stages s"
@@ -543,10 +513,10 @@ def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | No
         " WHERE s.ledger_run_id = ? AND s.stage = ? AND s.status = 'open'"
         " AND i.run_id = ? AND i.closed_at IS NULL AND i.rework = 0",
         (ledger, stage, run["id"])).fetchone()
+    evidence = evidence_minimum(store, run)
     minimum = evidence if stage == "search" else None
     if row is None and evidence is not None:
-        # A rework interval (retrying a failed search of a completed run) has no stage accounting, and under the
-        # evidence minimum no handover either: it keeps the stage's allocation, and search its minimum, from its start.
+        # A rework interval keeps the stage allocation and search minimum from its own start.
         rework = store.conn.execute(
             "SELECT i.started_at, s.alloc_ms FROM fast_path_stages s"
             " JOIN fast_path_intervals i ON i.ledger_run_id = s.ledger_run_id AND i.stage = s.stage"
@@ -560,22 +530,20 @@ def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | No
                 "SELECT 1 FROM fast_path_stages WHERE ledger_run_id = ? AND stage = 'search'", (ledger,)).fetchone() is None:
             # The search stage has not started, so its minimum has not either: nothing of it has passed yet.
             return None
-        return handover
+        return None
     deadline = datetime.fromisoformat(row["started_at"]) + timedelta(milliseconds=row["alloc_ms"] - row["used_ms"])
-    deadline = deadline if handover is None else min(deadline, handover)
     if minimum is not None:
-        # The search stage keeps its minimum from its own start, whatever the handover moment says.
+        # The search stage keeps its minimum from its own start.
         deadline = max(deadline, datetime.fromisoformat(row["started_at"]) + timedelta(milliseconds=minimum["search_ms"]))
     return deadline
 
 
 def past_deadline(store: Any, run: dict[str, Any], stage: str) -> bool:
-    """Whether this stage must stop. A pre-answer stage past the run's handover moment also records that the run
-    missed its depth's target, wherever in the run that moment arrives."""
+    """Whether this stage must stop, while recording a passed handover target."""
     deadline = stage_deadline(store, run, stage)
     past = deadline is not None and store.clock.now() >= deadline
-    # Under the evidence minimum the handover cuts no stage, so its passing is recorded whether or not the stage stops.
-    if stage in PRE_ANSWER and (past or evidence_minimum(store, run) is not None):
+    # Record the handover target independently of the stage cutoff.
+    if stage in PRE_ANSWER:
         note_handover_passed(store, run)
     return past
 

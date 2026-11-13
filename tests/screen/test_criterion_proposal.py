@@ -377,21 +377,19 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
 
 def test_a_resumed_run_proposes_nothing_again(tmp_path, monkeypatch):
     """The run stops after its proposals on the first pass; resuming must not pay for them again."""
-    from fakes import without_evidence_minimum
-    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
-    without_evidence_minimum(monkeypatch)
     openalex, adapter = CountingOpenAlex(), proposing()
     down = {"now": True}
+    holder = {}
 
-    def responder(si):
-        # The abstract stage is the first model work after the criterion, so a connection that is down there
-        # stops the run with every proposal already made and stored.
+    def before(si):
+        # Pause after the criterion proposals have been stored.
         if down["now"] and si["task_type"] == "abstract_screening":
-            return ModelStepResult("failed", error="SYNTHETIC model connection is down")
-        return None
-    adapter.fail = responder
+            holder["app"].state.store.update_run(si["run_id"], status="pause_requested")
+    adapter.before = before
 
-    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
+    app = app_for(tmp_path, monkeypatch, openalex, adapter)
+    holder["app"] = app
+    with TestClient(app) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
         rid, run_id = start(client, EXERCISE)
         view, run = wait(client, rid, run_id)

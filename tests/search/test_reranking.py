@@ -103,7 +103,6 @@ def applied(candidates, scores):
 
 
 
-
 @pytest.mark.parametrize("stored, reason", [
     ({"status": "failed", "provider": "voyage", "model": "rerank-3-lite", "candidate_ids": ["a", "b"], "scores": None,
       "error_code": "reranker_timeout"}, "reranker_timeout"),
@@ -218,7 +217,6 @@ def test_without_an_english_sentence_the_rerank_asks_no_reranker_and_the_list_ke
 
 # The old chain-only hold, which a budget frozen with version 3 keeps.
 RERANK_V3 = {"version": 3, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route"}
-
 
 
 
@@ -363,8 +361,6 @@ def test_the_fused_reserve_at_its_edges(fixed_replay):
 
 
 
-
-
 # ---- through a real discovery run (fake model, fake local runner) ------------------------------------
 
 class RerankingLocal(FakeLocal):
@@ -470,7 +466,6 @@ def test_a_quick_reranker_that_times_out_leaves_the_fused_order_and_says_why(tmp
 def test_a_factor_saved_lower_in_settings_still_wins_at_quick(tmp_path, monkeypatch):
     listing, step, lookup, budget = quick_run(tmp_path, monkeypatch, RerankingLocal(), pool_factor=2)
     assert step["output"]["pool_factor"] == 2.0 and len(step["output"]["candidate_ids"]) <= 2 * 25
-
 
 
 
@@ -608,7 +603,6 @@ class LookupPool(Pool):
 
 
 
-
 # ---- Settings ----------------------------------------------------------------------------------------
 
 
@@ -639,11 +633,9 @@ class ClockLocal:
         return [i / len(documents) for i in range(len(documents))], []
 
 
-def allowance_run(tmp_path, monkeypatch, plan_seconds, *, policy_edit=None, evidence=False):
+def allowance_run(tmp_path, monkeypatch, plan_seconds, *, local_model=False):
     """A Standard discovery run on a fake clock whose plan took `plan_seconds` (its share is 8 s) and whose lookups
-    before the rerank used all that was left of the ranking stage, with a reranker that takes 2 s. Without `evidence`
-    the run is frozen as before the evidence minimum, whose debt-free carry these numbers do not assume."""
-    from deixis.domain import canonical
+    before the rerank used all that was left of the ranking stage, with a reranker that takes 2 s."""
     from deixis.domain.rules import TEST_EFFORT_BUDGETS
     from deixis.storage import db
     from deixis.workflow.run import fast_path
@@ -658,14 +650,7 @@ def allowance_run(tmp_path, monkeypatch, plan_seconds, *, policy_edit=None, evid
     store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
     rid = store.create_research("SYNTHETIC allowance", "academic", "standard", ["openalex"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
-    policy = fast_path.freeze_budget(budget, "standard")
-    if policy_edit or not evidence:
-        policy = {k: v for k, v in policy.items() if k != "policy_hash"}
-        if policy_edit:
-            policy_edit(policy)
-        if not evidence:
-            policy.pop("evidence_minimum")
-        policy["policy_hash"] = canonical.sha256_hex(policy)
+    policy = fast_path.freeze_budget(budget, "standard", local_model=local_model)
     budget["fast_path"] = policy
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
@@ -701,32 +686,11 @@ def _rerank_then_read(lab):
     return step, listing, dict(read)
 
 
-def test_the_reranker_keeps_its_allowance_after_the_plan_overran_and_the_lookups_used_the_stage(tmp_path, monkeypatch):
-    # The plan took 40 s of its 8, so ranking got its 4.25 s floor and the lookups used all of it; the reranker still
-    # runs on its own 3 s and the list is in its order. Read is given back the 2 s the reranker ran past the cutoff.
-    lab = allowance_run(tmp_path, monkeypatch, 40)
-    try:
-        step, listing, read = _rerank_then_read(lab)
-        started = lab.fast_path.ledger_started_at(lab.store, lab.run)
-        read_deadline = lab.fast_path.stage_deadline(lab.store, lab.run, "read")
-    finally:
-        lab.conn.close()
-    assert lab.local.reranked and step["status"] == "succeeded"
-    assert listing["reranker"]["applied"] is True and listing["order"] == ["a", "c", "b"]
-    assert step["output"]["allowance"] == {"rule": lab.fast_path.RERANK_ALLOWANCE_RULE, "ms": 3000,
-                                           "past_cutoff": "stage", "stage_left_ms": 0, "earlier_ms": 0,
-                                           "past_cutoff_ms": 2000}
-    # Read's allocation is the one it would have had had the reranker not run: 33 s, minus the plan's 32 s debt,
-    # plus what ranking left of its 17 s base before the reranker (17 - 4.25).
-    assert read["alloc_ms"] == 14250
-    # The handover cap moves by the same 2 s, so the answer comes 2 s later instead of read losing them.
-    assert read_deadline == started + timedelta(seconds=72)
-
 
 def test_under_the_evidence_minimum_the_reranker_time_is_not_given_back_twice(tmp_path, monkeypatch):
     # No stage carries debt under the rule: the plan's 32 s overrun is not charged, ranking keeps its 17 s, and the
     # 2 s the reranker ran past the ranking cutoff are an overrun of ranking, so read gets its own base and no more.
-    lab = allowance_run(tmp_path, monkeypatch, 40, evidence=True)
+    lab = allowance_run(tmp_path, monkeypatch, 40)
     try:
         step, listing, read = _rerank_then_read(lab)
         ranking = lab.conn.execute("SELECT * FROM fast_path_stages WHERE ledger_run_id = ? AND stage = 'ranking'",
@@ -738,32 +702,16 @@ def test_under_the_evidence_minimum_the_reranker_time_is_not_given_back_twice(tm
     assert (read["balance_before_ms"], read["alloc_ms"]) == (0, 33000)
 
 
-def test_the_reranker_keeps_its_allowance_when_the_handover_moment_has_already_passed(tmp_path, monkeypatch):
-    lab = allowance_run(tmp_path, monkeypatch, 80)  # the plan alone ran past Standard's 70 s handover
-    try:
-        step, listing, _ = _rerank_then_read(lab)
-        started = lab.fast_path.ledger_started_at(lab.store, lab.run)
-        read_deadline = lab.fast_path.stage_deadline(lab.store, lab.run, "read")
-        passed = lab.conn.execute("SELECT handover_passed_at FROM fast_path_ledgers").fetchone()[0]
-    finally:
-        lab.conn.close()
-    assert step["status"] == "succeeded" and listing["order"] == ["a", "c", "b"]
-    assert (step["output"]["allowance"]["past_cutoff"], step["output"]["allowance"]["past_cutoff_ms"]) == (
-        "handover", 2000)
-    # Read had nothing left before and has nothing now; the missed target is still recorded at the real moment.
-    assert read_deadline == started + timedelta(seconds=72) < lab.clock.now()
-    assert passed is not None
 
-
-def test_a_run_frozen_before_the_allowance_gives_the_reranker_only_what_the_stage_left(tmp_path, monkeypatch):
-    lab = allowance_run(tmp_path, monkeypatch, 40, policy_edit=lambda p: p.pop("rerank_allowance"))
+def test_a_local_model_without_allowance_gives_the_reranker_only_what_the_stage_left(tmp_path, monkeypatch):
+    lab = allowance_run(tmp_path, monkeypatch, 40, local_model=True)
     try:
         step, listing, read = _rerank_then_read(lab)
     finally:
         lab.conn.close()
     assert lab.local.reranked == [] and step["status"] == "failed" and step["error_code"] == "no_time_left"
     assert "allowance" not in step["output"] and listing["order"] == ["a", "b", "c"]
-    assert read["alloc_ms"] == 14250
+    assert read["alloc_ms"] == 33000
 
 
 class PausingLocal:
@@ -804,8 +752,8 @@ def test_a_paused_rerank_keeps_the_allowance_it_used_and_resume_gets_only_the_re
     assert step["status"] == "failed" and step["error_code"] == "reranker_timeout"
     assert step["output"]["error"].endswith("within 1 s") and listing["order"] == ["a", "b", "c"]
     assert (step["output"]["allowance"]["earlier_ms"], step["output"]["allowance"]["past_cutoff_ms"]) == (2000, 3000)
-    # Both attempts' 3 s are given back to read, whose allocation is the one it would have had.
-    assert read["alloc_ms"] == 14250
+    # The ranking overrun does not add debt to read.
+    assert read["alloc_ms"] == 33000
 
 
 class SpendingLocal:
@@ -844,5 +792,5 @@ def test_a_rerank_resumed_after_its_whole_allowance_was_used_keeps_the_fused_ord
     assert local.calls == 1 and step["status"] == "failed" and step["error_code"] == "no_time_left"
     assert step["output"]["fallback"] == "fused_order" and listing["order"] == ["a", "b", "c"]
     assert (step["output"]["allowance"]["earlier_ms"], step["output"]["allowance"]["past_cutoff_ms"]) == (3000, 3000)
-    # The 3 s the first attempt used are given back to read once.
-    assert read["alloc_ms"] == 14250
+    # The ranking overrun does not add debt to read.
+    assert read["alloc_ms"] == 33000

@@ -135,6 +135,14 @@ def test_a_run_frozen_under_a_removed_rule_is_named_and_not_carried_out_under_to
     assert small_batch.removed_rule(discovery(inspection=inspection | {"rerank": {"version": 5}}, **current)) == "rerank_rule"
     assert small_batch.removed_rule(discovery(inspection=inspection | {"prerank_lookup": {"version": 4}},
                                               **current)) == "prerank_lookup"
+    # Shared search needs every current discovery rule, including for a local model.
+    for key, reason in (("phrase_forms_rule", "phrase_forms_rule"),
+                        ("evidence_minimum", "evidence_minimum"),
+                        ("window_word_rule", "window_word_rule"),
+                        ("handover_rule", "handover_rule")):
+        older = {name: value for name, value in current.items() if name != key}
+        assert small_batch.removed_rule(discovery(**older)) == reason
+    assert small_batch.removed_rule(discovery(**fast_path.freeze_budget({}, "standard", local_model=True))) is None
     assert small_batch.removed_rule(answer(answer_allocation_version=6)) == "answer_allocation"
     assert small_batch.removed_rule(answer()) == "answer_allocation"
     # A run of another kind, and a budget no fast path froze, are not this gate's business.

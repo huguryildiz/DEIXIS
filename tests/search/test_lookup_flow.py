@@ -267,12 +267,16 @@ def test_a_resumed_run_asks_no_doi_twice(tmp_path, monkeypatch):
     One record carries an abstract, so the run reaches the screening model and pauses there; without it every
     record would be held and the run would finish with nothing to resume.
     """
-    from fakes import without_evidence_minimum
-    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
-    without_evidence_minimum(monkeypatch)
+    holder = {}
+    paused = set()
+    def before(si):
+        if si["task_type"] == "abstract_screening" and si["run_id"] not in paused:
+            paused.add(si["run_id"])
+            holder["app"].state.store.update_run(si["run_id"], status="pause_requested")
     sources = Sources(works=[work(0, abstract=ABSTRACT, doi="10.1/0")]
                       + [work(i, doi=f"10.1/{i}") for i in range(1, 4)])
-    app = app_for(tmp_path, monkeypatch, sources)
+    app = app_for(tmp_path, monkeypatch, sources, adapter=FakeAdapter(before=before))
+    holder["app"] = app
     client = client_of(app)
     try:
         rid, run_id, view, run = discover(client)
@@ -331,11 +335,9 @@ def test_a_crossref_chunk_stopped_between_two_answers_keeps_the_first_answer_s_e
         assert payload[f"10.1/{n}"]["abstract"] == crossref[f"10.1/{n}"]["abstract"]
 
 
-@pytest.mark.parametrize("how", ["deadline", "pause", "before_the_rule"])
+@pytest.mark.parametrize("how", ["deadline", "pause"])
 def test_a_stop_inside_a_crossref_chunk_sends_no_further_request(tmp_path, monkeypatch, how):
-    """Under the evidence minimum the read stage's deadline, or a pause, that arrives after the first reply of a
-    chunk stops the chunk there: the other records are not asked and the step is closed as stopped (a pause leaves it
-    open for the resume). A run frozen before the rule passes no in-step stop and asks every record as before."""
+    """A deadline or pause after the first reply stops the chunk before its later requests."""
     from deixis.workflow.run.flow import RunStopped
     sources = Sources(works=[work(0, abstract=ABSTRACT, doi="10.1/0")] + [work(n, doi=f"10.1/{n}") for n in (7, 8, 9)],
                       crossref_status=500)
@@ -362,8 +364,7 @@ def test_a_stop_inside_a_crossref_chunk_sends_no_further_request(tmp_path, monke
 
     async def chunk_step():
         async with httpx.AsyncClient(transport=httpx.MockTransport(sources)) as http:
-            await lookups._crossref_step(store, http, settings, store.run(run_id), 0, chunk, "test:", 1,
-                                         halt=None if how == "before_the_rule" else halt)
+            await lookups._crossref_step(store, http, settings, store.run(run_id), 0, chunk, "test:", 1, halt=halt)
     try:
         if how == "deadline":
             with pytest.raises(lookups._Stopped):
@@ -371,15 +372,10 @@ def test_a_stop_inside_a_crossref_chunk_sends_no_further_request(tmp_path, monke
         elif how == "pause":
             with pytest.raises(RunStopped):
                 asyncio.run(chunk_step())
-        else:
-            asyncio.run(chunk_step())
         step = store.existing_step(run_id, "test:record_lookup:crossref:0")
         unasked = {n for n in (8, 9) if not lookups.answered(store, by_id[f"W{n}"], "crossref")}
     finally:
         client.__exit__(None, None, None)
-    if how == "before_the_rule":
-        assert sources.lookups == ["10.1/7", "10.1/8", "10.1/9"] and step["status"] == "succeeded"
-        return
     assert sources.lookups == ["10.1/7"] and unasked == {8, 9}
     assert (step["status"], step["error_code"]) == (
         ("failed", "lookup_time_ceiling") if how == "deadline" else ("running", None))

@@ -157,7 +157,6 @@ def proposal(model_answer=None, counts=None, too_broad=False):
                                     "answer": {}})
 
 
-
 def test_the_questions_own_words_are_kept_beside_the_models_terms_and_read_from_an_older_record():
     """What gates and orders records: the plan's terms and the question's own words beside them.
 
@@ -404,51 +403,6 @@ def phrase_plan(si):
     return json.dumps(body)
 
 
-def test_a_run_frozen_before_the_forms_rule_counts_and_compiles_its_plan_the_old_way_on_resume(tmp_path, monkeypatch):
-    # The run's first plan call fails and it pauses before any count is read; it is resumed under this version.
-    # Its frozen policy names no forms rule, so the resumed plan is counted and compiled exactly as before. A run
-    # queued now, on the same question, searches the plural beside the phrase.
-    from deixis.domain import canonical
-    from deixis.workflow.run import fast_path
-    freeze, old = fast_path.freeze_budget, [True]
-
-    def frozen(*args, **kwargs):
-        policy = freeze(*args, **kwargs)
-        if old[0]:
-            policy = {k: v for k, v in policy.items() if k not in ("policy_hash", "phrase_forms_rule")}
-            policy["policy_hash"] = canonical.sha256_hex(policy)
-        return policy
-    monkeypatch.setattr(fast_path, "freeze_budget", frozen)
-    failed = []
-
-    def fail_once(si):
-        if si["task_type"] == "search_plan" and not failed:
-            failed.append(si)
-            return ModelStepResult("failed", error="SYNTHETIC down")
-        return None
-    openalex = OpenAlex()
-    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(phrase_plan, fail=fail_once))
-    rid, run_id = start(client)
-    _, run = wait(client, rid, run_id)
-    assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed")
-    assert not any("rail freight" == query.strip('"') for query in openalex.counts)  # the plan was not counted yet
-    assert "phrase_forms_rule" not in run["budget"]["fast_path"]
-    assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
-    _, run = wait(client, rid, run_id, ("completed", "failed"))
-    assert run["status"] == "completed", run
-    stored = step_output(client, run_id, "search_query")
-    assert "phrase_forms" not in stored["vocabulary"] and stored["queries"][0]["query_text"] == '"rail freight" AND schedule'
-    assert not any("rail freights" in query for query in openalex.counts + openalex.searches if query)
-    old[0] = False
-    rid, run_id = start(client)
-    _, run = wait(client, rid, run_id)
-    assert run["status"] == "completed", run
-    assert run["budget"]["fast_path"]["phrase_forms_rule"] == search_query.query_compiler.PHRASE_FORMS_RULE
-    stored = step_output(client, run_id, "search_query")
-    assert stored["queries"][0]["query_text"] == '("rail freight" OR "rail freights") AND schedule'
-    assert stored["vocabulary"]["phrase_forms"]["terms"] == [
-        {"phrase": "rail freight", "block": "setting", "variant": "rail freights", "searched": True, "left_out": None}]
-
 
 def test_a_source_routing_recompile_of_a_plan_counted_before_the_rule_gives_its_old_text():
     from deixis.workflow.run.flow import ResearchFlow
@@ -462,37 +416,27 @@ def test_a_source_routing_recompile_of_a_plan_counted_before_the_rule_gives_its_
     assert "phrase_forms" not in built and "phrase_forms" not in compiled[0]
 
 
-def test_a_newer_query_under_the_other_forms_rule_does_not_hide_an_older_one_this_run_can_reuse(tmp_path, monkeypatch):
-    # A wrote its query before the forms rule, B after it; C, frozen before the rule, reuses A's query and asks the
-    # model nothing, although B's is the newest of the scope revision.
-    from deixis.domain import canonical
-    from deixis.workflow.run import fast_path
-    freeze, old = fast_path.freeze_budget, [True]
 
-    def frozen(*args, **kwargs):
-        policy = freeze(*args, **kwargs)
-        if old[0]:
-            policy = {k: v for k, v in policy.items() if k not in ("policy_hash", "phrase_forms_rule")}
-            policy["policy_hash"] = canonical.sha256_hex(policy)
-        return policy
-    monkeypatch.setattr(fast_path, "freeze_budget", frozen)
+def test_current_run_rejects_a_stored_query_without_phrase_forms(tmp_path, monkeypatch):
+    # A prior query with an older vocabulary cannot be reused by a current run.
     adapter = FakeAdapter()
-    client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
-    rid, first = start(client)
-    assert wait(client, rid, first)[1]["status"] == "completed"
-    old[0] = False
-    second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-    assert wait(client, rid, second)[1]["status"] == "completed"
-    # B, under the rule, does not take A's query and writes its own.
-    assert "reused_from_run" not in step_output(client, second, "search_query") and len(calls(adapter)) == 2
-    assert "phrase_forms" in step_output(client, second, "search_query")["vocabulary"]
-    old[0] = True
-    third = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-    _, run = wait(client, rid, third)
-    assert run["status"] == "completed", run
-    stored = step_output(client, third, "search_query")
-    assert stored["reused_from_run"] == first and len(calls(adapter)) == 2
-    assert "phrase_forms" not in stored["vocabulary"]
+    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), adapter)
+    try:
+        rid, first = start(client)
+        assert wait(client, rid, first)[1]["status"] == "completed"
+        stored = step_output(client, first, "search_query")
+        assert "phrase_forms" in stored["vocabulary"]
+        stored["vocabulary"].pop("phrase_forms")
+        client.app.state.store.conn.execute(
+            "UPDATE run_steps SET output_json = ? WHERE run_id = ? AND operation_key = 'search_query'",
+            (json.dumps(stored), first))
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        assert wait(client, rid, second)[1]["status"] == "completed"
+        output = step_output(client, second, "search_query")
+        assert "reused_from_run" not in output and "phrase_forms" in output["vocabulary"]
+        assert len(calls(adapter)) == 2
+    finally:
+        client.__exit__(None, None, None)
 
 
 def test_under_the_forms_rule_the_routing_distribution_is_read_for_the_query_the_search_sends():

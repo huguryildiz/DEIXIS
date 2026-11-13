@@ -319,19 +319,19 @@ def test_a_failed_or_refused_phrase_step_does_not_pause_the_run(tmp_path, monkey
 
 
 def test_a_resume_neither_asks_for_the_phrases_again_nor_resends_an_answered_request(tmp_path, monkeypatch):
-    from fakes import without_evidence_minimum
-    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
-    without_evidence_minimum(monkeypatch)
+    holder = {}
     down = True
 
-    def failure(si):
-        # The run pauses after its search stage, at the abstract stage, while the connection is down.
+    def before(si):
+        # Pause at the abstract stage after search has stored its requests.
         if down and si["task_type"] == "abstract_screening":
-            return ModelStepResult("failed", error="SYNTHETIC paused connection")
+            holder["app"].state.store.update_run(si["run_id"], status="pause_requested")
 
-    openalex, adapter = OpenAlex(), FakeAdapter(fail=failure)
+    openalex, adapter = OpenAlex(), FakeAdapter(before=before)
     # The records carry no word of the plan's blocks, so the abstract stage asks the model and the run pauses.
-    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
+    app = app_for(tmp_path, monkeypatch, openalex, adapter)
+    holder["app"] = app
+    with TestClient(app) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
         rid, run_id = start(client, QUESTION)
         view, run = wait(client, rid, run_id)

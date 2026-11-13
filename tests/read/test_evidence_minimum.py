@@ -28,16 +28,6 @@ def late_ledger(monkeypatch):
     monkeypatch.setattr(fast_path, "create_run", earlier)
 
 
-def before_the_rule(monkeypatch):
-    """New runs frozen as a run queued before the rule: their policy names no `evidence_minimum`."""
-    freeze = fast_path.freeze_budget
-
-    def older(*args, **kwargs):
-        policy = freeze(*args, **kwargs)
-        policy.pop("evidence_minimum")
-        return policy
-    monkeypatch.setattr(fast_path, "freeze_budget", older)
-
 
 class Adapter(FakeAdapter):
     """The fake model; an abstract screening call hangs while `hang` says so for its key."""
@@ -71,10 +61,8 @@ def answer_started(store, rid):
     return row[0]
 
 
-def late_run(tmp_path, monkeypatch, adapter=None, older=False):
+def late_run(tmp_path, monkeypatch, adapter=None):
     late_ledger(monkeypatch)
-    if older:
-        before_the_rule(monkeypatch)
     app = app_for(tmp_path, monkeypatch, Pool(list(POOL)), adapter=adapter or Adapter())
     client = client_of(app)
     try:
@@ -121,19 +109,6 @@ def test_with_the_handover_past_the_keyword_query_is_sent_and_the_top_n_is_read_
     assert held["causes"]["plan_overrun"] > 0
     assert abs(sum(held["causes"].values()) - held["handover_missed_ms"]) <= 10
 
-
-def test_a_run_frozen_before_the_rule_cancels_and_cuts_exactly_as_before(tmp_path, monkeypatch):
-    late = late_run(tmp_path, monkeypatch, older=True)
-    store, run_id = late.store, late.run_id
-    assert "evidence_minimum" not in late.run["budget"]["fast_path"]
-    keyword = steps(store, run_id, "search:0")
-    # The keyword query is closed by the handover without being sent, and no abstract is read by the model.
-    assert not keyword or keyword[0]["status"] != "succeeded"
-    model = [s for s in steps(store, run_id, "small_batch:v1:") if ":abstract_screening:" in s["operation_key"]]
-    assert not [s for s in model if s["status"] == "succeeded"]
-    # W2 is found by the keyword query alone, so without it W2 is never a candidate; if found, it is not read.
-    assert codes_of(store, late.rid).get("W2") in (None, "abstract_not_read")
-    assert "evidence_minimum" not in fast_path.view(store, store.run(run_id))
 
 
 def test_a_hung_abstract_call_ends_at_the_ceiling_and_the_run_goes_on_without_its_read(tmp_path, monkeypatch):

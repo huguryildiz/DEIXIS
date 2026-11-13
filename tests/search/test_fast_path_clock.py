@@ -50,8 +50,7 @@ class FakeClock:
 
 @pytest.fixture(autouse=True)
 def historical_read_policy(monkeypatch, request):
-    """Keep slice 1/4 regressions on their already-frozen policy, without answer enforcement. The tests that run an
-    answer use the current policy: since the clean start (slice 3b) an answer is written on the fast path only."""
+    """Keep stage-accounting regressions on a current policy with only read enforced."""
     if request.node.originalname in ("test_02_policy_freezes_with_run_and_canonical_hash",
                                      "test_end_to_end_sw_discovery_answer_with_fake_clock",
                                      "test_rerun_answer_flow_save_paths"):
@@ -60,12 +59,8 @@ def historical_read_policy(monkeypatch, request):
     def historical(*args, **kwargs):
         policy = freeze(*args, **kwargs)
         policy["enforced_stages"] = ["read"]
-        # These regressions are about the stage accounting itself: active time, excluded downtime and the balance
-        # carried between stages. The delivery-time handover is a later cap with its own tests
-        # (`test_delivery_time.py`), and a policy frozen before that rule keeps exactly this arithmetic, so dropping
-        # the two keys here keeps each test on the one rule it was written for.
-        # The evidence minimum's debt-free carry is a later rule with its own tests (`test_evidence_minimum.py`).
-        for key in ("approval_mode", "auto_answer", "policy_hash", "handover_rule", "handover_ms", "evidence_minimum"):
+        # Leave the search policy current while isolating the stage accounting.
+        for key in ("approval_mode", "auto_answer", "policy_hash"):
             policy.pop(key, None)
         return policy | {"policy_hash": canonical.sha256_hex(policy)}
     monkeypatch.setattr(fast_path, "freeze_budget", historical)
@@ -162,36 +157,6 @@ def test_04_unused_time_carries_forward(library):
     fast_path.enter_stage(library.store, library.run, "search")
     # Quick's plan base is 8 s; finishing in 3 carries 5 s forward to search's own 14.
     assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (5000, 19000)
-
-
-@pytest.mark.parametrize("frozen", ["d152", "before_d152"])
-def test_plan_debt_is_charged_after_search(library, frozen):
-    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
-    policy = fast_path.freeze_budget(budget, "standard")
-    if frozen == "before_d152":
-        policy = {k: v for k, v in policy.items() if k not in ("protected_stages", "policy_hash")}
-        policy["policy_hash"] = canonical.sha256_hex(policy)
-    if frozen == "d152":
-        # The arithmetic before the evidence minimum: its debt-free carry is tested on its own.
-        policy = {k: v for k, v in policy.items() if k not in ("evidence_minimum", "policy_hash")}
-        policy["policy_hash"] = canonical.sha256_hex(policy)
-    library.store.update_run(library.run["id"], status="completed")
-    run = library.store.create_run(library.rid, "discovery", budget | {"fast_path": policy}, None)
-    library.store.update_run(run["id"], status="running")
-    lib = SimpleNamespace(**(vars(library) | {"run": library.store.run(run["id"])}))
-    finish(lib, "plan", 20)
-    fast_path.enter_stage(lib.store, lib.run, "search")
-    if frozen == "before_d152":
-        # A run frozen earlier keeps the old arithmetic on resume: the plan's 12 s overrun shrinks search to its
-        # quarter floor.
-        assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-12000, 3500)
-        return
-    assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-12000, 14000)
-    lib.clock.advance(12)
-    fast_path.close_stage(lib.store, lib.run["id"], "search")
-    fast_path.enter_stage(lib.store, lib.run, "ranking")
-    # Search's unused two seconds reduce the plan's debt before ranking.
-    assert (stage(lib, "ranking")["balance_before_ms"], stage(lib, "ranking")["alloc_ms"]) == (-10000, 5000)
 
 
 def test_07_crash_charges_last_checkpoint_and_excludes_downtime(library, tmp_path):

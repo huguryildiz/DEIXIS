@@ -241,11 +241,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     # The arm this run was queued with (K3): off, code never closes a record for naming neither gate block and
     # every record reaches a model read. A policy frozen without the key screens as it always did.
     lexical = policy.get("lexical_exclusion", True)
-    # A run that froze the reranked-window rule keeps its top-N window open to the model where the frozen list says
-    # the reranker was applied; a list that says nothing counts as not applied. The deeper window is not covered.
-    window_word = ({"rule": fast_path.WINDOW_WORD_RULE,
-                    "listing_applied": bool((listing.get("reranker") or {}).get("applied"))}
-                   if fast_path.window_word_rule(policy) else None)
+    # Keep the top-N window open where the frozen list says reranking was applied.
+    window_word = {"rule": fast_path.WINDOW_WORD_RULE,
+                   "listing_applied": bool((listing.get("reranker") or {}).get("applied"))}
     fetch_allowed = run["budget"]["inspection"]["fetch_limit"] > 0
     read_allowed = run["budget"]["inspection"]["read_limit"] > 0
     key = f"small_batch:v1:{listing['manifest_hash']}:fast"
@@ -289,17 +287,15 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     # cutoff and its drain ends them, only their answer, their failure, a stop, or the ceiling, which counts from
     # here: after the read stage's lookups, when the reads can start.
     minimum = fast_path.evidence_minimum(store, run)
-    ceiling = (store.clock.now() + timedelta(milliseconds=minimum["abstract_ceiling_ms"]) if minimum else None)
-    required_cutoff = (lambda: store.clock.now() >= ceiling) if ceiling else cutoff
-    required_window = None
-    if ceiling is not None:
-        def required_window() -> float:
-            """Seconds left before the ceiling; a stop ends a call sooner (`interrupt`)."""
-            return (ceiling - store.clock.now()).total_seconds()
-        # A pause or a cancel ends a required read at once, as it ends every other step.
-        required_window.interrupt = lambda: flow._stop_requested(run_id, run["scope_revision"])
-        # A failed required read is recorded as not read instead of pausing the run.
-        required_window.required = True
+    ceiling = store.clock.now() + timedelta(milliseconds=minimum["abstract_ceiling_ms"])
+    required_cutoff = lambda: store.clock.now() >= ceiling
+    def required_window() -> float:
+        """Seconds left before the ceiling; a stop ends a call sooner (`interrupt`)."""
+        return (ceiling - store.clock.now()).total_seconds()
+    # A pause or a cancel ends a required read at once, as it ends every other step.
+    required_window.interrupt = lambda: flow._stop_requested(run_id, run["scope_revision"])
+    # A failed required read is recorded as not read instead of pausing the run.
+    required_window.required = True
 
     def corpus() -> list[dict[str, Any]]:
         return [work for work in flow._fulltext_works(rid) if work["head"] in order]

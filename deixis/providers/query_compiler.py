@@ -35,9 +35,7 @@ def quoted(term: str) -> str:
     return term if re.fullmatch(r"\w+", term) else f'"{term}"'
 
 
-# The rule that also searches the other number form of a quoted phrase beside it. A run freezes it in its policy
-# (`fast_path.phrase_forms_on`); only such a run counts its plan under it, and only a vocabulary that names it under
-# `phrase_forms` gets the forms. A vocabulary without it compiles exactly as before.
+# Quoted phrase forms are driven by the stored vocabulary, including for later searches of an older research.
 PHRASE_FORMS_RULE = "phrase_number_v1"
 # OpenAlex does not fold singular and plural inside a quoted phrase; only its queries get the other form.
 PHRASE_FORM_PROVIDERS = ("openalex",)

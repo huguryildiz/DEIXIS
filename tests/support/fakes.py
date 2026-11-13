@@ -443,15 +443,3 @@ def PlanOnlyAdapter(**kwargs: Any) -> "FakeAdapter":
     """
     return FakeAdapter(fail=lambda si: None if si["task_type"] in PLANNING_TASKS
                        else ModelStepResult("failed", error="SYNTHETIC model connection is down"), **kwargs)
-
-
-def without_evidence_minimum(monkeypatch) -> None:
-    """New runs frozen as a run queued before the evidence minimum, where a failed abstract read still pauses the run."""
-    from deixis.domain import canonical
-    from deixis.workflow.run import fast_path
-    freeze = fast_path.freeze_budget
-
-    def older(*args, **kwargs):
-        policy = {k: v for k, v in freeze(*args, **kwargs).items() if k not in ("evidence_minimum", "policy_hash")}
-        return policy | {"policy_hash": canonical.sha256_hex(policy)}
-    monkeypatch.setattr(fast_path, "freeze_budget", older)

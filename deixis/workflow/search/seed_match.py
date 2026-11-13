@@ -103,11 +103,8 @@ def contexts(value: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def stored(envelope: dict[str, Any] | None) -> dict[str, Any] | None:
-    """What a protocol freezes of an envelope: the `seed_pdf_v1` dict for a v1 match, so a run that began under it freezes what
-    `seed_pdf_v1` would have; the envelope itself for v2."""
-    if not envelope:
-        return None
-    return envelope["seeds"][0] if envelope["rule"] == RULE_V1 else envelope
+    """Freeze the current seed-match envelope in the protocol."""
+    return envelope if envelope else None
 
 
 def frozen(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:

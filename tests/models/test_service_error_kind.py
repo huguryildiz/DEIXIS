@@ -4,10 +4,10 @@ Mocked HTTP only. Passing shows the classification of these SYNTHETIC answers, n
 """
 
 import asyncio
+from datetime import datetime
 import httpx
 import pytest
 import re
-from datetime import datetime
 from fastapi.testclient import TestClient
 from pathlib import Path
 
@@ -50,23 +50,24 @@ def test_key_test_does_not_echo_body(code, kind):
 
 def test_model_quota_pause_preserves_metadata_without_secrets(tmp_path, monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'SYNTHETIC-private-key')
-    from fakes import without_evidence_minimum
-    # A failed abstract read pauses only a run frozen before the evidence minimum, which is the pause this test uses.
-    without_evidence_minimum(monkeypatch)
-    # The plan is written first, because nothing is searched without one; the quota is reached on a later call,
-    # which is the stop whose metadata this checks.
-    adapter = FakeAdapter(fail=lambda si: None if si['task_type'] in PLANNING_TASKS else ModelStepResult(
-        'failed', error='SYNTHETIC-private-key quota', error_kind='quota_exhausted', http_status=429, retry_after='120'))
+    # A failed plan call pauses the current discovery policy with its error metadata.
+    adapter = FakeAdapter(fail=lambda si: ModelStepResult(
+        'failed', error='SYNTHETIC-private-key quota', error_kind='quota_exhausted', http_status=429, retry_after='120')
+        if si['task_type'] == 'search_plan' else None)
     app = app_for(tmp_path, adapter)
     with TestClient(app) as client:
         session(client)
         rid = create(client)
         run_id = client.post(f'/api/researches/{rid}/runs', json={'kind': 'discovery'}).json()['id']
         view, run = wait_run(client, rid, run_id)
-        assert (run['status'], run['pause_reason']) == ('paused', 'model_call_failed')
-        assert run['error']['error_kind'] == 'quota_exhausted' and run['error']['http_status'] == 429
-        assert run['error']['connection'] == 'fake' and run['error']['requested_model'] == 'fake-model'
-        assert datetime.fromisoformat(run['error']['reset_at']).tzinfo is not None
+        assert (run['status'], run['pause_reason']) == ('paused', 'search_query_failed')
+        assert run['error']['reason'] == 'model_call_failed'
+        events = app.state.store.events_after(rid, 0)
+        event = next(e['payload'] for e in events if e['type'] == 'step_finished'
+                     and e['payload'].get('operation_key') == 'search_query:1')
+        assert event['service_kind'] == 'quota_exhausted' and event['http_status'] == 429
+        assert event['connection'] == 'fake'
+        assert datetime.fromisoformat(event['reset_at']).tzinfo is not None
         assert 'SYNTHETIC-private-key' not in str(view)
         for row in app.state.store.conn.execute('SELECT error_json FROM run_steps'):
             assert 'SYNTHETIC-private-key' not in str(row[0])

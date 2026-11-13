@@ -470,23 +470,10 @@ def reranker_says(monkeypatch, applied):
     monkeypatch.setattr(small_batch, "reranked", told)
 
 
-def before_the_rule(monkeypatch):
-    """New runs are frozen as a run queued before the word rule was: their policy names no `window_word_rule`."""
-    from deixis.workflow.run import fast_path
-    freeze = fast_path.freeze_budget
 
-    def older(*args, **kwargs):
-        policy = freeze(*args, **kwargs)
-        policy.pop("window_word_rule")
-        return policy
-    monkeypatch.setattr(fast_path, "freeze_budget", older)
-
-
-def word_rule_run(tmp_path, monkeypatch, *, applied, older=False):
+def word_rule_run(tmp_path, monkeypatch, *, applied):
     """One Quick run over an on-topic and an off-topic record; its codes, the titles shown and the abstract plan."""
     reranker_says(monkeypatch, applied)
-    if older:
-        before_the_rule(monkeypatch)
     app = app_for(tmp_path, monkeypatch, Pool([work(1, ON_TOPIC, ON_ABSTRACT), work(3, OFF_TOPIC, OFF_ABSTRACT)]))
     client = client_of(app)
     try:
@@ -517,11 +504,6 @@ def test_with_the_reranker_not_applied_the_word_check_closes_as_before(tmp_path,
     assert plan["window_word_rule"]["listing_applied"] is False
     assert plan["window_word_rule"]["closes_both_blocks_missing"] is True
 
-
-def test_a_run_frozen_before_the_rule_keeps_the_word_check_even_with_the_reranker_applied(tmp_path, monkeypatch):
-    run, codes, shown, plan = word_rule_run(tmp_path, monkeypatch, applied=True, older=True)
-    assert run["status"] == "completed" and "window_word_rule" not in run["budget"]["fast_path"]
-    assert codes["W3"] == "both_blocks_missing" and "window_word_rule" not in plan
 
 
 def test_a_stored_abstract_plan_is_read_back_on_resume_never_derived_again(tmp_path, monkeypatch):

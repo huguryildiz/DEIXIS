@@ -2,21 +2,17 @@
 
 import pytest
 
-from deixis.domain.rules import PROVIDER_WAIT, SW_READ_LIMIT, TEST_EFFORT_BUDGETS
+from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.workflow.run import fast_path
 
 
-OLD_HASHES = {
-    "quick": "10af1819ef378802deceb0de13b44456189d07b42c975b3815b0fc87afa7a479",
-    "standard": "818f2cfffc2d5056ade22f7a5fc9d25d738d2eceaf7b5d502ab684cfbadbe9f3",
-    "detailed": "f63cb0c7d4f000d218fc93ba4d6366d40cb5e4498b4e192879f1c95728133a83",
-}
+EFFORTS = ("quick", "standard", "detailed")
 
 
-@pytest.mark.parametrize("effort", OLD_HASHES)
+@pytest.mark.parametrize("effort", EFFORTS)
 def test_shared_search_is_frozen_but_reading_remains_depth_specific(effort):
     policy = fast_path.freeze_budget({}, effort, completion_arm="conditional",
-                                     broad_index_arm="conditional", subtopic_arm="conditional")
+                                     broad_index_arm="conditional")
     shared = policy["uniform_search"]
     assert shared == fast_path.UNIFORM_SEARCH
     assert shared["rule"] == fast_path.UNIFORM_SEARCH_RULE
@@ -30,7 +26,7 @@ def test_shared_search_is_frozen_but_reading_remains_depth_specific(effort):
                                       "records": 250, "share": 0.25,
                                       "table_version": fast_path.SOURCE_ROUTES_VERSION}
     assert policy["completion"]["records"] == 100 and policy["completion"]["snippet_requests"] == 1
-    assert policy["broad_index"]["records"] == 100 and policy["subtopic_search"]["records"] == 0
+    assert policy["broad_index"]["records"] == 100 and "subtopic_search" not in policy
     assert policy["phrase_search"]["count"] == 6
     assert (policy["phrase_search"]["records"], policy["phrase_search"]["plain_records"]) == (50, 30)
     assert fast_path.search_read(policy, effort, "read_limit_per_query") == 400
@@ -46,15 +42,13 @@ def test_shared_search_is_frozen_but_reading_remains_depth_specific(effort):
             }[effort]
 
 
-@pytest.mark.parametrize("effort", OLD_HASHES)
-def test_older_policy_has_the_original_hash_and_effort_limits(effort):
-    policy = fast_path.freeze_budget({}, effort, uniform_search=False)
-    assert "uniform_search" not in policy
-    assert policy["policy_hash"] == OLD_HASHES[effort]
-    assert fast_path.search_read(policy, effort, "read_limit_per_query") == SW_READ_LIMIT[effort]
-    assert fast_path.search_read(policy, effort, "provider_wait") == PROVIDER_WAIT[effort]
 
 
 def test_non_discovery_request_presets_remain_per_depth():
     assert [TEST_EFFORT_BUDGETS[effort].max_provider_requests
             for effort in ("quick", "standard", "detailed")] == [3, 8, 12]
+
+
+def test_search_read_rejects_a_policy_without_the_shared_rule():
+    with pytest.raises(ValueError, match="no shared search rule"):
+        fast_path.search_read({"policy": fast_path.POLICY}, "standard", "provider_wait")

@@ -158,32 +158,6 @@ def test_shared_search_stops_each_keyword_query_at_its_record_limit(library, tmp
     assert sum(row["read_total"] == 400 for row in pages) == 2
 
 
-def test_old_standard_keyword_query_keeps_its_total_cap(tmp_path):
-    conn = db.connect(tmp_path / "old-standard.sqlite")
-    db.migrate(conn)
-    clock = FakeClock()
-    store = Store(conn, clock)
-    clock.store = store
-    rid = store.create_research("SYNTHETIC old search", "academic", "standard", ["openalex"],
-                                "fake", "fake-model", "en")
-    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, "standard", uniform_search=False)
-    run = store.create_run(rid, "discovery", budget, None)
-    store.update_run(run["id"], status="running")
-    lib = SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run["id"]))
-    try:
-        flow, scope, _ = setup(lib, tmp_path)
-        plan = fast_search.build_plan(store, lib.run, scope, [QUERIES[0]])
-        calls = []
-        scripted(flow, calls)
-        asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
-        keyword = [call for call in calls if call[0] != "semantic"]
-        assert sum(limit for _, _, _, limit in keyword) == plan["keyword_cap"]
-        assert plan["keyword_cap"] > 400
-        assert max(row[0] for row in conn.execute(
-            "SELECT read_total FROM search_runs WHERE request_class = 1")) == plan["keyword_cap"]
-    finally:
-        conn.close()
 
 
 def test_failed_page_retries_same_slot_without_resending_success(library, tmp_path):
@@ -267,118 +241,10 @@ def test_queue_unique_and_stored_scores_not_embedded_twice(library, tmp_path, mo
     assert len(calls) == 1 and rows(lib)[0]['status'] == 'from_store'
 
 
-def test_deep_s2_slot_overlaps_keyword_transport_and_no_page_waits_for_it(library, tmp_path):
-    lib = library
-    flow, scope, plan = setup(lib, tmp_path)
-    plan |= {'s2_reserved': 500, 'keyword_cap': 10, 'page_size': 10,
-             's2_bulk': {'provider_id': 'semantic_scholar', 'query_text': 'SYNTHETIC s2', 'endpoint': 'bulk'}}
-    queries = []
-    async def execute():
-        keyword_started = asyncio.Event()
-        async def send(run_id, connector, query, limit, page=None, **kwargs):
-            assert not lib.conn.in_transaction
-            queries.append((query['provider_id'], query.get('endpoint'), limit))
-            if query['provider_id'] == 'semantic_scholar':
-                await keyword_started.wait()
-                records = [record('Ws2')]
-                raw = {'data': [None] * 1000}
-            else:
-                if query.get('endpoint') != 'semantic':
-                    keyword_started.set()
-                records = [record('Wsem' if query.get('endpoint') else 'Wkeyword')]
-                raw = None
-            return SearchOutcome('completed', 'rejected_not_executed', 'SYNTHETIC', 'keyless', records=records,
-                                 provider_total=1000, next_cursor='SYNTHETIC', raw_payload=raw)
-        flow._send_search = send
-        await asyncio.wait_for(fast_search.execute(flow, lib.run, scope, plan, False), 2)
-    asyncio.run(execute())
-    assert sorted(queries, key=str) == sorted([('openalex', 'semantic', 50), ('semantic_scholar', 'bulk', 500), ('openalex', None, 10)], key=str)
-    # The ready keyword page is recorded when its own reply arrives: it does not wait for the slot that was
-    # admitted before it, which here answers last on purpose.
-    search_order = [r[0] for r in lib.conn.execute('SELECT provider FROM search_runs ORDER BY rowid')]
-    assert search_order == ['openalex', 'openalex', 'semantic_scholar']
-    # What the merge reads is the stored admission key, not the order the replies came back in: the slot keeps the
-    # place it was admitted at, behind the question's own request and before the keyword page.
-    queue = rows(lib)
-    assert [r['request_index'] for r in queue] == [0, 1, 2]
-    s2_run = lib.conn.execute("SELECT id FROM search_runs WHERE provider = 'semantic_scholar'").fetchone()['id']
-    assert [r['request_index'] for r in queue if r['search_run_id'] == s2_run] == [1]
-    s2 = lib.store.existing_step(lib.run['id'], 'search:fast:s2_bulk')['output']['fast_path_request']
-    assert s2['limit'] == 500 and s2['raw_returned_count'] == 1000
-    # Asked for 500, the provider sent 1,000 and its adapter passed on what the identity check then left: three
-    # numbers on the row, and the middle one is the provider's own answer, before any cut of ours.
-    row = lib.conn.execute("SELECT page_limit, returned_count, result_count FROM search_runs"
-                           " WHERE provider = 'semantic_scholar'").fetchone()
-    assert (row['page_limit'], row['returned_count'], row['result_count']) == (500, 1000, 1)
 
 
-def test_a_reply_written_after_the_stage_cutoff_is_recorded_as_late(library, tmp_path):
-    """The slot was sent in time and answered after the search stage's time ran out: it is written, and named late.
-
-    Nothing waits for it, so its records reach the pool like any others; what the frozen list keeps apart is which
-    requests came in by the cutoff and which came after it.
-    """
-    lib = library
-    flow, scope, plan = setup(lib, tmp_path)
-    plan |= {'s2_reserved': 500, 'keyword_cap': 10, 'page_size': 10,
-             's2_bulk': {'provider_id': 'semantic_scholar', 'query_text': 'SYNTHETIC s2', 'endpoint': 'bulk'}}
-    async def execute():
-        keyword_started = asyncio.Event()
-        async def send(run_id, connector, query, limit, page=None, **kwargs):
-            if query['provider_id'] == 'semantic_scholar':
-                await keyword_started.wait()
-                lib.clock.advance(10_000)  # the stage's whole allowance passes while this arm is still out
-                records = [record('Ws2')]
-            else:
-                if query.get('endpoint') != 'semantic':
-                    keyword_started.set()
-                records = [record('Wsem' if query.get('endpoint') else 'Wkeyword')]
-            return SearchOutcome('completed', 'rejected_not_executed', 'SYNTHETIC', 'keyless', records=records,
-                                 provider_total=1, next_cursor=None)
-        flow._send_search = send
-        await asyncio.wait_for(fast_search.execute(flow, lib.run, scope, plan, False), 2)
-    asyncio.run(execute())
-    import json as _json
-    arrivals = {row['operation_key']: (_json.loads(row['output_json']) or {}).get('fast_path_request') or {}
-                for row in lib.conn.execute(
-                    "SELECT operation_key, output_json FROM run_steps WHERE run_id = ?"
-                    " AND kind LIKE 'provider_search:%'", (lib.run['id'],))}
-    s2 = arrivals.pop('search:fast:s2_bulk')
-    assert s2['late'] and s2['cutoff_at']
-    # The pages that answered while the stage still had time are not late; a request that was never sent (a page
-    # the record cap cancelled) has no arrival to write down and says nothing about the cutoff.
-    sent = {key: arrival for key, arrival in arrivals.items() if 'late' in arrival}
-    assert sent and not any(arrival['late'] for arrival in sent.values())
-    assert all(arrival['arrived_at'] for arrival in sent.values())
-    s2_run = lib.conn.execute("SELECT id FROM search_runs WHERE provider = 'semantic_scholar'").fetchone()['id']
-    record_of = small_batch.cutoff_record(lib.store, lib.run)
-    # The late arm is named apart; the pages that came in by the cutoff are the set the list was read after.
-    assert record_of['late'] == [s2_run] and s2_run not in record_of['searches'] and record_of['searches']
-    late_svid = lib.store.find_source_by_identifier('semantic_scholar', 'Ws2')
-    # The record is kept: the research holds it and a later read can use it. It is no candidate of this read, so
-    # the pool the frozen list is built from does not hold its work and the list is the set named above.
-    assert lib.conn.execute("SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?",
-                            (lib.rid, late_svid)).fetchone()
-    assert not lib.conn.execute("SELECT 1 FROM candidates WHERE research_id = ? AND source_version_id = ?",
-                                (lib.rid, late_svid)).fetchone()
-    _, _, keyword = ranking.pool_rows(lib.store, lib.rid, lib.run['scope_revision'])
-    late_work = lib.store.source(late_svid)['work_id']
-    assert keyword and late_work not in {row['work_id'] for row in keyword}
 
 
-def test_deep_reserves_for_the_bulk_request_only_when_the_plan_names_one(library):
-    library.run['budget']['fast_path'] = fast_path.freeze_budget({}, 'detailed', uniform_search=False)
-    plan = fast_search.build_plan(library.store, library.run, library.store.scope(library.rid), QUERIES)
-    # No bulk query was planned, so nothing is held back for it and the keyword queries keep the whole cap; why the
-    # depth sent none is recorded beside it.
-    assert plan['keyword_cap'] == 2000 and plan['s2_reserved'] == 0 and plan['s2_bulk'] is None
-    assert plan['s2_skipped'] == 'not_planned'
-    s2 = {'provider_id': 'semantic_scholar', 'query_text': 'SYNTHETIC first bulk', 'endpoint': 'bulk'}
-    planned = fast_search.build_plan(library.store, library.run, library.store.scope(library.rid), QUERIES + [s2, s2 | {'query_text': 'SYNTHETIC second bulk'}])
-    assert planned['s2_bulk'] == s2 and planned['s2_bulk_index'] == 3
-    assert [q['index'] for q in planned['dropped']] == [2, 4]
-    # Planned, so the reservation is taken and the cap is the depth's less those records.
-    assert planned['keyword_cap'] == 1500 and planned['s2_reserved'] == 500 and 's2_skipped' not in planned
 
 
 def test_new_detailed_policy_sends_no_semantic_scholar_bulk(library, tmp_path):
@@ -386,8 +252,7 @@ def test_new_detailed_policy_sends_no_semantic_scholar_bulk(library, tmp_path):
     s2 = {'provider_id': 'semantic_scholar', 'query_text': 'SYNTHETIC bulk', 'endpoint': 'bulk'}
     flow, scope, _ = setup(library, tmp_path)
     plan = fast_search.build_plan(library.store, library.run, scope, QUERIES + [s2])
-    assert plan['s2_bulk'] is None and plan['s2_reserved'] == 0
-    assert plan['s2_skipped'] == 'uniform_search_off'
+    assert 's2_bulk' not in plan and 's2_reserved' not in plan
     calls = []
     scripted(flow, calls, short=True)
     asyncio.run(fast_search.execute(flow, library.run, scope, plan, False))

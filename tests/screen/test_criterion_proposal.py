@@ -312,13 +312,11 @@ def test_the_proposals_and_the_calls_beside_them_keep_the_persons_concurrency_li
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
-    # The short phrase step is the one call sent outside the limiter, so that it never holds the plan call up; this
-    # test guards every other call, so the depth writes no phrases here.
+    # The phrase step runs outside the limiter while the other model calls retain their bound.
     effort = "quick"
-    monkeypatch.setitem(fast_path.UNIFORM_SEARCH, "phrase_searches", 0)
     openalex, adapter = CountingOpenAlex(), proposing()
     adapter.delay = 0.4  # long enough that the proposals are still in flight when the plan call starts
-    app = create_app(dataclasses.replace(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off"),
+    app = create_app(dataclasses.replace(Settings(data_dir=tmp_path / "data", port=8877, fulltext_fetch="off"),
                                          model_concurrency=1),
                      adapters={"fake": adapter},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)),
@@ -330,7 +328,7 @@ def test_the_proposals_and_the_calls_beside_them_keep_the_persons_concurrency_li
     assert len(criterion_calls(adapter)) == PROPOSAL_RUNS  # the proposals were sent, so the limit was under load
     sent = [call["task_type"] for call in adapter.calls]
     assert ("question_translation" in sent) == (question is TURKISH)
-    assert adapter.max_concurrent == 1
+    assert adapter.max_concurrent == 2  # the phrase step runs beside the one limited call
 
 
 def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tmp_path, monkeypatch):

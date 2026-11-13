@@ -29,57 +29,24 @@ LIST_BARRIER_KEY = "benchmark:list_barrier"
 GRAPH_SEEDS = 30  # Rows with a reference list taken from the top of the fused order
 PRERANK_LOOKUP_KEY = "prerank_lookups"
 PRERANK_PREFIX = "prerank:"  # the lookup steps of the round before the rerank, apart from the read stage's
-# Lookup rule version 2: every record of the reranker's window without an abstract, at most 400 within 8 s, with
-# Crossref 4 in flight and requests enough for every source in turn: Semantic Scholar's batches, one Crossref
-# request per record, Scopus's
-# access check and its OR queries (2 + 400 + 1 + 16 = 419). A budget frozen with the first rule ({"max_records": 20,
-# "seconds": 5}, no version) keeps it and the read stage's 200 requests. Hand-picked, not measured.
+# Ask about every window record without an abstract, at most 400 within 8 s; these limits were picked by hand.
+# Crossref sends 4 requests in flight; Semantic Scholar waits out no 429 and is skipped in cooldown.
+# Only records whose request went out and was not answered become `lookup_open`.
 PRERANK_RECORDS = 400
-# Version 3: Semantic Scholar waits out no 429 here, so a refused batch fails at once and Crossref gets the time
-# left; its batch holds the whole window (400 of the 500 ids `/paper/batch` takes, one request); and while a 429
-# anywhere in the process holds the Semantic Scholar pacer in a cooldown, this round and the read stage's lookups skip
-# it and say so. Version 2 budgets keep 200 ids a batch, the effort's waits and no skip.
 PRERANK_S2_BATCH = 400
-# Version 4: Crossref's single requests go 8 in flight, not 4 (the 8 s round ran out in 4 of 6 version 3 pilot runs),
-# and each request stores the records it was sent for, so only a record whose request went out and did not come back
-# in time is `lookup_open`; one never sent is settled. The request count is unchanged: one per record either way.
-# Version 5: Crossref back to 4 in flight. At 8 the version 4 pilot got no more answers into the 8 s round and three
-# times the 429s; version 4 budgets keep 8. Version 5 keeps version 4's rule otherwise.
 PRERANK_LOOKUP = {"version": 5, "max_records": PRERANK_RECORDS, "seconds": 8, "crossref_in_flight": 4,
                   "s2_waits": 0, "s2_batch": PRERANK_S2_BATCH, "s2_cooldown_skip": True,
                   "max_requests": (math.ceil(PRERANK_RECORDS / PRERANK_S2_BATCH) + PRERANK_RECORDS + 1
                                    + math.ceil(PRERANK_RECORDS / SCOPUS_LOOKUP_BATCH))}
-# Rerank rule version 2: the reranker's window is 8x what a run reads (400 at Standard, under
-# rerankers.MAX_CANDIDATES), and a record of it still without an abstract keeps its fused place. A budget frozen
-# without `rerank` keeps version 1.
-# Version 3: it keeps its place only with a route to text (an open PDF on a version of its work, or a file
-# stored for it) or while its lookup before the rerank did not settle; otherwise the reranker scores its title, as
-# under version 1. A version 2 rule holds every such record. Which lookups did not settle is the lookup rule's:
-# `unsettled` under its version 3, `lookup_open` since version 4.
-# Version 4: a record only citation chaining brought is sent to the reranker like any other (`hold_chained`
-# False), and the lookup before the rerank asks about it too; the no-abstract hold applies to it as to every record.
-# Replaying the 18 Oct BioASQ and LitSearch runs offline, that hold cost recall@50 (-3.5 and -3.3 points); its own
-# check had used mislabelled routes. A rule without `hold_chained` (version 3 and earlier) keeps the hold.
-# Version 5: when the pool is larger than the window, which records enter it is decided by the query lists
-# themselves (`preselect`) instead of by the first records of the fused order — one vote per relevance-ordered query
-# list, `1 / (k + rank)` summed. A pool that fits the window is untouched. Citation links cast no vote, so the window
-# keeps a floor for the records only citation chaining found and for the records only a focused query found. The
-# floor sizes are frozen per run; nothing has measured them yet, so they are the pilot's own starting numbers.
-# A rule frozen without `preselect` (version 4 and earlier) takes the fused prefix, as it did.
-# Version 6: the window's first `fused_reserve` places go to the first records of the fused order, before the floors
-# and the votes fill the rest, so a record the run's own ranking put near the top is always read. The delivered order
-# is no longer the window in reranker order ahead of everything else: each record's place comes from the sum
-# `1 / (k + fused rank) + 1 / (k + reranker rank)` (`merge`, `merge_k`), a record the reranker did not score counting
-# at the middle of the unscored tail, and a record kept in place keeping its fused slot. A rule without
-# `fused_reserve` or `merge` (version 5 and earlier) keeps the window and the in-place order it had.
-# The factors are the shared ceiling; each depth freezes the smaller of them and its own `rerank_pool`, so Standard and
-# Detailed freeze 8 and Quick 16 (400 records for its 25), and a factor saved in Settings stays below what was frozen.
+# Take up to 400 records from N times the saved factor: 200 fused leaders, then chain-only and focused-only
+# floors, then query-list votes. The floor sizes are pilot values, not measured.
+# Deliver by the sum of fused and reranker reciprocal ranks; unscored records get the middle unscored-tail rank.
+# A kept record retains its fused slot.
 RERANK_MERGE = "rrf_fused_rerank_v1"
 RERANK_RULE = {"version": 6, "pool_factor": 16.0, "max_pool_factor": 16.0, "hold_without_abstract": "with_text_route",
                "hold_chained": False, "preselect": preselect.RULE, "rrf_k": preselect.K,
                "floors": {"chain_only": 5, "narrow_only": 5}, "fused_reserve": 200,
                "merge": RERANK_MERGE, "merge_k": 60}
-RERANK_RULE_V1 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
 # 5: one closest place for a work whose reading found no criterion part. 6: every abstract-only work's abstract
 # before the closest works' second to fourth pages, and that zero-part work at most 2 passages. 7: the standard
 # passage budget reads 12 closest works instead of 5.
@@ -123,6 +90,14 @@ def removed_rule(run: dict[str, Any]) -> str | None:
             return "plan_rule" if fast.get("plan_rule") else "search_method"
         if fast.get("chain_rule") not in fast_path.CHAIN_RULES:
             return "chain_rule"
+        if (fast.get("uniform_search") or {}).get("rule") != fast_path.UNIFORM_SEARCH_RULE:
+            return "uniform_search"
+        if (fast.get("phrase_search") or {}).get("rule") != fast_path.PHRASE_SEARCH_RULE:
+            return "phrase_search"
+        if (inspection.get("rerank") or {}).get("version") != 6:
+            return "rerank_rule"
+        if (inspection.get("prerank_lookup") or {}).get("version") != 5:
+            return "prerank_lookup"
     if (run["kind"] == "answer" and inspection.get("policy") == POLICY
             and inspection.get("answer_allocation_version", 0) < ANSWER_ALLOCATION_VERSION):
         return "answer_allocation"
@@ -193,41 +168,24 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
         "read_limit": body["max_fulltext_reads"], "max_model_calls": body["max_model_calls"],
         "fetch_attempts": fulltext.FULLTEXT_WORK_ATTEMPTS,
         "prerank_lookup": dict(PRERANK_LOOKUP),
-        # This depth's own reranker window and run point (`fast_path.MODES`): every depth now reads its window before
-        # the list is frozen. A factor the person saved is kept under the depth's own, so a run never reads a wider
-        # window than its depth allows.
+        # The saved factor stays below the depth's reranker window.
         "rerank": dict(RERANK_RULE) | {
             "pool_factor": min(RERANK_RULE["pool_factor"], mode.rerank_pool),
             "max_pool_factor": min(RERANK_RULE["max_pool_factor"], mode.rerank_pool),
-            "point": mode.rerank_point},
+            "point": "before_list"},
     }
     return body
 
 
 def rerank_rule(run: dict[str, Any]) -> dict[str, Any]:
-    """The rerank rule this run froze, or version 1 for a budget frozen without it."""
-    return (run["budget"].get("inspection") or {}).get("rerank") or RERANK_RULE_V1
-
-
-def rerank_point(run: dict[str, Any]) -> str:
-    """Where this run's reranker stands: `before_list`, the list waiting for it, or `after_list`, the list frozen
-    from the fused order first and the reranker reading a small group afterwards for the measurement (Quick runs
-    frozen before Quick's list waited for the reranker). A
-    budget frozen before the depths had a point of their own waits, as it did."""
-    return rerank_rule(run).get("point", "before_list")
-
-
-def held_chained(run: dict[str, Any], manifest: dict[str, Any]) -> set[str]:
-    """The records only citation chaining brought that keep their fused place: all of them under a rule without
-    `hold_chained` (the reranker pushed them down on the EE survey benchmark, 18 Oct), none since version 4."""
-    return set(manifest.get("chain_heads") or ()) if rerank_rule(run).get("hold_chained", True) else set()
+    """The rerank rule frozen for this discovery run."""
+    return run["budget"]["inspection"]["rerank"]
 
 
 def rerank_choice(store: Any, run: dict[str, Any]) -> rerankers.Choice | None:
-    """The reranker turned on in Settings, with the window factor this run reads (rerank rule version 2).
+    """The reranker turned on in Settings, with the window factor this run reads.
 
-    A factor the person saved is kept, never above what the run's rule allows; with none saved the rule's own factor
-    applies, so a budget frozen with version 1 keeps 4x and a newer one its depth's own frozen factor."""
+    A saved factor stays below the run's frozen maximum."""
     saved = store.setting(rerankers.SETTING)
     choice = rerankers.chosen(saved)
     if choice is None:
@@ -340,23 +298,14 @@ def build_list(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dict[str, Any] | None]:
-    """The automatic order after the stored rerank, and what was done; the fused order itself when there was none.
+    """Merge stored scores with fused ranks when the rerank window still matches.
 
-    The rerank only reorders the records it scored, among their own places in the fused order. It applies only when
-    the records it scored, with the records it kept in place (`kept_in_place`), are still the first records of that order
-    that the person did not include themselves; when
-    the list moved since (a selection changed while the reranker ran) or the reranker failed, the fused order stands
-    and the listing says why. Under a manifest with `rerank_merge` (rerank rule version 6) the scored records are not
-    put in front: every record the person did not include takes its place from its fused rank and its reranker rank
-    together (`merged`). Everything here is read from the manifest, so the list replays exactly."""
+    A failed rerank or changed candidate set leaves the fused order in place.
+    Kept records retain their fused slots; the manifest makes the list replayable."""
     stored = manifest.get("reranker")
     if not stored:
         return fused, None
     told = {key: stored.get(key) for key in ("provider", "model", "status", "error_code")}
-    if stored.get("point") == "after_list":
-        # The list was frozen before this reranker read anything (an older Quick run): its scores are kept as a
-        # record and never move one, whatever the list is rebuilt from.
-        return fused, told | {"applied": False, "reason": "read_after_list", "fallback": "fused_order"}
     if stored.get("status") != "applied":
         return fused, told | {"applied": False, "reason": stored.get("error_code") or stored.get("status"),
                               "fallback": "fused_order"}
@@ -364,25 +313,11 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
     priority = set(manifest["user_priority"])
     automatic = [rid for rid in fused if rid not in priority]
     size = len(candidates) + len(kept)
-    if manifest.get("preselect"):
-        # The window is the one the query lists choose, not the first records of the fused order, so it is
-        # recomputed from the manifest and compared as a set. Its records then take the window's own places, in
-        # front of the records the reranker never read, as they did when the window was the fused order's own head.
-        window = window_for(manifest, automatic, size)["window"]
-        if set(window) != set(candidates) | set(kept) or len(window) != size:
-            return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
-        done = told | {"applied": True, "reranked": len(candidates), **({"kept_in_place": len(kept)} if kept else {})}
-        merge = manifest.get("rerank_merge")
-        if merge:
-            # Since rerank rule version 6: fused rank and reranker rank are summed, kept records keep their slots.
-            return merged(automatic, candidates, stored["scores"], set(kept), merge["k"]), done
-        return rerankers.reorder(promoted(fused, window), candidates, stored["scores"]), done
-    window = automatic[:size]
-    if [rid for rid in window if rid not in set(kept)] != candidates or not set(kept) <= set(window):
+    window = window_for(manifest, automatic, size)["window"]
+    if set(window) != set(candidates) | set(kept) or len(window) != size:
         return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
-    return rerankers.reorder(fused, candidates, stored["scores"]), told | {
-        "applied": True, "reranked": len(candidates), **({"kept_in_place": len(kept)} if kept else {})}
-
+    done = told | {"applied": True, "reranked": len(candidates), **({"kept_in_place": len(kept)} if kept else {})}
+    return merged(automatic, candidates, stored["scores"], set(kept), manifest["rerank_merge"]["k"]), done
 
 def next_batch(listing: dict[str, Any], number: int, size: int = BATCH_SIZE) -> dict[str, Any]:
     items = listing["items"][number * size:(number + 1) * size]
@@ -532,14 +467,11 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
                 "keyword_step": keyword_step["id"]}
     rule = rerank_rule(run)
     if rule.get("preselect"):
-        # What the query lists themselves say, frozen here: the places every list gave the pool's records, and the
-        # rule the window is chosen with. A run whose rule names no preselect freezes neither, so its list is the
-        # one it always was, hash included.
-        # A run that froze the short phrase searches keys its lists by endpoint too; any other keeps the old key.
-        identity = preselect.ENDPOINT_IDENTITY if fast_path.phrase_search(run["budget"]) else None
+        # Freeze the query-list votes and their endpoint identity with the new list.
+        identity = preselect.ENDPOINT_IDENTITY
         manifest["query_lists"] = query_lists(store, run, in_pool, versions, heads, identity)
         manifest["preselect"] = {"rule": rule["preselect"], "k": rule["rrf_k"], "floors": dict(rule["floors"]),
-                                 **({"list_identity": identity} if identity else {}),
+                                 "list_identity": identity,
                                  # Since version 6: the fused order's first records the window takes before the votes
                                  **({"fused_reserve": rule["fused_reserve"]} if rule.get("fused_reserve") else {})}
     if rule.get("merge"):
@@ -639,19 +571,15 @@ def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versio
 
 
 def window_for(manifest: dict[str, Any], automatic: list[str], size: int) -> dict[str, Any]:
-    """The records the reranker is given: all of `automatic` while it fits the window, else what the manifest's own
-    query lists choose (rerank rule version 5), else — for a manifest frozen without them — the fused order's own
-    leading records. Under a manifest with `fused_reserve` (version 6) the window's first places go to that many
-    leading records of `automatic`, and the floors and votes choose the rest among the records after them.
-    `automatic` already leaves out what the person included themselves.
-    """
+    """Choose the rerank window from automatic records, excluding user selections.
+
+    Use all records if they fit; otherwise reserve fused leaders first.
+    Fill remaining places from chain-only and focused-only floors, then list votes."""
     rule = manifest.get("preselect")
     if len(automatic) <= size:
         return {"window": list(automatic), "floors": {}}
-    if not rule:
-        return {"window": automatic[:size], "floors": {}}
-    # The fused order's leading records first (none without a reserve); the rest is chosen among what follows them.
-    reserve = min(int(rule.get("fused_reserve") or 0), size)
+    # The fused leaders take their reserved places before floors and votes.
+    reserve = min(int(rule["fused_reserve"]), size)
     reserved, automatic, size = automatic[:reserve], automatic[reserve:], size - reserve
     entries = manifest.get("query_lists") or []
     contributions = preselect.scores(entries, rule["k"])
@@ -697,17 +625,6 @@ def merged(automatic: list[str], candidates: list[str], scores: dict[str, float]
     return order
 
 
-def promoted(fused: list[str], window: list[str]) -> list[str]:
-    """`fused` with the window's records in front, each keeping its place among them, and everything else after.
-
-    The reranker's answer is the reading order of what it read, as it was when the window was the fused order's own
-    leading records; a record it never saw comes after them. The records the person included themselves are deduped
-    back to the front by `build_list`.
-    """
-    inside = set(window)
-    return [rid for rid in fused if rid in inside] + [rid for rid in fused if rid not in inside]
-
-
 def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, Any]:
     def build() -> dict[str, Any]:
         manifest = manifest_for(flow, run, scope, vocabulary)
@@ -716,12 +633,9 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
             output = step["output"] or {}
             manifest["reranker"] = {key: output.get(key) for key in (
                 "status", "provider", "model", "candidate_ids", "scores", "error_code")}
-            if output.get("point") == "after_list":
-                # A reranker that read after the list froze never orders it, however the list is built again.
-                manifest["reranker"]["point"] = "after_list"
-            if output.get("kept_in_place"):  # a step without it (an older rule, or none kept) adds nothing
+            if output.get("kept_in_place"):
                 manifest["reranker"]["kept_in_place"] = output["kept_in_place"]
-            if output.get("kept_reasons"):  # why each was kept; a step under rerank rule version 1 has none
+            if output.get("kept_reasons"):
                 manifest["reranker"]["kept_reasons"] = output["kept_reasons"]
         return build_list(manifest)
     return save_code(flow, run, LIST_KEY, "code:small_batch_list", build)
@@ -815,24 +729,11 @@ def stored_progress(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
-    """Score the first records of the fused order with the reranker turned on in Settings, before the list freezes.
+    """Score the selected window before freezing the list; a pause stops the request.
 
-    The candidates are the first records of the automatic (fused) order that the person did not include themselves,
-    as many as the run reads (its N) times the setting's pool factor, so the reranker decides which records fall above
-    the read cutoff, not only their order within it; each is sent as its title and abstract with the question. Since
-    rerank rule version 5 the query lists choose the window when the pool is larger than it, and since version 6 the
-    fused order's first records (`fused_reserve`) take its first places (`window_for`). A record of that window that
-    only citation chaining brought (`chain_heads`) is sent like any other since version 4; under a rule frozen before it (version 3 and earlier) it is not sent and keeps its place. Under a rule since
-    version 2, a record still without an abstract after the lookup before the rerank keeps its place too (since
-    version 3 only one with a route to text or an unsettled lookup, `text_routes`), and `kept_reasons` says which
-    rule kept each. The scores are stored in this step and read into the list's manifest.
-    A reranker that fails, answers wrongly, runs out of time (its own limit, or what is left of the ranking stage)
-    never hands over to another reranker: the step is `failed`, says why, and the list keeps the
-    fused order. A pause or a cancellation stops the request (the built-in runner is killed) and the run stops. A rerank
-    that ended, either way, is not asked again on resume.
-    A run whose policy froze a reranker allowance (`fast_path.RERANK_ALLOWANCE_RULE`) gives the reranker at least that
-    allowance, even past the ranking stage's or the handover's cutoff; the step's `allowance` says which cutoff it
-    ran past and for how long, and that time is given back to the read stage (`fast_path.rerank_carry_ms`)."""
+    Failure, a wrong answer or timeout marks the step failed and keeps fused order; no fallback reranker runs.
+    A finished step is not repeated on resume. Frozen allowance can pass the ranking cutoff;
+    time beyond it is returned to the read stage."""
     store = flow.store
     step = store.existing_step(run["id"], RERANK_KEY)
     if step is not None and step["status"] in ("succeeded", "failed"):
@@ -844,33 +745,21 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     manifest = json_value(manifest_for(flow, run, scope, vocabulary))
     priority = set(manifest["user_priority"])
     read_top = run["budget"]["fast_path"]["N"]
-    told = {"point": rerank_point(run)}
+    told = {"point": "before_list"}
     automatic = [rid for rid in replay(manifest)["fused"] if rid not in priority]
     size = choice.pool_size(read_top)
-    # Which records enter the window: the fused prefix, or — since rerank rule version 5, and only while the pool is
-    # larger than the window — what the query lists themselves choose (since version 6 after the fused reserve).
+    # When the pool exceeds the window, fused leaders take reserved places before floors and query-list votes.
     chosen = window_for(manifest, automatic, size)
     window = chosen["window"]
     rows = {row["id"]: row for row in manifest["pool"]}
-    chained = held_chained(run, manifest)
     hold = rerank_rule(run)["hold_without_abstract"]
-    reasons = {rid: "chained_only" for rid in window if rid in chained}
-    if hold:
-        # A record scored on its title alone fell (Humphreys 36 -> 109, 6 Nov); it keeps its fused place.
-        bare = [rid for rid in window if rid not in reasons and not rows[rid]["abstract"]]
-        if hold == "with_text_route":
-            # Version 3: only while text can still come: an open PDF or a stored file on its work, or a lookup
-            # before the rerank that did not settle. A record no source can fill is scored on its title, as under
-            # version 1, and takes no read place it cannot use (four Elsevier works, 6 Nov pilot).
-            lookup = (store.existing_step(run["id"], PRERANK_LOOKUP_KEY) or {}).get("output") or {}
-            # A lookup rule since version 4 stores only the records whose request went out and was not answered.
-            unsettled = set(lookup["lookup_open"] if "lookup_open" in lookup else lookup.get("unsettled") or ())
-            routed = text_routes(store, [manifest["versions"][rid]["work_id"] for rid in bare])
-            reasons |= {rid: "no_abstract_text_route" if manifest["versions"][rid]["work_id"] in routed
-                        else "no_abstract_lookup_open" for rid in bare
-                        if rid in unsettled or manifest["versions"][rid]["work_id"] in routed}
-        else:
-            reasons |= {rid: "no_abstract" for rid in bare}
+    bare = [rid for rid in window if not rows[rid]["abstract"]]
+    lookup = (store.existing_step(run["id"], PRERANK_LOOKUP_KEY) or {}).get("output") or {}
+    lookup_open = set(lookup.get("lookup_open") or ())
+    routed = text_routes(store, [manifest["versions"][rid]["work_id"] for rid in bare])
+    reasons = {rid: "no_abstract_text_route" if manifest["versions"][rid]["work_id"] in routed
+               else "no_abstract_lookup_open" for rid in bare
+               if rid in lookup_open or manifest["versions"][rid]["work_id"] in routed}
     candidates = [rid for rid in window if rid not in reasons]
     kept = [rid for rid in window if rid in reasons]
     if manifest.get("preselect"):
@@ -988,7 +877,7 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
 
 
 def text_routes(store: Any, work_ids: list[str]) -> set[str]:
-    """The works among these with a route to their text (rerank rule version 3): a version with an open PDF URL
+    """The works among these with a route to their text: a version with an open PDF URL
     (another version's
     copy included), a person's upload, or a file already stored for a version."""
     if not work_ids:
@@ -1001,25 +890,11 @@ def text_routes(store: Any, work_ids: list[str]) -> set[str]:
 
 
 async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
-    """Ask the lookup sources for the missing abstracts of the first records the reranker will score.
+    """Ask second sources for missing abstracts in the rerank window.
 
-    A record without an abstract is sent to the reranker as its title alone and falls (Humphreys 36 -> 109, 6 Nov);
-    the read stage's lookup came too late for it, after the list froze and for the top N only. So before the rerank,
-    the first `max_records` records of the reranker's window (the fused order without the person's records and, under
-    a rerank rule before it, the chained ones the rerank keeps in place) that have no abstract in any version and a DOI on their head are asked
-    about, with the sources and requests `ask_second_sources` already uses, under steps of their own, and within
-    `seconds` in all (or what is left of the ranking stage). What did not come back in time stays missing: under the
-    first lookup rule the record is scored on its title, and under the rerank rule since version 2 it keeps its fused
-    place (`rerank_list`). Lookup version 2 asks about every such record of the window, up to 400, within 8 s, with
-    Crossref's single requests 4 in flight; the first rule (no version) the first 20 within 5 s, one request at a
-    time. Version 3 is version 2 with Semantic Scholar failing fast (no 429 wait, one batch of 400, skipped in a
-    cooldown) and the asked records no source answered about stored as `unsettled`. Version 4 has Crossref 8 in
-    flight and stores, as `lookup_open`, only the records a request of this round was sent for and did not answer.
-    Nothing runs when no reranker would be sent anything, or for a run with no `prerank_lookup` in its budget. The
-    chosen records and what was filled are stored on `prerank_lookups`; a run resumed after it succeeded asks
-    nothing again.
-    A filled record's open `no_abstract` decision, if an earlier run wrote one, is replaced by the read stage's
-    `record_flags`, which runs after this and before screening."""
+    A resumed run asks about the records chosen on its first attempt.
+    The read stage later replaces a filled record's open `no_abstract` decision
+    through `record_flags`."""
     rule = (run["budget"].get("inspection") or {}).get("prerank_lookup")
     store = flow.store
     if not rule or (store.existing_step(run["id"], PRERANK_LOOKUP_KEY) or {}).get("status") == "succeeded":
@@ -1032,12 +907,12 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     asked = (step["output"] or {}).get("asked")  # a resumed run asks about the records it chose the first time
     if asked is None:
         manifest = json_value(manifest_for(flow, run, scope, vocabulary))
-        priority, chained = set(manifest["user_priority"]), held_chained(run, manifest)
+        priority = set(manifest["user_priority"])
         automatic = [rid for rid in replay(manifest)["fused"] if rid not in priority]
         # The records this asks about are the ones the reranker will be given, the pre-selection included.
         window = window_for(manifest, automatic, choice.pool_size(run["budget"]["fast_path"]["N"]))["window"]
         rows = {row["id"]: row for row in manifest["pool"]}
-        asked = [rid for rid in window if rid not in chained and not rows[rid]["abstract"]
+        asked = [rid for rid in window if not rows[rid]["abstract"]
                  and manifest["versions"][rid].get("doi")][:rule["max_records"]]
     store.start_step(step["id"])
     output = {"rule": rule, "asked": asked}
@@ -1047,7 +922,6 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     if deadline is not None:
         seconds = min(seconds, (deadline - store.clock.now()).total_seconds())
     status = "done" if asked else "nothing_to_ask"
-    version = rule.get("version", 0)
     if asked and seconds <= 0:
         status = "no_time_left"
     elif asked:
@@ -1060,57 +934,20 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
                 rule.get("max_requests", lookups.MAX_LOOKUP_REQUESTS), only=set(asked), prefix=PRERANK_PREFIX,
                 crossref_in_flight=rule.get("crossref_in_flight", 1), s2_waits=rule.get("s2_waits"),
                 s2_batch=rule.get("s2_batch", S2_LOOKUP_BATCH), s2_cooldown_skip=bool(rule.get("s2_cooldown_skip")),
-                record_sent=version >= 4), timeout=seconds)
+                record_sent=True), timeout=seconds)
         except TimeoutError:
             status = "time_ceiling"
             # The request cut short is not asked again by this round: its step says it ran out of time.
             for row in store.conn.execute("SELECT id FROM run_steps WHERE run_id = ? AND operation_key LIKE ?"
                                           " AND status = 'running'", (run["id"], PRERANK_PREFIX + "%")).fetchall():
-                # A version 4 step keeps what it stored, its `sent` records among it.
-                store.finish_step(row["id"], "failed", output=store.step_output(row["id"]) if version >= 4 else None,
+                store.finish_step(row["id"], "failed", output=store.step_output(row["id"]),
                                   error_code="lookup_time_ceiling",
                                   error={"error": f"the lookups before the rerank had {seconds:g} s in all"})
     filled = [svid for svid in asked if store.conn.execute(
         "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()]
-    settled = {}
-    if version >= 4:
-        settled = {"lookup_open": lookup_open(store, run, [svid for svid in asked if svid not in filled])}
-    elif version == 3:
-        settled = {"unsettled": unsettled(store, run, scope, [svid for svid in asked if svid not in filled])}
-    store.finish_step(step["id"], "succeeded", output=output | {"status": status, "filled": filled} | settled)
-
-
-def unsettled(store: Any, run: dict[str, Any], scope: dict[str, Any], records: list[str]) -> list[str]:
-    """Of these records still without an abstract, those the lookup before the rerank did not settle.
-
-    Each source the research asks is settled for a record when its stored plan did not list the record, or listed it
-    and the record has its answer: `found` or `not_found` from any run, or a `failed` row this round wrote (a refused
-    batch, or one skipped in Semantic Scholar's cooldown, which a later round asks again). A source whose plan was never
-    stored (the round ran out of time first), or that listed the record and wrote nothing for it (its request was cut
-    short), leaves the record unsettled."""
-    from deixis.workflow.search import lookups
-    plans = {}
-    for provider in ("semantic_scholar", "crossref", "scopus"):
-        if lookups.in_scope(scope, provider):
-            step = store.existing_step(run["id"], f"{PRERANK_PREFIX}lookup_plan:{provider}")
-            plans[provider] = step["output"] if step and step["status"] == "succeeded" else None
-    rounds = {row[0] for row in store.conn.execute(
-        "SELECT id FROM run_steps WHERE run_id = ? AND operation_key LIKE ?", (run["id"], PRERANK_PREFIX + "%"))}
-
-    def answered(svid: str, provider: str) -> bool:
-        return any(row["status"] in ("found", "not_found") or row["step_id"] in rounds for row in store.conn.execute(
-            "SELECT status, step_id FROM record_lookups WHERE source_version_id = ? AND provider = ?", (svid, provider)))
-
-    left = []
-    for svid in records:
-        for provider, plan in plans.items():
-            listed = plan is not None and any(row["source_version_id"] == svid
-                                              for group in plan.get("batches") or plan.get("chunks") or []
-                                              for row in group)
-            if plan is None or (listed and not answered(svid, provider)):
-                left.append(svid)
-                break
-    return left
+    open_records = lookup_open(store, run, [svid for svid in asked if svid not in filled])
+    store.finish_step(step["id"], "succeeded", output=output | {"status": status, "filled": filled,
+                                                                  "lookup_open": open_records})
 
 
 def lookup_open(store: Any, run: dict[str, Any], records: list[str]) -> list[str]:
@@ -1138,24 +975,15 @@ def lookup_open(store: Any, run: dict[str, Any], records: list[str]) -> list[str
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
-    point = rerank_point(run)
     if flow.store.existing_step(run["id"], LIST_KEY) is None:
         chained = flow._chain_filter(run)
         from deixis.workflow.search import lookups
         words, _ = lookups.title_words(vocabulary)
         lookups.flag_and_decide(flow.store, run, scope, words,
                                works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
-        if point == "before_list":
-            await prerank_lookups(flow, run, scope, vocabulary)
-            await rerank_list(flow, run, scope, vocabulary)
-    listing = freeze_list(flow, run, scope, vocabulary)
-    if point == "after_list":
-        # A Quick run frozen before its list waited for the reranker: the list is frozen and does not change, so the
-        # reranker reads its small group now, for the
-        # measurement alone. The missing abstracts are not asked for first: that lookup spends the stage's own time
-        # to improve an order this depth does not use. The ranking stage's deadline still holds, so a stage with no
-        # time left leaves the step saying so.
+        await prerank_lookups(flow, run, scope, vocabulary)
         await rerank_list(flow, run, scope, vocabulary)
+    listing = freeze_list(flow, run, scope, vocabulary)
     from deixis.workflow.read import read as fast_read
     # A cell is written as each work is read, so the table's columns have to exist before the reading starts. Only the
     # question's own columns are written here, by code; the columns a model proposes beside them are asked for after

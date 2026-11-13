@@ -292,41 +292,13 @@ def test_the_gate_reads_openalex_keywords_and_still_drops_a_record_without_one(l
 
 # ---- the mode's scope, the links inside the first page and the rescue quota ----------------------
 
-def test_shared_chain_and_older_per_depth_chain():
-    """The design's per-mode scope: Quick none, Standard one starting work, Deep at most three."""
+def test_shared_chain_at_every_depth():
     from deixis.workflow.search import chaining
-
-    for effort, seeds in (("quick", 0), ("standard", 1), ("detailed", 3)):
-        policy = fast_path.freeze_budget({}, effort, uniform_search=False)
-        requests = (policy["backward_requests"], policy["forward_requests"])
-        assert (policy["chain_seeds"], requests == (0, 0)) == (seeds, effort == "quick")
-        read = chaining.policy({"fast_path": policy}, effort)
-        assert read["request_limit"] == sum(requests) and read["directions"] == ["backward", "forward"]
-    # Quick spends no HTTP attempt on the chain at all, retries included.
-    assert chaining.attempt_limit(fast_path.freeze_budget({}, "quick", uniform_search=False), "quick") == 0
     for effort in ("quick", "standard", "detailed"):
         policy = fast_path.freeze_budget({}, effort)
         assert (policy["chain_seeds"], policy["backward_requests"], policy["forward_requests"],
                 policy["forward_page_size"]) == (1, 4, 2, 100)
         assert chaining.attempt_limit(policy, effort) == 36
-
-
-def test_new_quick_run_sends_a_citation_request_and_old_quick_does_not(lib, tmp_path, monkeypatch):
-    flow, _, round_ = chain_setup(lib, tmp_path, chain_seeds=1, backward_requests=4, forward_requests=2)
-    search(flow, lib, "search:fast:semantic", ["W1"], refs={"W1": ["https://openalex.org/W900"]})
-    calls = []
-    chain(round_, monkeypatch, forward=[record("W700")], backward=[record("W900")], calls=calls)
-    assert {direction for direction, _ in calls} == {"forward", "backward"}
-    assert round_.policy["forward_page_size"] == 100
-
-    old = second_run(lib)
-    old.run["budget"]["fast_path"] = fast_path.freeze_budget({}, "quick", uniform_search=False)
-    old_flow, _, old_round = chain_setup(old, tmp_path, chain_seeds=0, backward_requests=0,
-                                         forward_requests=0)
-    search(old_flow, old, "search:fast:semantic", ["W1"], refs={"W1": ["https://openalex.org/W900"]})
-    old_calls = []
-    chain(old_round, monkeypatch, forward=[record("W700")], backward=[record("W900")], calls=old_calls)
-    assert old_calls == []
 
 
 def test_the_links_inside_the_first_page_are_written_without_a_request_even_in_quick(lib, tmp_path, monkeypatch):

@@ -47,8 +47,8 @@ _SPLIT = re.compile(r"[-\u2010\u2011\u2013/]")
 def attempt_limit(fast: dict[str, Any], effort: str) -> int:
     """How many HTTP attempts the fast chain may spend in all (usage `chain_requests`), for a frozen fast-path policy.
 
-    Each logical request (`backward_requests + forward_requests`) may wait out the effort's rate-limit retries
-    (`PROVIDER_WAIT`) and be resent after a transient network failure before anything was sent
+    Each logical request (`backward_requests + forward_requests`) may wait out its frozen rate-limit retries
+    and be resent after a transient network failure before anything was sent
     (`MAX_TRANSIENT_NETWORK_RETRIES`). `fast_chain.Round.fetch` enforces this number and `policy` records it.
     """
     return ((fast["backward_requests"] + fast["forward_requests"])

@@ -2221,7 +2221,7 @@ def create_app(
             budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(
                 budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS,
                 deep_screening=deep, completion_arm=settings.completion_arm,
-                broad_index_arm=settings.broad_index_arm, subtopic_arm=settings.subtopic_arm,
+                broad_index_arm=settings.broad_index_arm,
                 date_scope=years,
                 lexical_exclusion=settings.lexical_gate == "on",
                 candidate_embedding=settings.effective_candidate_embedding() == "on"),

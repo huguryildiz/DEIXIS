@@ -28,18 +28,8 @@ class EffortBudget:
     core_depth: int = 0
 
 
-# How many records one sw query reads across its pages, by effort (slice 13c). The limits were picked by hand;
-# `detailed` read 2,000 until it was lowered to 1,000: on the vocabulary experiment's first question, halving the read
-# cost one verified work per round (as OpenAlex ranks them, not as the model reads them). None of the three is
-# measured against what the model then includes.
-# The limit never drops a record that was read; what it leaves unread is counted (`unread_count`).
+# Read only by scripts/benchmark/spend_ledger.py; no run reads these tables.
 SW_READ_LIMIT = {"quick": 400, "standard": 1_000, "detailed": 1_000}
-
-# How many times a paged sw read or an sw abstract lookup batch waits out a provider's 429, by effort.
-# `quick` does not wait at all: the rate-limited page or batch ends that read there, its records stay `unread` /
-# `abstract_not_found` and are counted, and the run goes on. `detailed` waits as much as it always did. The waiting
-# is bounded by count, never by a clock: no effort stops a run at a time. The Crossref lookup path does not
-# read this table.
 PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 
 # Which domain source an sw discovery run searches, read from the OpenAlex field distribution of its gate query

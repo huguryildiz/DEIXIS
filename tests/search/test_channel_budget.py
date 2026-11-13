@@ -31,8 +31,7 @@ def _library(tmp_path, name, effort="detailed"):
     clock.store = store
     rid = store.create_research(QUESTION, "academic", effort, ["openalex", "semantic_scholar"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
-    # Bulk reservations are exercised on the older Detailed policy that sent bulk requests.
-    budget["fast_path"] = fast_path.freeze_budget(budget, effort, uniform_search=False)
+    budget["fast_path"] = fast_path.freeze_budget(budget, effort)
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     return SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run["id"]))
@@ -74,31 +73,10 @@ def _write(lib, provider, records, *, key, page_limit=100, rank=0, step=None):
 
 # --- what a depth reserves ------------------------------------------------------------------------------------
 
-def test_a_depth_reserves_nothing_for_a_bulk_request_the_plan_does_not_name(lab):
-    queries = [{"provider_id": "openalex", "query_text": "SYNTHETIC alpha"}]
-    plan = fast_search.build_plan(lab.store, lab.run, lab.store.scope(lab.rid), queries)
-    # The depth would pay for a bulk request, but this plan names none: the records stay with the keyword queries
-    # and the reason is recorded, so a reservation that buys nothing is not kept quietly.
-    assert plan["s2_reserved"] == 0 and plan["s2_skipped"] == "not_planned"
-    assert plan["keyword_cap"] == lab.run["budget"]["fast_path"]["keyword_record_cap"]
 
 
-def test_a_bulk_request_the_plan_names_takes_its_records_off_the_keyword_cap(lab):
-    queries = [{"provider_id": "openalex", "query_text": "SYNTHETIC alpha"},
-               {"provider_id": "semantic_scholar", "query_text": "SYNTHETIC bulk", "endpoint": "bulk"}]
-    plan = fast_search.build_plan(lab.store, lab.run, lab.store.scope(lab.rid), queries)
-    assert plan["s2_reserved"] == fast_search.S2_RESERVED_RECORDS and "s2_skipped" not in plan
-    assert plan["keyword_cap"] == (lab.run["budget"]["fast_path"]["keyword_record_cap"]
-                                   - fast_search.S2_RESERVED_RECORDS)
 
 
-def test_a_provider_the_person_left_out_reserves_nothing_and_says_so(lab):
-    scope = dict(lab.store.scope(lab.rid))
-    scope["user_plan"] = {"providers": ["openalex"]}
-    queries = [{"provider_id": "openalex", "query_text": "SYNTHETIC alpha"},
-               {"provider_id": "semantic_scholar", "query_text": "SYNTHETIC bulk", "endpoint": "bulk"}]
-    plan = fast_search.build_plan(lab.store, lab.run, scope, queries)
-    assert plan["s2_reserved"] == 0 and plan["s2_skipped"] == "excluded_by_user"
 
 
 # --- the merge does not follow which reply came back first ----------------------------------------------------

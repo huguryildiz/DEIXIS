@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple, Protocol
 
 from deixis.domain import canonical
-from deixis.domain.rules import PROVIDER_WAIT, ROUTE_SHARE, SOURCE_ROUTES_VERSION, SW_READ_LIMIT
+from deixis.domain.rules import ROUTE_SHARE, SOURCE_ROUTES_VERSION
 from deixis.storage.db import new_id, transaction
 
 POLICY = "fast_path_v1"
@@ -71,12 +71,8 @@ COMPLETION_ARMS = ("off", "conditional", "always")
 # pays for one, `off` never. The arm is frozen into the run's budget, so a run sends what it was queued with.
 BROAD_INDEX_RULE = "broad_index_v1"
 BROAD_INDEX_ARMS = ("off", "conditional", "always")
-# The one sub-topic search a depth that pays for no second index of its own may send instead: after its field
-# source has been searched, a part of the question the plan named that the records found so far still do not
-# carry is asked of the broad index on its own. `conditional` sends only where that gap is still open, `always`
-# on every question of the depth that named such a part, `off` never.
+# Stored shared-search policies can carry a zero-record sub-topic block.
 SUBTOPIC_RULE = "subtopic_search_v1"
-SUBTOPIC_ARMS = ("off", "conditional", "always")
 # The years a run searches in, where the question states them or a measurement supplies them
 # (`search.date_scope`). Frozen here with the rest of the policy, before the first request opens: the question's
 # own semantic request goes out before the protocol is frozen, so a bound kept only in the protocol would miss it.
@@ -87,14 +83,9 @@ DATE_SCOPE_RULE = "date_scope_v1"
 # later by that time. Frozen in the policy with the number; a run queued before the rule carries none and keeps the
 # old arithmetic, in which the reranker had only what was left of the ranking stage.
 RERANK_ALLOWANCE_RULE = "rerank_allowance_v1"
-# Short semantic searches beside the plan: one model step writes the depth's number of short phrases from the question
-# alone, and each phrase is one OpenAlex semantic request of its own. Frozen in the policy with the number and the
-# records each request reads; a run queued before the rule names no key and sends none (`phrase_search`).
-PHRASE_SEARCH_V1 = "phrase_search_v1"
-# The second version also sends each phrase to OpenAlex's plain `search=` route, one page without `sort`, beside its
-# semantic request. A run that froze the first version sends the semantic requests alone, on resume too.
+# One model step writes phrases from the question alone; each uses OpenAlex semantic and plain search.
+# The phrase count and records per request are frozen with the rule.
 PHRASE_SEARCH_RULE = "phrase_search_v2"
-PHRASE_SEARCH_RULES = (PHRASE_SEARCH_V1, PHRASE_SEARCH_RULE)  # the versions a frozen policy may name
 PHRASE_SEARCH_RECORDS = 50  # records one phrase request reads: one semantic page
 PHRASE_PLAIN_RECORDS = 30  # records one plain phrase request reads: one page of the plain route
 # Where the reranker was applied to the frozen list, the abstract stage does not close a work of the top-N window for
@@ -113,8 +104,10 @@ TERMINAL = ("completed", "failed", "cancelled")
 DEEP_SCREENING_WORKS = 100
 DEEP_SCREENING_EFFORTS = ("standard", "detailed")
 
-# Discovery search has one frozen setting at every reading depth. MODES below retains the older per-depth
-# search settings so a stored policy without this rule keeps its original hash and behavior.
+# Every depth freezes the same search limits; six phrases come from the ten-question loss trace, not a comparison.
+# The 250 field-source records are a pilot setting, not a measured contribution.
+# The 3 s reranker allowance rounds up the 95th percentile of seven successful Voyage steps over 400 records.
+# Timed-out steps were excluded, so that allowance is a starting value, not a guarantee.
 UNIFORM_SEARCH = {
     "rule": UNIFORM_SEARCH_RULE, "semantic_top": 50, "seed_semantic_top": 50,
     "phrase_searches": 6, "phrase_records": PHRASE_SEARCH_RECORDS, "phrase_plain_records": PHRASE_PLAIN_RECORDS,
@@ -131,92 +124,33 @@ UNIFORM_SEARCH = {
 
 
 def search_read(policy: dict[str, Any], effort: str, key: str) -> int:
-    """A frozen discovery search limit, or the older effort limit when the rule is absent."""
+    """Read a discovery search limit from its frozen shared policy."""
     shared = policy.get("uniform_search") or {}
-    if shared.get("rule") == UNIFORM_SEARCH_RULE:
-        return shared[key]
-    return {"read_limit_per_query": SW_READ_LIMIT, "provider_wait": PROVIDER_WAIT}[key][effort]
-
+    if shared.get("rule") != UNIFORM_SEARCH_RULE:
+        raise ValueError("discovery run has no shared search rule")
+    return shared[key]
 
 class Mode(NamedTuple):
-    """Reading numbers and legacy search numbers; new runs use UNIFORM_SEARCH for search."""
-    stage_seconds: tuple[int, int, int, int, int]  # soft deadline of each of STAGES, in order
-    read_top: int  # N: the top of the ranking a run reads
-    fulltext_works: int  # K: the most works a run reads in full text
-    keyword_record_cap: int
-    chain_seeds: int  # legacy starting works for citation chaining
-    backward_requests: int
-    forward_requests: int
-    boolean_plans: int  # the most distinct Boolean query plans a run of this depth sends: one main, the rest focused
-    chain_rescue: int  # the most linked records the gate's words do not reach that are still written as candidates
-    rerank_pool: float  # the most records the reranker reads, as a multiple of N; a saved factor is kept under it
-    rerank_point: str  # "before_list": the list waits for the reranker; "after_list": it is frozen first (old Quick)
-    file_asks: int  # the most works this depth asks the person for a file for, over the research's whole life
-    fulltext_searches: int  # the most works this depth sends an open-web full-text search for, over the same life
-    completion_records: int  # records the completion arm may read, taken off the keyword cap while the arm is frozen
-    snippet_requests: int  # legacy snippet queries
-    field_sources: int  # legacy field sources beside OpenAlex
-    field_records: int  # records each of them may read, taken off the same keyword cap
-    broad_index_records: int  # records the second independent index may read; none at the depths that pay for none
-    subtopic_records: int  # records the one sub-topic search may read; none where a depth searches that index anyway
-    rerank_allowance: int  # seconds the reranker keeps of its own past the ranking cutoff; 0 freezes no allowance
-    phrase_searches: int  # short semantic phrase searches beside the plan; 0 turns the route off
+    """Reading limits and stage seconds for one research depth."""
+    read_seconds: int  # soft deadline for reading
+    answer_seconds: int  # soft deadline for answer writing
+    read_top: int  # N: top ranked works read
+    fulltext_works: int  # K: maximum works read in full text
+    rerank_pool: float  # reranker window as a multiple of N; a saved factor stays below it
+    file_asks: int  # file requests allowed over the research's life
+    fulltext_searches: int  # open-web full-text searches allowed over the same life
 
 
-# These stage seconds and search fields remain for policies frozen before the shared search rule.
-# New runs use their reading fields and the shared pre-answer stage seconds above.
-# The split inside the handover is today's pilot configuration, each stage scaled from the budget it had before the
-# targets were applied; which split and which K/N actually hold the targets is measured, not assumed.
+# Read and answer seconds are pilot settings; whether they meet delivery targets is unmeasured.
 MODES = {
-    # Quick opens no citation request of its own: the reference ids the first semantic page brings are stored and
-    # the links inside that page are written, which costs nothing, but no seed work is read.
-    "quick": Mode((7, 7, 7, 14, 25), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=0,
-                  backward_requests=0, forward_requests=0, boolean_plans=1, chain_rescue=0,
-                  # Quick's list waits for the reranker, as Standard's does, and the reranker reads the same 400
-                  # records Standard's reads (16 x 25): the right paper has to reach Quick's top 25 to be screened.
-                  # Quick asks for no file at all: it is the depth that answers from what it can reach itself.
-                  # Quick sends no snippet query: it writes no focused concept, so there is no recorded gap to ask
-                  # about, and its first list waits for no extra search. The records are for the fallback alone,
-                  # which is the only thing that stands between a technical OpenAlex failure and an empty Quick run.
-                  rerank_pool=16.0, rerank_point="before_list", file_asks=0, fulltext_searches=0,
-                  completion_records=50, snippet_requests=0,
-                  # Quick binds its first list to no other source: it searches OpenAlex alone.
-                  field_sources=0, field_records=0, broad_index_records=0, subtopic_records=0,
-                  # Standard's allowance for the same 400-record window: not measured at Quick.
-                  rerank_allowance=3,
-                  # Six phrases at every depth to begin with: the number of the ten-question loss trace, not measured
-                  # against any other.
-                  phrase_searches=6),
-    "standard": Mode((8, 12, 17, 33, 50), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
-                     backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
-                     rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3,
-                     completion_records=100, snippet_requests=1,
-                     # The one field source the question's own field distribution points at. The records are a pilot
-                     # setting: nothing has measured what a field source adds for what it takes off OpenAlex.
-                     field_sources=1, field_records=250,
-                     # Standard pays for no second index of its own; what it pays for is the one sub-topic search
-                     # of that index, and only where its field source left the sub-topic unmet.
-                     broad_index_records=0, subtopic_records=25,
-                     # The 95th percentile of seven successful Voyage rerank-3-lite steps over a 400-record window
-                     # (1.6 to 2.3 s), rounded up to a whole second. Steps that timed out are not in the sample, so
-                     # this is a starting value, not a guarantee.
-                     rerank_allowance=3, phrase_searches=6),
-    "detailed": Mode((18, 36, 48, 108, 90), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
-                     backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
-                     # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
-                     rerank_pool=8.0, rerank_point="before_list", file_asks=5, fulltext_searches=5,
-                     completion_records=200, snippet_requests=2,
-                     # Deep searches the same one field source and pays for a second independent index beside it,
-                     # whose records come off the same keyword cap. The number is a pilot setting: what that index
-                     # adds to the first list is not measured.
-                     # Deep searches that index on its own, so it sends no sub-topic search of it: one query per
-                     # source stands.
-                     field_sources=1, field_records=250, broad_index_records=100, subtopic_records=0,
-                     # No Deep reranker step has been measured; its window is the same 400 records as Standard's,
-                     # so it takes Standard's number until one is.
-                     rerank_allowance=3, phrase_searches=6),
+    # Quick asks for no file; 16 x 25 and 8 x 50 both give a 400-record reranker window.
+    "quick": Mode(read_seconds=14, answer_seconds=25, read_top=25, fulltext_works=10,
+                  rerank_pool=16.0, file_asks=0, fulltext_searches=0),
+    "standard": Mode(read_seconds=33, answer_seconds=50, read_top=50, fulltext_works=20,
+                     rerank_pool=8.0, file_asks=3, fulltext_searches=3),
+    "detailed": Mode(read_seconds=108, answer_seconds=90, read_top=100, fulltext_works=40,
+                     rerank_pool=8.0, file_asks=5, fulltext_searches=5),
 }
-
 
 class LedgerMismatch(RuntimeError):
     """The stored fast-path ledger or stage intervals contradict the run being written."""
@@ -249,8 +183,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
                   deep_screening: bool = False,
                   lexical_exclusion: bool = True, candidate_embedding: bool = True,
                   completion_arm: str = "off", broad_index_arm: str = "off",
-                  subtopic_arm: str = "off", date_scope: dict[str, Any] | None = None,
-                  uniform_search: bool = True) -> dict[str, Any]:
+                  date_scope: dict[str, Any] | None = None) -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -273,7 +206,6 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
 
     `broad_index_arm` is the same shape for the second independent index (`BROAD_INDEX_ARMS`): `off` writes no
     key, which is the policy frozen before the rule, and the other two name the arm and the records.
-    `subtopic_arm` is the same shape again for the one sub-topic search of that index (`SUBTOPIC_ARMS`).
 
     `date_scope` is the years this run searches in, built by `search.date_scope` from the person's own question or
     supplied with the run by a measurement. A run that bounds no years names no key, which is byte for byte the
@@ -282,12 +214,10 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         raise ValueError(f"unknown completion arm {completion_arm!r}")
     if broad_index_arm not in BROAD_INDEX_ARMS:
         raise ValueError(f"unknown broad index arm {broad_index_arm!r}")
-    if subtopic_arm not in SUBTOPIC_ARMS:
-        raise ValueError(f"unknown sub-topic search arm {subtopic_arm!r}")
     mode = MODES[effort]
-    shared = UNIFORM_SEARCH if uniform_search else None
-    bases = (tuple(shared[stage + "_seconds"] for stage in ("plan", "search", "ranking"))
-             + mode.stage_seconds[3:] if shared else mode.stage_seconds)
+    shared = UNIFORM_SEARCH
+    bases = tuple(shared[stage + "_seconds"] for stage in ("plan", "search", "ranking")) + (
+        mode.read_seconds, mode.answer_seconds)
     policy = {
         "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read", "answer"],
         "enforced_stages": ["search", "ranking", "read", "answer"], "background_fetch_slots": 4,
@@ -298,31 +228,31 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # The delivery-time target and the handover moment, both on the person's clock from the question's submission.
         "handover_rule": HANDOVER_RULE, "handover_ms": sum(bases[:len(PRE_ANSWER)]) * 1000,
         "N": mode.read_top, "K": mode.fulltext_works,
-        "keyword_record_cap": shared["keyword_record_cap"] if shared else mode.keyword_record_cap,
-        "semantic_top": shared["semantic_top"] if shared else 50,
-        "chain_seeds": shared["chain_seeds"] if shared else mode.chain_seeds,
-        "backward_requests": shared["backward_requests"] if shared else mode.backward_requests,
-        "backward_page_size": shared["backward_page_size"] if shared else 50,
-        "forward_requests": shared["forward_requests"] if shared else mode.forward_requests,
-        "forward_page_size": shared["forward_page_size"] if shared else 25,
+        "keyword_record_cap": shared["keyword_record_cap"],
+        "semantic_top": shared["semantic_top"],
+        "chain_seeds": shared["chain_seeds"],
+        "backward_requests": shared["backward_requests"],
+        "backward_page_size": shared["backward_page_size"],
+        "forward_requests": shared["forward_requests"],
+        "forward_page_size": shared["forward_page_size"],
         # The chain matches the protocol's frozen word forms and keeps the rescue quota: `chain_rescue` linked
         # records the gate's words do not reach are written as ranked candidates, and the gate's own verdict on
         # them is still recorded.
         "chain_in_flight": 5, "chain_rule": CHAIN_RULE,
-        "chain_rescue": shared["chain_rescue"] if shared else mode.chain_rescue,
+        "chain_rescue": shared["chain_rescue"],
         "acquire_rule": ACQUIRE_RULE,
         # The model writes the plan from the first semantic page and the chain starts from the works it names.
         # `boolean_plans` counts the distinct Boolean query plans the run may send, the main one included; one plan
         # still goes to every enabled provider in that provider's syntax, and those requests are counted elsewhere.
-        "plan_rule": PLAN_RULE, "boolean_plans": shared["boolean_plans"] if shared else mode.boolean_plans,
+        "plan_rule": PLAN_RULE, "boolean_plans": shared["boolean_plans"],
         "file_ask_rule": FILE_ASK_RULE, "file_asks": mode.file_asks,
         # Which other sources this depth searches, and by what share of the question's field distribution they are
         # chosen. The share is frozen here so a run decides by the value it started with, and a pilot that moves the
         # table or the share cannot change what a waiting run sends.
         "field_search": {"rule": FIELD_SEARCH_RULE,
-                         "sources": shared["field_sources"] if shared else mode.field_sources,
-                         "records": shared["field_records"] if shared else mode.field_records,
-                         "share": shared["field_share"] if shared else ROUTE_SHARE,
+                         "sources": shared["field_sources"],
+                         "records": shared["field_records"],
+                         "share": shared["field_share"],
                          "table_version": SOURCE_ROUTES_VERSION},
         "fulltext_search_rule": FULLTEXT_SEARCH_RULE, "fulltext_searches": mode.fulltext_searches,
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
@@ -342,21 +272,13 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # The records come off the keyword cap (`search.build_plan`), so every arm of the measurement reads the same
         # total; what the arm did not spend is recorded, which is how the pilot sees the cost of the reservation.
         policy["completion"] = {"rule": COMPLETION_RULE, "arm": completion_arm,
-                                "records": shared["completion_records"] if shared else mode.completion_records,
-                                "snippet_requests": shared["snippet_requests"] if shared else mode.snippet_requests}
+                                "records": shared["completion_records"],
+                                "snippet_requests": shared["snippet_requests"]}
     if broad_index_arm != "off":
         # The records come off the keyword cap too (`search.build_plan`). A policy frozen with the `off` arm names
         # no block, which is byte for byte the policy frozen before the rule: a run queued then sends none either.
         policy["broad_index"] = {"rule": BROAD_INDEX_RULE, "arm": broad_index_arm,
-                                 "records": shared["broad_index_records"] if shared else mode.broad_index_records}
-    if subtopic_arm != "off":
-        # These records come off no cap: whether the request is sent can only be read after the field source's
-        # last page, which is after the keyword loop that would spend them has ended, so records taken off that
-        # loop's cap would be lost on every question where nothing is sent and the arms would read different
-        # keyword totals. A run that sends it reads these records on top of the keyword cap. An `off` policy
-        # names no key, which is the policy frozen before the rule.
-        policy["subtopic_search"] = {"rule": SUBTOPIC_RULE, "arm": subtopic_arm,
-                                     "records": shared["subtopic_records"] if shared else mode.subtopic_records}
+                                 "records": shared["broad_index_records"]}
     if date_scope is not None:
         if date_scope.get("rule") != DATE_SCOPE_RULE:
             raise ValueError(f"unknown date scope rule {date_scope.get('rule')!r}")
@@ -371,24 +293,22 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     # The rule that also searches the other number form of a quoted phrase: every depth, every model.
     from deixis.providers.query_compiler import PHRASE_FORMS_RULE
     policy["phrase_forms_rule"] = PHRASE_FORMS_RULE
-    if (shared["rerank_allowance_seconds"] if shared else mode.rerank_allowance) and not local_model:
-        # A depth without an allowance, and a local-model run, name no key: their policy is the one frozen before.
+    if shared["rerank_allowance_seconds"] and not local_model:
+        # A local-model run keeps no reranker allowance.
         policy["rerank_allowance"] = {"rule": RERANK_ALLOWANCE_RULE,
-                                       "ms": (shared["rerank_allowance_seconds"] if shared else mode.rerank_allowance) * 1000}
-    if (shared["phrase_searches"] if shared else mode.phrase_searches):
-        # The short phrase searches: how many phrases the step writes and what each semantic and each plain request
-        # reads. A depth set to none names no key, which is the policy frozen before the rule.
+                                       "ms": shared["rerank_allowance_seconds"] * 1000}
+    if shared["phrase_searches"]:
+        # Freeze the number of phrases and the record cap for each route.
         policy["phrase_search"] = {"rule": PHRASE_SEARCH_RULE,
-                                   "count": shared["phrase_searches"] if shared else mode.phrase_searches,
-                                   "records": shared["phrase_records"] if shared else PHRASE_SEARCH_RECORDS,
-                                   "plain_records": shared["phrase_plain_records"] if shared else PHRASE_PLAIN_RECORDS}
-    if shared:
-        policy["uniform_search"] = dict(shared)
+                                   "count": shared["phrase_searches"],
+                                   "records": shared["phrase_records"],
+                                   "plain_records": shared["phrase_plain_records"]}
+    policy["uniform_search"] = dict(shared)
     # The word rule of a reranked window, frozen before the hash below: every depth, every model.
     policy["window_word_rule"] = WINDOW_WORD_RULE
     # The evidence minimum, frozen before the hash below: every depth, every model.
     policy["evidence_minimum"] = {"rule": EVIDENCE_MINIMUM_RULE,
-                                  "search_ms": shared["evidence_search_ms"] if shared else EVIDENCE_SEARCH_MS,
+                                  "search_ms": shared["evidence_search_ms"],
                                   "abstract_ceiling_ms": EVIDENCE_ABSTRACT_CEILING_MS}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
@@ -524,14 +444,14 @@ def window_word_rule(policy: dict[str, Any]) -> bool:
 
 
 def phrase_search(budget: dict[str, Any]) -> dict[str, Any] | None:
-    """The short phrase searches this run froze, or None for a run queued before the rule or at a depth set to none."""
+    """The short phrase searches this run froze, if it carries the current rule."""
     rule = (budget.get("fast_path") or {}).get("phrase_search") or {}
-    return rule if rule.get("rule") in PHRASE_SEARCH_RULES and rule.get("count") else None
+    return rule if rule.get("rule") == PHRASE_SEARCH_RULE and rule.get("count") else None
 
 
 def phrase_plain_records(rule: dict[str, Any] | None) -> int | None:
-    """Records each plain phrase request reads under the frozen phrase rule, or None where it sends none (version 1)."""
-    return rule.get("plain_records") if rule and rule.get("rule") == PHRASE_SEARCH_RULE else None
+    """Records each plain phrase request reads under the frozen phrase rule."""
+    return rule["plain_records"] if rule and rule.get("rule") == PHRASE_SEARCH_RULE else None
 
 
 def rerank_allowance_ms(budget: dict[str, Any]) -> int | None:

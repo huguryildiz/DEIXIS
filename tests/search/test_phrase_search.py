@@ -204,22 +204,6 @@ def test_the_second_rule_sends_each_phrase_by_plain_search_too_and_its_lists_vot
     from deixis.workflow.search import prisma_s
     assert all(sum(g["query_text"] == text for g in prisma_s._groups(store, rid, 1)) == 2 for text in texts)
 
-    # A run that froze the first rule sends the semantic phrase requests alone.
-    freeze = fast_path.freeze_budget
-
-    def first_rule(*args, **kwargs):
-        policy = freeze(*args, **kwargs)
-        policy["phrase_search"] = {"rule": fast_path.PHRASE_SEARCH_V1, "count": 6, "records": 50}
-        return policy
-
-    monkeypatch.setattr(fast_path, "freeze_budget", first_rule)
-    openalex = PlainOpenAlex()
-    rid, run_id, view, run, store = run_once(tmp_path / "v1", monkeypatch, openalex, FakeAdapter())
-    assert run["status"] == "completed", run
-    assert len(openalex.sent("phrase")) == 6 and openalex.plain == []
-    assert "plain_requests" not in frozen_route(store, run_id)
-    assert not store.conn.execute("SELECT 1 FROM run_steps WHERE run_id = ? AND operation_key LIKE ?",
-                                  (run_id, fast_search.PLAIN_PHRASE_KEY + "%")).fetchall()
 
 
 def test_a_plain_request_whose_stop_came_during_its_wait_is_not_sent_and_takes_the_keyword_routes_date_filter():
@@ -242,37 +226,6 @@ def test_a_plain_request_whose_stop_came_during_its_wait_is_not_sent_and_takes_t
         "from_publication_date:2020-01-01,to_publication_date:2022-12-31")
 
 
-def test_a_stored_first_rule_run_resumed_sends_no_plain_request(tmp_path, monkeypatch):
-    from fakes import without_evidence_minimum
-    phrases_settle(monkeypatch)
-    without_evidence_minimum(monkeypatch)  # a failed abstract read pauses the run, which is the pause used here
-    freeze, down = fast_path.freeze_budget, [True]
-
-    def first_rule(*args, **kwargs):
-        policy = freeze(*args, **kwargs)
-        policy["phrase_search"] = {"rule": fast_path.PHRASE_SEARCH_V1, "count": 6, "records": 50}
-        return policy
-
-    def failure(si):
-        if down[0] and si["task_type"] == "abstract_screening":
-            return ModelStepResult("failed", error="SYNTHETIC paused connection")
-
-    monkeypatch.setattr(fast_path, "freeze_budget", first_rule)
-    openalex = PlainOpenAlex()
-    with TestClient(app_for(tmp_path, monkeypatch, openalex, FakeAdapter(fail=failure))) as client:
-        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, QUESTION)
-        view, run = wait(client, rid, run_id)
-        assert run["status"] == "paused", run
-        # Resumed under today's code, which would freeze the second rule for a new run.
-        monkeypatch.setattr(fast_path, "freeze_budget", freeze)
-        down[0] = False
-        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
-        view, run = wait(client, rid, run_id)
-    assert run["status"] == "completed", run
-    store = store_at(tmp_path)
-    assert fast_path.phrase_search(store.run(run_id)["budget"])["rule"] == fast_path.PHRASE_SEARCH_V1
-    assert openalex.plain == [] and len(openalex.sent("phrase")) == 6
 
 
 class PacerClock:
@@ -429,44 +382,8 @@ def test_a_duplicate_phrase_request_counts_once_and_a_keyword_query_of_its_text_
     assert [part["rank"] for part in preselect.scores(lists)["a"]] == [4, 1]
 
 
-def test_an_old_manifest_keeps_its_lists_and_replays_unchanged():
-    # Without the identity, the key and every list are what they were before the rule: the endpoint is ignored.
-    hits = [{"head": "a", "provider": "openalex", "query_text": "Q", "rank": 0, "sort": None, "relevance": True,
-             "read_total": None, "endpoint": "semantic"},
-            {"head": "b", "provider": "openalex", "query_text": "Q", "rank": 1, "sort": None, "relevance": True,
-             "read_total": None, "endpoint": "keyword"}]
-    old = preselect.lists(hits)
-    assert old == [{"provider": "openalex", "query_text": "Q", "sort": None, "votes": True, "read_total": None,
-                    "members": ["a", "b"], "places": {"a": 0, "b": 1}, "size": 2}]
-    assert old == preselect.lists([{k: v for k, v in h.items() if k != "endpoint"} for h in hits])
-    # The window reads the frozen lists as they were frozen; a manifest naming no identity gives the same window.
-    manifest = {"preselect": {"rule": preselect.RULE, "k": preselect.K, "floors": {}}, "query_lists": old,
-                "pool": [{"id": "a", "work_id": "w-a"}, {"id": "b", "work_id": "w-b"}, {"id": "c", "work_id": "w-c"}]}
-    window = small_batch.window_for(manifest, ["c", "b", "a"], 2)
-    assert window["window"] == small_batch.window_for(json.loads(json.dumps(manifest)), ["c", "b", "a"], 2)["window"]
-    assert set(window["window"]) == {"a", "b"}
 
 
-def test_a_run_frozen_before_the_rule_sends_no_phrase_request(tmp_path, monkeypatch):
-    # A budget frozen before the rule names no `phrase_search`: no phrase call, no phrase request, the old list key.
-    freeze = fast_path.freeze_budget
-
-    def before_the_rule(*args, **kwargs):
-        policy = freeze(*args, **kwargs)
-        policy.pop("phrase_search", None)
-        return policy
-
-    monkeypatch.setattr(fast_path, "freeze_budget", before_the_rule)
-    openalex, adapter = OpenAlex(), FakeAdapter()
-    rid, run_id, view, run, store = run_once(tmp_path, monkeypatch, openalex, adapter)
-    assert run["status"] == "completed", run
-    assert fast_path.phrase_search(store.run(run_id)["budget"]) is None
-    assert not [si for si in adapter.calls if si["task_type"] == "search_phrases"]
-    assert not openalex.sent("phrase") and not phrase_steps(store, run_id)
-    assert frozen_route(store, run_id) is None
-    listing = store.step(run_id, small_batch.LIST_KEY, "code:small_batch_list")["output"]
-    manifest = listing.get("manifest") or listing
-    assert "list_identity" not in (manifest.get("preselect") or {})
 
 
 def test_a_connection_that_answers_one_call_at_a_time_is_not_asked_for_phrases(tmp_path, monkeypatch):

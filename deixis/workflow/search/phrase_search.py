@@ -90,7 +90,7 @@ class Route:
                  handed: asyncio.Event | None = None):
         self.flow, self.run, self.scope = flow, run, scope
         self.rule = fast_path.phrase_search(run["budget"])
-        self.plain_records = fast_path.phrase_plain_records(self.rule)  # None: the run froze no plain request
+        self.plain_records = fast_path.phrase_plain_records(self.rule)
         self.first_request = first_request  # the question's own semantic request
         self.handed = handed or asyncio.Event()  # set once that request is with the HTTP client
         self.watcher: asyncio.Task | None = None  # the watch on the search stage's deadline
@@ -191,14 +191,12 @@ class Route:
             self._close_step(FROZEN, "cancelled")
         phrases = self._result()
         record = {"rule": self.rule["rule"], "count": self.rule["count"], "records": self.rule["records"]}
-        if self.plain_records is not None:
-            record["plain_records"] = self.plain_records  # the second rule: each phrase's plain request too
+        record["plain_records"] = self.plain_records
         if phrases is None:
             return record | {"status": "not_written", "reason": self.reason}
         years = self.run["budget"]["fast_path"].get("date_scope")
         record |= {"status": "ready", "phrases": phrases, "requests": requests(phrases, self.rule, years)}
-        if self.plain_records is not None:
-            record["plain_requests"] = plain_requests(phrases, self.plain_records, years)
+        record["plain_requests"] = plain_requests(phrases, self.plain_records, years)
         return record
 
     def _specs(self) -> list[tuple[dict[str, Any], str, int]]:
@@ -211,8 +209,7 @@ class Route:
             phrases = self._result() or []
             years = self.run["budget"]["fast_path"].get("date_scope")
             semantic = requests(phrases, self.rule, years) if phrases else []
-            # Only a run that froze the second rule has plain requests.
-            plain = plain_requests(phrases, self.plain_records, years) if phrases and self.plain_records else []
+            plain = plain_requests(phrases, self.plain_records, years) if phrases else []
         return ([(spec, fast_search.plain_phrase_key(spec["index"]), fast_search.PLAIN_PHRASE_CLASS) for spec in plain]
                 + [(spec, fast_search.phrase_key(spec["index"]), fast_search.PHRASE_CLASS) for spec in semantic])
 

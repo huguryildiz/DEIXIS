@@ -117,8 +117,13 @@ def quota_flow(tmp_path):
                            settings=SimpleNamespace(contact_email=None, payloads_dir=tmp_path / "payloads"))
     flow = ResearchFlow(deps)
     def new_run():
+        from deixis.workflow.run import fast_path
+        from deixis.workflow.search import small_batch
         rid = store.create_research("SYNTHETIC?", "academic", "standard", ["openalex"], "fake", "m", "en")
-        return store.create_run(rid, "discovery", {"max_provider_requests": 10, "inspection": {"policy": "small_batch_fused_v1"}}, None)
+        return store.create_run(rid, "discovery", {
+            "max_provider_requests": 10, "fast_path": fast_path.freeze_budget({}, "standard"),
+            "inspection": {"policy": small_batch.POLICY, "rerank": small_batch.RERANK_RULE,
+                           "prerank_lookup": small_batch.PRERANK_LOOKUP}}, None)
     yield flow, new_run
     asyncio.run(client.aclose())
     if deps.http is not client:

@@ -106,9 +106,9 @@ def test_off_arm_freezes_nothing_and_keeps_the_earlier_policy_hash():
 
 @pytest.mark.parametrize("arm", ["conditional", "always"])
 def test_an_arm_freezes_its_records_and_snippet_budget_per_depth(arm):
-    for effort, records, snippets in (("quick", 50, 0), ("standard", 100, 1), ("detailed", 200, 2)):
+    for effort, records, snippets in (("quick", 100, 1), ("standard", 100, 1), ("detailed", 100, 1)):
         frozen = fast_path.completion({"fast_path": fast_path.freeze_budget({}, effort, completion_arm=arm,
-                                                                           uniform_search=False)})
+                                                                           )})
         assert frozen == {"rule": "s2_completion_v1", "arm": arm, "records": records, "snippet_requests": snippets}
 
 
@@ -702,7 +702,7 @@ def test_the_endpoint_declares_its_own_request_count():
     assert snippet.paging == "single_page" and snippet.max_results == 25
     # The request allowance is counted for the endpoint the query names, not for the connector alone.
     from deixis.workflow.search import search_page
-    budget = {"fast_path": {}}
+    budget = {"fast_path": fast_path.freeze_budget({}, "standard")}
     assert (search_page.page_allowance({"provider_id": "semantic_scholar", "endpoint": "snippet"}, "standard", budget)
             > search_page.page_allowance({"provider_id": "semantic_scholar", "endpoint": "bulk"}, "standard", budget) / 2)
 

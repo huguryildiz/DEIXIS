@@ -1,5 +1,6 @@
 """Synthetic end-to-end runs with isolated tmp_path data and mocked providers/PDFs."""
 
+import asyncio
 import json
 from contextlib import contextmanager
 
@@ -109,8 +110,11 @@ def test_a_run_frozen_under_a_removed_rule_is_named_and_not_carried_out_under_to
     """
     from deixis.workflow.run import fast_path
 
-    def discovery(**fast):
-        return {"kind": "discovery", "budget": {"fast_path": {"policy": fast_path.POLICY} | fast}}
+    def discovery(inspection=None, **fast):
+        return {"kind": "discovery", "budget": {
+            "fast_path": {"policy": fast_path.POLICY} | fast,
+            "inspection": inspection or small_batch.freeze_budget(
+                {"max_model_calls": 1, "max_provider_requests": 8}, "standard", "off")["inspection"]}}
 
     def answer(**inspection):
         return {"kind": "answer", "budget": {"inspection": {"policy": small_batch.POLICY} | inspection}}
@@ -122,8 +126,129 @@ def test_a_run_frozen_under_a_removed_rule_is_named_and_not_carried_out_under_to
     assert small_batch.removed_rule(discovery(chain_rule=fast_path.CHAIN_RULE)) == "search_method"
     assert small_batch.removed_rule(discovery(**current | {"plan_rule": "SYNTHETIC_older"})) == "plan_rule"
     assert small_batch.removed_rule(discovery(**current | {"chain_rule": "fast_chain_v1"})) == "chain_rule"
+    per_depth = {key: value for key, value in current.items() if key != "uniform_search"}
+    assert small_batch.removed_rule(discovery(**per_depth)) == "uniform_search"
+    assert small_batch.removed_rule(discovery(**per_depth | {"plan_rule": "old"})) == "plan_rule"
+    assert small_batch.removed_rule(discovery(**per_depth | {"chain_rule": "fast_chain_v1"})) == "chain_rule"
+    assert small_batch.removed_rule(discovery(**current | {"phrase_search": {"rule": "phrase_search_v1"}})) == "phrase_search"
+    inspection = small_batch.freeze_budget({"max_model_calls": 1, "max_provider_requests": 8}, "standard", "off")["inspection"]
+    assert small_batch.removed_rule(discovery(inspection=inspection | {"rerank": {"version": 5}}, **current)) == "rerank_rule"
+    assert small_batch.removed_rule(discovery(inspection=inspection | {"prerank_lookup": {"version": 4}},
+                                              **current)) == "prerank_lookup"
     assert small_batch.removed_rule(answer(answer_allocation_version=6)) == "answer_allocation"
     assert small_batch.removed_rule(answer()) == "answer_allocation"
     # A run of another kind, and a budget no fast path froze, are not this gate's business.
     assert small_batch.removed_rule({"kind": "followup_search", "budget": {"fast_path": {}}}) is None
     assert small_batch.removed_rule({"kind": "discovery", "budget": {}}) is None
+
+
+def test_paused_per_depth_discovery_fails_before_provider_or_model_calls(tmp_path, monkeypatch):
+    from deixis.domain.rules import TEST_EFFORT_BUDGETS
+    from deixis.workflow.run import fast_path
+
+    requests = []
+    adapter = FakeAdapter(valid_response)
+    app, _ = app_for(tmp_path, monkeypatch, adapter=adapter, start_worker=False,
+                     transport=lambda request: requests.append(request) or httpx.Response(500))
+    with client_of(app):
+        store = app.state.store
+        rid = store.create_research("SYNTHETIC stored discovery", "academic", "standard", ["openalex"],
+                                    "fake", "fake-model", "en")
+        budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
+        policy = fast_path.freeze_budget(budget, "standard")
+        policy.pop("uniform_search")  # a stored per-depth policy with current plan and chain rules
+        budget["fast_path"] = policy
+        run = store.create_run(rid, "discovery", budget, None)
+        store.update_run(run["id"], status="paused", pause_reason="user_requested")
+        store.resume_run(run["id"])
+        asyncio.run(app.state.worker.flow.execute(run["id"]))
+        failed = store.run(run["id"])
+        assert failed["status"] == "failed" and failed["pause_reason"] == "search_rules_removed"
+        assert failed["error"] == {"rule": "uniform_search"}
+        assert requests == [] and adapter.calls == []
+
+
+def test_completed_per_depth_research_keeps_its_stored_views_and_later_work(tmp_path, monkeypatch):
+    from deixis.domain import canonical
+    from deixis.workflow.read import background_fetch
+    from test_followup_search import search as request_followup, turn_of, wait as wait_followup
+    from test_screen_more import settle
+
+    app, _ = app_for(tmp_path, monkeypatch, 60, model_works=True, fetch="off", reading="off")
+    with client_of(app) as client:
+        rid, discovery_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "completed"
+        before = settle(client, rid)
+        store = app.state.store
+        listing = output(store, discovery_id, small_batch.LIST_KEY)
+        assert listing and len(listing["order"]) > 50
+        before_run = next(item for item in before["runs"] if item["id"] == discovery_id)
+
+        # Store the shape of a completed Standard run with the former sub-topic and rerank rules.
+        budget = store.run(discovery_id)["budget"]
+        budget["fast_path"].pop("uniform_search")
+        budget["fast_path"]["subtopic_search"] = {"rule": "subtopic_search_v1", "arm": "conditional", "records": 25}
+        budget["inspection"]["rerank"]["version"] = 5
+        store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), discovery_id))
+        listing["manifest"].pop("rerank_merge", None)
+        (listing["manifest"].get("preselect") or {}).pop("fused_reserve", None)
+        listing["manifest_hash"] = canonical.sha256_hex(listing["manifest"])
+        store.conn.execute("UPDATE run_steps SET output_json = ? WHERE run_id = ? AND operation_key = ?",
+                           (json.dumps(listing), discovery_id, small_batch.LIST_KEY))
+        protocol = store.current_protocol(rid, 1)
+        body = protocol["body"]
+        plan = body["fast_path_search"]
+        assert body["compiled_queries"]
+        plan["subtopic"] = {"index": 0, "query": body["compiled_queries"][0], "provider_id": "scopus"}
+        body["citation_chaining"]["attempt_limit"] = 23
+        stored = store.freeze_protocol(rid, 1, body, reason="SYNTHETIC stored plan")
+        store.conn.execute("UPDATE run_steps SET output_json = ? WHERE run_id = ? AND operation_key = 'protocol'",
+                           (json.dumps({"protocol_revision": stored["protocol_revision"],
+                                        "protocol_hash": stored["hash"]}), discovery_id))
+
+        view = client.get(f"/api/researches/{rid}")
+        assert view.status_code == 200, view.text
+        shown = view.json()
+        old_run = next(item for item in shown["runs"] if item["id"] == discovery_id)
+        assert old_run["status"] == "completed" and old_run["error"] is None
+        assert old_run["approval"]["chaining"]["attempt_limit"] == 23
+        assert old_run["inspection_progress"]["counts"] == before_run["inspection_progress"]["counts"]
+        assert shown["answers"] == before["answers"]
+        saved_list = output(store, discovery_id, small_batch.LIST_KEY)
+        assert saved_list["order"] == listing["order"]
+        assert "rerank_merge" not in saved_list["manifest"]
+        assert "fused_reserve" not in saved_list["manifest"]["preselect"]
+        from deixis.workflow.search import search as fast_search
+        assert any(item["arm"] == "subtopic" for item in fast_search.sent_plan(body))
+
+        turn = turn_of(client, rid)
+        followup = request_followup(client, rid, turn["id"])
+        assert followup.status_code == 202, followup.text
+        assert wait_followup(client, rid, followup.json()["search_run_id"])["status"] == "completed"
+        settle(client, rid)
+
+        answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"})
+        assert answer.status_code == 202, answer.text
+        settle(client, rid)
+        screen = client.post(f"/api/researches/{rid}/screen-more")
+        assert screen.status_code == 202, screen.text
+        assert next(item for item in settle(client, rid)["runs"] if item["id"] == screen.json()["id"])["status"] == "completed"
+
+        async def finish_fetch(run, work_id):
+            step = store.step(run["id"], f"fulltext_work:{work_id}", "code:fulltext_work")
+            store.start_step(step["id"])
+            store.finish_step(step["id"], "succeeded", output={"code": "not_read_yet"})
+
+        monkeypatch.setattr(app.state.worker.flow, "_overlap_work", finish_fetch)
+        item = listing["items"][0]
+        background_fetch.enqueue(store, store.run(discovery_id), item, "not_started")
+
+        async def drain_fetch():
+            lane = app.state.worker.flow.background_fetch
+            lane.pick()
+            await asyncio.gather(*lane.tasks.values())
+
+        client.portal.call(drain_fetch)
+        state = store.conn.execute("SELECT status FROM fast_path_background_fetches WHERE run_id = ?",
+                                   (discovery_id,)).fetchone()[0]
+        assert state == "succeeded"

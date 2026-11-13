@@ -413,7 +413,7 @@ def test_a_run_frozen_before_the_forms_rule_counts_and_compiles_its_plan_the_old
     freeze, old = fast_path.freeze_budget, [True]
 
     def frozen(*args, **kwargs):
-        policy = freeze(*args, **(kwargs | {"uniform_search": False} if old[0] else kwargs))
+        policy = freeze(*args, **kwargs)
         if old[0]:
             policy = {k: v for k, v in policy.items() if k not in ("policy_hash", "phrase_forms_rule")}
             policy["policy_hash"] = canonical.sha256_hex(policy)
@@ -438,7 +438,7 @@ def test_a_run_frozen_before_the_forms_rule_counts_and_compiles_its_plan_the_old
     assert run["status"] == "completed", run
     stored = step_output(client, run_id, "search_query")
     assert "phrase_forms" not in stored["vocabulary"] and stored["queries"][0]["query_text"] == '"rail freight" AND schedule'
-    assert not any("rail freights" in query for query in openalex.counts + openalex.searches)
+    assert not any("rail freights" in query for query in openalex.counts + openalex.searches if query)
     old[0] = False
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)

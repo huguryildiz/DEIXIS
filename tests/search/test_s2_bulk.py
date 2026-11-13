@@ -86,19 +86,6 @@ class Scholar:
                                          "data": [paper(i) for i in range(offset, end)]})
 
 
-def test_a_deep_run_reads_semantic_scholar_through_bulk_with_the_query_s_sort(library, tmp_path, monkeypatch):
-    """The compiled bulk query, in the fast path's Deep `s2_bulk` slot, reaches the bulk endpoint with its sort and
-    no limit, and is read as one page."""
-    monkeypatch.setattr("deixis.providers.common.SEMANTIC_SCHOLAR_PACER.interval_seconds", 0.0)
-    (s2,) = query_compiler.compile_block_queries(_blocks(["arid soils"], ["nitrogen uptake"]), ["semantic_scholar"], 8)
-    scholar = Scholar()
-    research_flow, scope = keyword_reader(library, tmp_path, scholar)
-    plan = keyword_plan(library, scope, ()) | {"s2_bulk": s2, "s2_bulk_index": 0, "s2_reserved": 500}
-    rows = read_pages(research_flow, library, scope, plan)
-    assert [path for path, _ in scholar.requests] == ["/graph/v1/paper/search/bulk"]
-    params = scholar.requests[0][1]
-    assert params["sort"] == semantic_scholar.BULK_SORT and "limit" not in params
-    assert [(r["provider"], r["result_count"], r["stop_reason"]) for r in rows] == [("semantic_scholar", 30, "single_page")]
 
 
 # ---- from tests__providers__test_semantic_scholar_pacing.py ------------------------------------------------------------

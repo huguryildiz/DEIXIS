@@ -668,19 +668,16 @@ class ResearchFlow:
         # comparison signal) wait for the translation `_vocabulary` asks for (P2).
         sent, handed = asyncio.Event(), asyncio.Event()
         first_request = asyncio.create_task(fast_search.first_semantic(self, run, scope, seed_context, sent, handed))
-        # The short phrase searches beside the plan, where this run froze the rule; a run queued before it has none.
+        # The phrase route starts beside the question's own request.
         from deixis.workflow.search import phrase_search
-        route = (phrase_search.Route(self, run, scope, first_request, handed)
-                 if fast_path.phrase_search(run["budget"]) else None)
-        if route is not None:
-            self._phrase_routes[run_id] = route
+        route = phrase_search.Route(self, run, scope, first_request, handed)
+        self._phrase_routes[run_id] = route
         planning_failed = False
         criterion_calls: asyncio.Task | None = None
         try:
             await sent.wait()  # the request is on its way before any step asks a model
-            if route is not None:
-                # The phrase step reads the question alone, so it is asked now; its requests follow the question's.
-                route.start()
+            # The phrase step reads the question alone; its requests follow the question's.
+            route.start()
             # The criterion's proposals read the question alone, so they are sent here and not after the plan: they
             # run while the plan call is in flight, and the person waits for the longer of the two instead of both.
             # The vote they feed still reads the vocabulary the plan settled, so what is recorded does not change.
@@ -723,9 +720,8 @@ class ResearchFlow:
                 # Which plan words a query the plan sends really carries: a word can stand in the plan and still be
                 # cut from every sent query, and the plan step and the Search plan panel say so from this record.
                 fast_plan = fast_plan | {"words": fast_search.plan_words(vocabulary, fast_plan)}
-                if route is not None:
-                    # The phrases the step gave by now, or why none: an unfinished step is cancelled, not waited for.
-                    fast_plan = fast_plan | {"phrase_search": await route.freeze()}
+                # An unfinished phrase step is cancelled, not waited for.
+                fast_plan = fast_plan | {"phrase_search": await route.freeze()}
                 record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                     scope, run["budget"], None, queries,
                     self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
@@ -764,9 +760,8 @@ class ResearchFlow:
 
         self._close_clock_stage(run, "plan")
         self._enter_clock_stage(run, "search")
-        if route is not None:
-            # Phrase requests still out are closed at the search stage's own deadline, whenever the keyword path ends.
-            route.watch()
+        # Phrase requests still out close at the search stage deadline.
+        route.watch()
 
         # A failed search is recorded and shown, and the other searches go on. The run pauses on a failure only when
         # none of its searches succeeded; resuming it then retries the failed searches.
@@ -781,9 +776,8 @@ class ResearchFlow:
         self._fast_chains[run_id] = Round(self, run, scope, vocabulary)
         self._fast_consumers[run_id].start()
         failure = await fast_search.execute(self, run, scope, fast_search.stored_plan(self.store, run), retry_failed)
-        if route is not None:
-            # The search stage has ended: a phrase request still waiting or in flight is closed and recorded.
-            await route.close()
+        # Close and record a phrase request still waiting or in flight.
+        await route.close()
         if failure and not searched():
             self._pause(run_id, *failure)
         if not searched() and self._allowance_ended_searches(run_id):

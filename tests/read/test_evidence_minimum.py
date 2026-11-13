@@ -354,7 +354,7 @@ def test_a_transport_that_ignores_cancel_holds_neither_the_ceiling_nor_the_run(t
     assert codes_of(store, late.rid)["W2"] == "abstract_not_read"
 
 
-def test_the_search_stage_keeps_its_minimum_and_no_stage_carries_debt(tmp_path, monkeypatch):
+def test_the_search_stage_keeps_its_base_and_no_stage_carries_debt(tmp_path, monkeypatch):
     from test_fast_path_clock import FakeClock
     from deixis.domain.rules import TEST_EFFORT_BUDGETS
     from deixis.storage import db
@@ -368,30 +368,30 @@ def test_the_search_stage_keeps_its_minimum_and_no_stage_carries_debt(tmp_path, 
     clock.store = store
     rid = store.create_research("SYNTHETIC minimum", "academic", "quick", ["openalex"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, "quick", uniform_search=False)
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick")
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     run = store.run(run["id"])
     # Before the search stage opens, nothing of its minimum has passed, whatever the handover says.
     fast_path.enter_stage(store, run, "plan")
-    clock.advance(40)  # Quick's plan share is 7 s and its handover 35 s
+    clock.advance(40)  # Quick's plan share is 8 s; its handover is 51 s.
     assert fast_path.stage_deadline(store, run, "search") is None
     fast_path.close_stage(store, run["id"], "plan")
     fast_path.enter_stage(store, run, "search")
     started = clock.now()
-    # The search keeps 10 s from its own start; the plan's 33 s overrun is not carried as debt.
-    assert fast_path.stage_deadline(store, run, "search") == started + timedelta(seconds=10)
+    # Search keeps its 14-second base; the plan overrun is not carried as debt.
+    assert fast_path.stage_deadline(store, run, "search") == started + timedelta(seconds=14)
     row = conn.execute("SELECT balance_before_ms, alloc_ms FROM fast_path_stages WHERE stage = 'search'").fetchone()
-    assert (row[0], row[1]) == (0, 7000)
-    clock.advance(9.9)
+    assert (row[0], row[1]) == (0, 14000)
+    clock.advance(13.9)
     assert not fast_path.past_deadline(store, run, "search")
     clock.advance(0.2)
     assert fast_path.past_deadline(store, run, "search")
     fast_path.close_stage(store, run["id"], "search")
     fast_path.enter_stage(store, run, "ranking")
-    # Ranking keeps its base too; the search's 3 s overrun is not charged either.
+    # Ranking keeps its 15-second base too.
     row = conn.execute("SELECT balance_before_ms, alloc_ms FROM fast_path_stages WHERE stage = 'ranking'").fetchone()
-    assert (row[0], row[1]) == (0, 7000)
+    assert (row[0], row[1]) == (0, 15000)
     conn.close()
 
 
@@ -409,26 +409,25 @@ def test_past_the_handover_ranking_keeps_its_own_time_and_the_miss_is_split_by_c
     clock.store = store
     rid = store.create_research("SYNTHETIC causes", "academic", "quick", ["openalex"], "fake", "fake-model", "en")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, "quick", uniform_search=False)
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick")
     run = store.create_run(rid, "discovery", budget, None)
     store.update_run(run["id"], status="running")
     run = store.run(run["id"])
     fast_path.enter_stage(store, run, "plan")
-    clock.advance(40)  # the plan ends 5 s past Quick's 35 s handover
+    clock.advance(40)  # the plan has overrun its own 8 s allocation
     fast_path.close_stage(store, run["id"], "plan")
     fast_path.enter_stage(store, run, "search")
-    clock.advance(10.1)  # 7 s of its own share, then 3.1 s on the minimum
+    clock.advance(10.1)  # still within the shared search's 14 s allocation
     fast_path.close_stage(store, run["id"], "search")
     fast_path.enter_stage(store, run, "ranking")
-    # Ranking keeps its whole 7 s from its own start: the handover, long past, does not cut it.
-    assert fast_path.stage_deadline(store, run, "ranking") == clock.now() + timedelta(seconds=7)
+    # Ranking keeps its own 15 s even after the plan has overrun.
+    assert fast_path.stage_deadline(store, run, "ranking") == clock.now() + timedelta(seconds=18.9)
     assert not fast_path.past_deadline(store, run, "ranking")
-    clock.advance(8)  # 7 s of its own share, then 1 s on the reranker's allowance
+    clock.advance(8)  # 7.1 s now lies past Quick's 51 s handover
     causes = fast_path.view(store, store.run(run["id"]))["evidence_minimum"]["causes"]
-    assert causes == {"plan_overrun": 5000, "search_allocation": 7000, "search_minimum": 3100,
-                      "ranking_allocation": 7000, "reranker_allowance": 1000, "between_stages": 0}
+    assert causes == {"ranking_allocation": 7100, "between_stages": 0}
     # The causes add up to the time past the handover.
-    assert sum(causes.values()) == round((40 + 10.1 + 8 - 35) * 1000)
+    assert sum(causes.values()) == round((40 + 10.1 + 8 - 51) * 1000)
     conn.close()
 
 

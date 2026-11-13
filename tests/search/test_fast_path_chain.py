@@ -189,7 +189,7 @@ def effort_library(request, tmp_path):
     clock.store = store
     rid = store.create_research('SYNTHETIC chain budget', 'academic', effort, ['openalex'], 'fake', 'fake-model', 'en')
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, 'off')
-    budget['fast_path'] = fast_path.freeze_budget(budget, effort, uniform_search=False)
+    budget['fast_path'] = fast_path.freeze_budget(budget, effort)
     run = store.create_run(rid, 'discovery', budget, None)
     store.update_run(run['id'], status='running')
     yield SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run['id']))
@@ -259,11 +259,10 @@ def test_a_restart_counts_spent_attempts_and_sends_nothing_twice(effort_library,
     """Crash with two requests done and the next ones in flight; the worker's recovery marks the in-flight ones
     `outcome_unknown`; a new process resumes the plan. Only never-sent requests go out, and the budget it checks
     holds every attempt the first process spent or reserved."""
-    from deixis.domain.rules import PROVIDER_WAIT
     from deixis.workflow.search import chaining
     lib = effort_library
     flow, scope, round_ = setup(lib, tmp_path)
-    wait = PROVIDER_WAIT[scope['effort']]
+    wait = fast_path.search_read(lib.run['budget']['fast_path'], scope['effort'], 'provider_wait')
     fast = lib.run['budget']['fast_path']
     limit = chaining.attempt_limit(fast, scope['effort'])
     requests = fast['backward_requests'] + fast['forward_requests']

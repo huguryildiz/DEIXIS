@@ -131,7 +131,7 @@ def test_a_measurement_s_own_cutoff_is_a_scope_of_its_own_origin():
 
 def _budget(effort="standard", years=None):
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, "off")
-    budget["fast_path"] = fast_path.freeze_budget(budget, effort, date_scope=years, uniform_search=False)
+    budget["fast_path"] = fast_path.freeze_budget(budget, effort, date_scope=years)
     return budget
 
 
@@ -241,8 +241,6 @@ def test_every_planned_request_says_how_it_stood_to_the_bound(tmp_path):
     by_arm = {request["arm"]: request for request in sent}
     assert by_arm["semantic"]["date_bound"] == "applied"
     assert by_arm["keyword"]["date_bound"] == "applied"
-    # Semantic Scholar's bulk route takes a year range of its own, so the bulk request carries the same scope.
-    assert by_arm["s2_bulk"]["date_bound"] == "applied" and by_arm["s2_bulk"]["year_range"] == "2020-2200"
     # The keyword row carries the filter it was really sent with, not the compiled query's own.
     assert by_arm["keyword"]["works_filter"] == "from_publication_date:2020-01-01"
 
@@ -254,7 +252,7 @@ def test_the_run_view_says_which_years_were_searched_and_what_could_not_carry_th
     plan = fast_search.build_plan(lib.store, lib.run, lib.store.scope(lib.rid), queries)
     view = views.date_scope_view(lib.store, lib.run, {"fast_path_search": plan, "compiled_queries": queries})
     assert (view["from_year"], view["to_year"], view["origin"]) == (2020, None, "question")
-    assert view["planned"]["applied"] >= 3
+    assert view["planned"]["applied"] >= 2
     # Nothing was searched yet, so the record counts are all zero rather than absent: a reader can tell "none
     # found" from "not recorded".
     assert view["records"] == dict.fromkeys(date_scope.CLASSES, 0) and view["set_aside"] == 0

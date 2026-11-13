@@ -177,7 +177,8 @@ def vocabulary_for(*phrases, claim_words=(), exclusion_words=()):
 
 def sw_body(vocabulary):
     from deixis.workflow.search import protocol
-    return protocol.build_protocol(SW_SCOPE, {}, None, [], "pkg_hash", Settings(data_dir=None),
+    from deixis.workflow.run import fast_path
+    return protocol.build_protocol(SW_SCOPE, {"fast_path": fast_path.freeze_budget({}, "quick")}, None, [], "pkg_hash", Settings(data_dir=None),
                                    vocabulary=vocabulary)
 
 

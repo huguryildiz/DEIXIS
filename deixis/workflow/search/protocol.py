@@ -144,7 +144,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     # database this run searched, so the record reports it as one rather than as a source kept to verify a DOI.
     broad = (fast_path_search or {}).get("broad")
     subtopic = (fast_path_search or {}).get("subtopic")
-    if (budget.get("fast_path") or {}).get("uniform_search") and fast_path_search is not None and broad is None and subtopic is None:
+    if fast_path_search is not None and broad is None and subtopic is None:
         # A compiled Scopus query is not a search when neither of its arms planned a request.
         searched = [provider for provider in searched if provider != "scopus"]
     if broad is not None and broad["query"]["provider_id"] not in searched:

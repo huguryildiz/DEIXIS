@@ -97,7 +97,13 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
 
 
 def _card_chaining(store: Store, run: dict[str, Any]) -> dict[str, Any] | None:
-    """The card's chain policy, with the attempt limit for the effort the run's scope revision was queued with."""
+    """Read a finished run's chain policy from its frozen protocol."""
+    frozen = fast_search.frozen_body(store, run)
+    if frozen is not None and frozen.get("citation_chaining") is not None:
+        return {key: value for key, value in frozen["citation_chaining"].items()
+                if key not in ("admission_forms", "admission_forms_sha256")}
+    if not (run["budget"].get("fast_path") or {}).get("uniform_search"):
+        return None
     return chain_policy(run["budget"], store.scope(run["research_id"], run["scope_revision"])["effort"])
 
 

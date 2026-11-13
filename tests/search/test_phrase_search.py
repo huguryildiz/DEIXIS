@@ -80,6 +80,32 @@ def run_once(tmp_path, monkeypatch, openalex, adapter):
     return rid, run_id, view, run, store_at(tmp_path)
 
 
+def phrases_settle(monkeypatch):
+    """Take the runner's speed out of the route for a test that checks what the phrase requests send and bring.
+
+    The route waits for nothing on purpose: the freeze cancels a phrase step that has not answered, and the end of the
+    search stage cancels a phrase request not yet out. With the fakes, a slow runner reaches either before the phrases
+    go out. Here the freeze waits for the phrase step's answer and the stage ends only once the sender has written every
+    request; the route's freeze and deadline rules have tests of their own below.
+    """
+    freeze, execute = phrase_search.Route.freeze, fast_search.execute
+
+    async def answered_first(self):
+        if self.model_task is not None:
+            await asyncio.gather(self.model_task, return_exceptions=True)
+        return await freeze(self)
+
+    async def sent_first(flow, run, *args, **kwargs):
+        failure = await execute(flow, run, *args, **kwargs)
+        route = flow._phrase_routes.get(run["id"])
+        if route is not None and route.sender is not None:
+            await asyncio.gather(route.sender, return_exceptions=True)
+        return failure
+
+    monkeypatch.setattr(phrase_search.Route, "freeze", answered_first)
+    monkeypatch.setattr(fast_search, "execute", sent_first)
+
+
 def phrase_steps(store, run_id):
     """Each phrase request's step, by key, in the order it opened."""
     return [dict(row) for row in store.conn.execute(
@@ -93,6 +119,7 @@ def frozen_route(store, run_id):
 
 
 def test_the_phrase_step_writes_six_phrases_whose_requests_join_the_pool_as_lists_of_their_own(tmp_path, monkeypatch):
+    phrases_settle(monkeypatch)
     openalex, adapter = OpenAlex(), FakeAdapter()
     rid, run_id, view, run, store = run_once(tmp_path, monkeypatch, openalex, adapter)
     assert run["status"] == "completed", run
@@ -140,11 +167,12 @@ class PlainOpenAlex(OpenAlex):
 
 
 def test_the_second_rule_sends_each_phrase_by_plain_search_too_and_its_lists_vote(tmp_path, monkeypatch):
+    phrases_settle(monkeypatch)
     openalex = PlainOpenAlex()
     rid, run_id, view, run, store = run_once(tmp_path / "v2", monkeypatch, openalex, FakeAdapter())
     assert run["status"] == "completed", run
     frozen = frozen_route(store, run_id)
-    assert (frozen["rule"], frozen["plain_records"]) == (fast_path.PHRASE_SEARCH_RULE, 30)
+    assert (frozen["rule"], frozen["status"], frozen["plain_records"]) == (fast_path.PHRASE_SEARCH_RULE, "ready", 30)
     # Six plain requests, one per phrase: the phrase text as `search`, 30 per page, no sort and no cursor.
     texts = [f"{PHRASE} {n}" for n in range(1, 7)]
     assert sorted(params["search"] for params in openalex.plain) == texts
@@ -213,6 +241,7 @@ def test_a_plain_request_whose_stop_came_during_its_wait_is_not_sent_and_takes_t
 
 def test_a_stored_first_rule_run_resumed_sends_no_plain_request(tmp_path, monkeypatch):
     from fakes import without_evidence_minimum
+    phrases_settle(monkeypatch)
     without_evidence_minimum(monkeypatch)  # a failed abstract read pauses the run, which is the pause used here
     freeze, down = fast_path.freeze_budget, [True]
 

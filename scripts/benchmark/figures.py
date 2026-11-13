@@ -63,7 +63,7 @@ def recall_figure(out, replay_scores):
         ax.set_title(title)
         ax.set_xticks(range(len(KS)), [str(k) for k in KS])
         ax.set_xlabel("first k results")
-        ax.set_ylim(0, 0.85)
+        ax.margins(y=0.08)  # y axis fits the data, with a little room above and below
         ax.set_axisbelow(True)
     axes[0].set_ylabel("recall@k")
     handles, labels = [], []

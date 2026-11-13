@@ -13,6 +13,8 @@ not measured.
 
 - DEIXIS finds more gold papers than one plain OpenAlex query on both sets.
 - The reranker helps on both sets.
+- Replaying today's ranking on the same pools adds little on BioASQ; on LitSearch it adds about 0.025 at 50 results,
+  with a paired interval above zero.
 - On BioASQ, DEIXIS with the reranker is close to Elicit's published figures
   ([Evaluating Elicit's paper search](https://elicit.com/blog/evaluating-elicit-paper-search)).
 
@@ -23,6 +25,9 @@ not measured.
 - **A**: one OpenAlex keyword query written by the same model, first 200 results (Elicit's baseline).
 - **B**: DEIXIS with the reranker off (the fused order).
 - **C**: DEIXIS with the reranker on. B and C come from the same run, so the rerank is the only difference between them.
+- **D**: today's ranking (rerank rule version 6) replayed later on the same 18 Oct questions, queries and retrieved
+  records. It does not measure the newer phrase or shared search routes because their records are absent from these
+  pools; the abstract lookup before reranking was not replayed either.
 
 Settings: Voyage `voyage-4-lite` for semantic similarity, Voyage `rerank-3-lite` for reranking (pool factor 4),
 Standard depth, Claude Sonnet 5.5 at medium effort writing the queries. The harness writes these into a temporary data
@@ -43,6 +48,8 @@ difference.
 | A: plain OpenAlex | 0.281 | 0.364 | 0.489 | 0.607 | 0.674 |
 | B: DEIXIS, reranker off | 0.353 | 0.445 | 0.546 | 0.657 | 0.744 |
 | C: DEIXIS, reranker on | **0.392** | **0.502** | **0.618** | **0.693** | **0.744** |
+| D: today's ranking, same pool | 0.415 | 0.505 | 0.620 | 0.694 | 0.745 |
+| D − C | +0.023 (−0.017 to +0.066) | +0.002 (−0.023 to +0.027) | +0.002 (−0.020 to +0.027) | +0.002 (−0.011 to +0.015) | +0.000 (−0.009 to +0.010) |
 | C − B | +0.039 (−0.005 to +0.084) | +0.058 (+0.012 to +0.105) | +0.072 (+0.037 to +0.108) | +0.036 (+0.021 to +0.054) | 0 |
 | C − A | +0.114 (+0.048 to +0.180) | +0.142 (+0.076 to +0.209) | +0.133 (+0.072 to +0.199) | +0.092 (+0.037 to +0.149) | +0.077 (+0.028 to +0.129) |
 | [Elicit, as published](https://elicit.com/blog/evaluating-elicit-paper-search) (5,486 questions) | 0.390 | 0.483 | 0.603 | 0.670 | |
@@ -50,10 +57,13 @@ difference.
 | A: plain OpenAlex | 0.394 | 0.449 | 0.561 | 0.621 | 0.669 |
 | B: DEIXIS, reranker off | 0.474 | 0.578 | 0.636 | 0.708 | 0.738 |
 | C: DEIXIS, reranker on | **0.557** | **0.612** | **0.700** | **0.725** | **0.738** |
+| D: today's ranking, same pool | 0.547 | 0.641 | 0.725 | 0.738 | 0.748 |
+| D − C | −0.011 (−0.057 to +0.034) | +0.029 (−0.008 to +0.069) | +0.025 (+0.005 to +0.050) | +0.013 (+0.000 to +0.028) | +0.010 (+0.000 to +0.025) |
 | C − B | +0.083 (+0.026 to +0.142) | +0.033 (−0.020 to +0.085) | +0.064 (+0.019 to +0.112) | +0.018 (−0.005 to +0.043) | 0 |
 | C − A | +0.166 (+0.095 to +0.237) | +0.165 (+0.095 to +0.235) | +0.142 (+0.075 to +0.209) | +0.107 (+0.040 to +0.174) | +0.072 (+0.003 to +0.142) |
 
 - The reranker reorders only the top of the list, so B and C are equal at 200.
+- D − C uses the replayed C scores; replayed A, B and C differ from the stored report by at most 0.00125.
 - BioASQ: Elicit's figures come from all 5,486 questions and ours from a sample, so the two are not compared
   statistically.
 - LitSearch: almost every request has one gold paper, so each question scores 0 or 1 and the intervals stay wide.

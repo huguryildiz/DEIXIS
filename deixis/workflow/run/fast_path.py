@@ -89,8 +89,13 @@ RERANK_ALLOWANCE_RULE = "rerank_allowance_v1"
 # Short semantic searches beside the plan: one model step writes the depth's number of short phrases from the question
 # alone, and each phrase is one OpenAlex semantic request of its own. Frozen in the policy with the number and the
 # records each request reads; a run queued before the rule names no key and sends none (`phrase_search`).
-PHRASE_SEARCH_RULE = "phrase_search_v1"
+PHRASE_SEARCH_V1 = "phrase_search_v1"
+# The second version also sends each phrase to OpenAlex's plain `search=` route, one page without `sort`, beside its
+# semantic request. A run that froze the first version sends the semantic requests alone, on resume too.
+PHRASE_SEARCH_RULE = "phrase_search_v2"
+PHRASE_SEARCH_RULES = (PHRASE_SEARCH_V1, PHRASE_SEARCH_RULE)  # the versions a frozen policy may name
 PHRASE_SEARCH_RECORDS = 50  # records one phrase request reads: one semantic page
+PHRASE_PLAIN_RECORDS = 30  # records one plain phrase request reads: one page of the plain route
 # Where the reranker was applied to the frozen list, the abstract stage does not close a work of the top-N window for
 # naming neither gate block: the model reads it. A run frozen before the rule names no key and closes as it did.
 WINDOW_WORD_RULE = "reranked_window_open_v1"
@@ -331,10 +336,10 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # A depth without an allowance, and a local-model run, name no key: their policy is the one frozen before.
         policy["rerank_allowance"] = {"rule": RERANK_ALLOWANCE_RULE, "ms": mode.rerank_allowance * 1000}
     if mode.phrase_searches:
-        # The short phrase searches: how many phrases the step writes and what each request reads. A depth set to
-        # none names no key, which is the policy frozen before the rule.
+        # The short phrase searches: how many phrases the step writes and what each semantic and each plain request
+        # reads. A depth set to none names no key, which is the policy frozen before the rule.
         policy["phrase_search"] = {"rule": PHRASE_SEARCH_RULE, "count": mode.phrase_searches,
-                                   "records": PHRASE_SEARCH_RECORDS}
+                                   "records": PHRASE_SEARCH_RECORDS, "plain_records": PHRASE_PLAIN_RECORDS}
     # The word rule of a reranked window, frozen before the hash below: every depth, every model.
     policy["window_word_rule"] = WINDOW_WORD_RULE
     # The evidence minimum, frozen before the hash below: every depth, every model.
@@ -476,7 +481,12 @@ def window_word_rule(policy: dict[str, Any]) -> bool:
 def phrase_search(budget: dict[str, Any]) -> dict[str, Any] | None:
     """The short phrase searches this run froze, or None for a run queued before the rule or at a depth set to none."""
     rule = (budget.get("fast_path") or {}).get("phrase_search") or {}
-    return rule if rule.get("rule") == PHRASE_SEARCH_RULE and rule.get("count") else None
+    return rule if rule.get("rule") in PHRASE_SEARCH_RULES and rule.get("count") else None
+
+
+def phrase_plain_records(rule: dict[str, Any] | None) -> int | None:
+    """Records each plain phrase request reads under the frozen phrase rule, or None where it sends none (version 1)."""
+    return rule.get("plain_records") if rule and rule.get("rule") == PHRASE_SEARCH_RULE else None
 
 
 def rerank_allowance_ms(budget: dict[str, Any]) -> int | None:

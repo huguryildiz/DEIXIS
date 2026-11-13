@@ -62,6 +62,13 @@ def semantic_text(text: str, limit: int = SEMANTIC_MAX_CHARS) -> str:
             return text[:i]
     return text
 SEARCH_PARAM = "search.title_abstract_keywords"
+# The plain route: OpenAlex's own `search=` parameter, which reads title, abstract and full text where OpenAlex has it,
+# in its default relevance order. Only the short phrase searches send it, one page each and with no `sort`.
+PLAIN_ENDPOINT = "plain"
+PLAIN_SEARCH_PARAM = "search"
+# The plain route's start gate: no spacing of its own (the run's shared OpenAlex gate spaces it), only the path through
+# `send` that checks the stop again after every wait, so a request whose deadline passed while it waited is not sent.
+PLAIN_START = StartPacer(0.0)
 SELECT = ",".join(
     [
         "id", "doi", "ids", "display_name", "publication_year", "type", "authorships",
@@ -206,12 +213,16 @@ async def search_works(
     if endpoint == "semantic":
         return await search_semantic(client, query, per_page, api_key, contact_email, reference_count,
                                      references, max_rate_limit_retries, works_filter=works_filter)
-    if endpoint is not None:
+    if endpoint not in (None, PLAIN_ENDPOINT):
         raise ValueError(f"unknown OpenAlex endpoint: {endpoint!r}")
+    # The plain route reads one page and takes no cursor: its request differs from the keyword one by its parameter.
+    plain = endpoint == PLAIN_ENDPOINT
+    param = PLAIN_SEARCH_PARAM if plain else SEARCH_PARAM
+    cursor = None if plain else cursor
     per_page = min(per_page, MAX_RESULTS)
     select = SELECT + "".join(f",{field}" for field, asked in
                               ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
-    params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": per_page, "select": select}
+    params: dict[str, Any] = {param: query, "per_page": per_page, "select": select}
     if publication_date:
         params["select"] += ",publication_date"
     if sort:
@@ -222,12 +233,14 @@ async def search_works(
     if cursor is not None:
         # Cursor paging: `*` asks for the first page and every answer carries the cursor of the next one.
         params["cursor"] = cursor
-    description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r}" + (f" filter={works_filter}" if works_filter else "")
+    description = (f"GET {WORKS_URL} {param}={query!r}" + (f" filter={works_filter}" if works_filter else "")
                    + f" per_page={per_page}" + (f" cursor={cursor}" if cursor is not None else "")
                    + f" access={access_mode}")
     description += (f" sort={sort}" if sort else "") + (" select+publication_date" if publication_date else "")
+    # Only the plain route passes the stop check after its waits; the keyword route sends as it always has.
     response, outcome = await _get(client, params, headers, description, access_mode, api_key,
-                                   max_rate_limit_retries=max_rate_limit_retries)
+                                   max_rate_limit_retries=max_rate_limit_retries,
+                                   **({"start_pacer": PLAIN_START} if plain else {}))
     return _works_page(response, outcome, cursor)
 
 

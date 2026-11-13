@@ -210,6 +210,7 @@ class OpenAlex:
 
     def __init__(self, counts=None):
         self.table, self.counts, self.searches, self.semantic = counts or {}, [], [], []
+        self.plain = []  # the short phrases sent to the plain `search=` route, kept apart from the keyword searches
 
     def __call__(self, request):
         if request.url.host != "api.openalex.org":
@@ -221,6 +222,8 @@ class OpenAlex:
             return httpx.Response(200, json={"meta": {"count": self.table.get(query, 50)}, "results": []})
         if params.get("search.semantic"):
             self.semantic.append(params["search.semantic"])
+        elif params.get("search") is not None:
+            self.plain.append(params["search"])
         else:
             self.searches.append(query)
         return httpx.Response(200, json={"meta": {"count": 1}, "results": [WORK]})
@@ -358,7 +361,8 @@ def test_a_failed_model_stops_the_run_and_no_query_is_searched_in_its_place(tmp_
     # phrase searches beside the plan follow it and wait for no plan.
     assert not openalex.searches and openalex.semantic[0] == QUESTION and openalex.semantic.count(QUESTION) == 1
     assert [s["operation_key"] for s in run["steps"] if s["kind"].startswith("provider_search")
-            and not s["operation_key"].startswith(fast_search.PHRASE_KEY)] == ["search:fast:semantic"]
+            and not s["operation_key"].startswith((fast_search.PHRASE_KEY, fast_search.PLAIN_PHRASE_KEY))] == [
+        "search:fast:semantic"]
     # Resuming asks the model once more; a second failure leaves no try.
     assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
     _, run = wait(client, rid, run_id, ("paused", "completed", "failed"))

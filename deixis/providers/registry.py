@@ -174,7 +174,13 @@ CONNECTORS = {c.provider_id: c for c in (
                          options=("reference_count", "references", "works_filter"), date_filter="works_filter",
                          query_syntax=QuerySyntax("plain"),
                          retry={"min_interval": openalex.SEMANTIC_PACER.interval_seconds,
-                                "shared_gate": "openalex.SEMANTIC_PACER"})},
+                                "shared_gate": "openalex.SEMANTIC_PACER"}),
+                         # The plain `search=` route: one page, no cursor and no `sort` option, so its list is
+                         # stored without a sort and is read as relevance-ordered. It takes the keyword route's
+                         # date filter, as both are `/works` list searches.
+                         openalex.PLAIN_ENDPOINT: Endpoint("single_page", openalex.MAX_RESULTS, openalex.MAX_RESULTS,
+                         options=("reference_count", "references", "works_filter"), date_filter="works_filter",
+                         query_syntax=QuerySyntax("plain"))},
               capabilities={"id_lookup": CapabilityBinding(_openalex_lookup, openalex.MAX_IDS_PER_REQUEST),
                             "citing_works": CapabilityBinding(_openalex_citing, openalex.MAX_RESULTS,
                                 options=(OptionDescriptor("sort", "str", None),

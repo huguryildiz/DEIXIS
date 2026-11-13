@@ -40,7 +40,7 @@ from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt, unusable
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited, model_call
 from deixis.providers import openalex, pubmed, query_compiler, facade, contract
-from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, on_handed, send_blocked
 from deixis.providers.registry import (CONNECTORS, Connector, broad_index_providers, effective_sort,
                                         endpoint_options, search_providers)
 from deixis.storage.db import dumps, new_id, now, transaction
@@ -2643,13 +2643,28 @@ class ResearchFlow:
                     return "quota_exhausted"
                 return "stopped" if stop is not None and stop() else None
             blocked = send_blocked.set(why_not)
+            # Each attempt handed to the HTTP client is counted here, beside any caller's own hook, so a cancelled
+            # dispatch can close its reservation to what may have gone out.
+            outer, handed = on_handed.get(), [0]
+
+            def count_handed() -> None:
+                handed[0] += 1
+                if outer is not None:
+                    outer()
+            counting = on_handed.set(count_handed)
             try:
                 # A paged read supplies the connector's search options.
                 dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], limit,
                                                  key, self.deps.settings.contact_email,
                                                  **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
                                                      **connector.sw_options, **endpoint_options(query)} if page else {}))
+            except asyncio.CancelledError:
+                # Cancelled while out (a deadline or a stop): the reservation keeps one request per handed attempt,
+                # whose send is not known, and gives the rest back to the run and to the query.
+                self.store.settle_usage(run_id, query_key, handed[0] - reserve, 0)
+                raise
             finally:
+                on_handed.reset(counting)
                 send_blocked.reset(blocked)
             outcome = dispatched.outcome
             actual = sum(entry["attempts"] for entry in dispatched.transport)

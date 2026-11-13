@@ -1,7 +1,9 @@
-"""The short phrase searches beside the plan (`phrase_search_v1`), driven through the API with OpenAlex mocked.
+"""The short phrase searches beside the plan (`phrase_search_v1`, `phrase_search_v2`), driven through the API with
+OpenAlex mocked.
 
 One model step writes six short phrases from the question; each goes to OpenAlex semantic search after the question's
-own request, and its records join the pool as a query list of its own. Records, questions and phrases are SYNTHETIC:
+own request, and under the second rule to OpenAlex's plain `search=` route too; its records join the pool as a query
+list of its own. Records, questions and phrases are SYNTHETIC:
 passing shows workflow behavior, not that the phrases find better papers.
 """
 
@@ -114,8 +116,131 @@ def test_the_phrase_step_writes_six_phrases_whose_requests_join_the_pool_as_list
     semantic = sorted(e["query_text"] for e in manifest["query_lists"] if e.get("endpoint") == "semantic")
     assert semantic == sorted([QUESTION] + [f"{PHRASE} {n}" for n in range(1, 7)])
     pool = {row["id"] for row in manifest["pool"]}
-    phrase_lists = [e for e in manifest["query_lists"] if e["query_text"].startswith(PHRASE)]
+    phrase_lists = [e for e in manifest["query_lists"]
+                    if e["query_text"].startswith(PHRASE) and e["endpoint"] == "semantic"]
     assert len(phrase_lists) == 6 and all(set(e["members"]) <= pool and e["votes"] for e in phrase_lists)
+
+
+class PlainOpenAlex(OpenAlex):
+    """Mocked OpenAlex that also answers the plain `search=` route: each plain phrase request answers a work of its own
+    and then the work its phrase's semantic request answers, and its query parameters are kept."""
+
+    def __init__(self):
+        super().__init__()
+        self.plain = []  # the query parameters of each plain request
+
+    async def __call__(self, request):
+        params = request.url.params
+        if request.url.host == "api.openalex.org" and "search" in params:
+            self.plain.append(dict(params))
+            n = int(params["search"].rsplit(" ", 1)[-1])
+            results = [work(200 + n, f"SYNTHETIC plain {n}"), work(100 + n, f"SYNTHETIC {params['search']} record")]
+            return httpx.Response(200, json={"meta": {"count": 2}, "results": results})
+        return await super().__call__(request)
+
+
+def test_the_second_rule_sends_each_phrase_by_plain_search_too_and_its_lists_vote(tmp_path, monkeypatch):
+    openalex = PlainOpenAlex()
+    rid, run_id, view, run, store = run_once(tmp_path / "v2", monkeypatch, openalex, FakeAdapter())
+    assert run["status"] == "completed", run
+    frozen = frozen_route(store, run_id)
+    assert (frozen["rule"], frozen["plain_records"]) == (fast_path.PHRASE_SEARCH_RULE, 30)
+    # Six plain requests, one per phrase: the phrase text as `search`, 30 per page, no sort and no cursor.
+    texts = [f"{PHRASE} {n}" for n in range(1, 7)]
+    assert sorted(params["search"] for params in openalex.plain) == texts
+    assert all(params["per_page"] == "30" and "sort" not in params and "cursor" not in params
+               for params in openalex.plain)
+    steps = {row["operation_key"]: row["status"] for row in store.conn.execute(
+        "SELECT operation_key, status FROM run_steps WHERE run_id = ? AND operation_key LIKE ?",
+        (run_id, fast_search.PLAIN_PHRASE_KEY + "%"))}
+    assert steps == {fast_search.plain_phrase_key(n): "succeeded" for n in range(6)}
+    # Stored with no sort, so each is a relevance-ordered list of its own that votes in the pre-selection.
+    sorts = store.conn.execute("SELECT DISTINCT sr.sort FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
+                               " WHERE s.run_id = ? AND s.operation_key LIKE ?",
+                               (run_id, fast_search.PLAIN_PHRASE_KEY + "%")).fetchall()
+    assert [row[0] for row in sorts] == [None]
+    listing = store.step(run_id, small_batch.LIST_KEY, "code:small_batch_list")["output"]
+    manifest = listing.get("manifest") or listing
+    plain = [e for e in manifest["query_lists"] if e["endpoint"] == "plain"]
+    assert sorted(e["query_text"] for e in plain) == texts and all(e["votes"] and e["sort"] is None for e in plain)
+    # Each plain list's own record gets its vote; a work both lists of one phrase hold gets one vote from each.
+    votes = preselect.scores(manifest["query_lists"])
+    assert all({part["query_text"] for part in votes[head]} >= {e["query_text"]}
+               for e in plain for head in e["members"])
+    both = [head for e in plain for head in e["members"] if len(votes[head]) == 2]
+    assert len(both) == 6 and all(votes[head][0]["query_text"] == votes[head][1]["query_text"] for head in both)
+    # PRISMA-S keeps a phrase's semantic and plain requests in two groups.
+    from deixis.workflow.search import prisma_s
+    assert all(sum(g["query_text"] == text for g in prisma_s._groups(store, rid, 1)) == 2 for text in texts)
+
+    # A run that froze the first rule sends the semantic phrase requests alone.
+    freeze = fast_path.freeze_budget
+
+    def first_rule(*args, **kwargs):
+        policy = freeze(*args, **kwargs)
+        policy["phrase_search"] = {"rule": fast_path.PHRASE_SEARCH_V1, "count": 6, "records": 50}
+        return policy
+
+    monkeypatch.setattr(fast_path, "freeze_budget", first_rule)
+    openalex = PlainOpenAlex()
+    rid, run_id, view, run, store = run_once(tmp_path / "v1", monkeypatch, openalex, FakeAdapter())
+    assert run["status"] == "completed", run
+    assert len(openalex.sent("phrase")) == 6 and openalex.plain == []
+    assert "plain_requests" not in frozen_route(store, run_id)
+    assert not store.conn.execute("SELECT 1 FROM run_steps WHERE run_id = ? AND operation_key LIKE ?",
+                                  (run_id, fast_search.PLAIN_PHRASE_KEY + "%")).fetchall()
+
+
+def test_a_plain_request_whose_stop_came_during_its_wait_is_not_sent_and_takes_the_keyword_routes_date_filter():
+    # The stop check after the waits (`send_blocked`) holds for the plain route: nothing reaches the transport.
+    sent = []
+
+    async def plain():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: sent.append(r) or httpx.Response(500))) as client:
+            token = common.send_blocked.set(lambda: "stopped")
+            try:
+                return await openalex_provider.search_works(client, "synthetic phrase", 30, endpoint="plain")
+            finally:
+                common.send_blocked.reset(token)
+
+    outcome = asyncio.run(plain())
+    assert sent == [] and (outcome.status, outcome.delivery_class) == ("failed", "before_send")
+    # Bounded to the years of the semantic request, in the filter the plain `/works` search takes.
+    years = {"from_year": 2020, "to_year": 2022}
+    assert phrase_search.plain_requests(PHRASES, 30, years)[0]["works_filter"] == (
+        "from_publication_date:2020-01-01,to_publication_date:2022-12-31")
+
+
+def test_a_stored_first_rule_run_resumed_sends_no_plain_request(tmp_path, monkeypatch):
+    from fakes import without_evidence_minimum
+    without_evidence_minimum(monkeypatch)  # a failed abstract read pauses the run, which is the pause used here
+    freeze, down = fast_path.freeze_budget, [True]
+
+    def first_rule(*args, **kwargs):
+        policy = freeze(*args, **kwargs)
+        policy["phrase_search"] = {"rule": fast_path.PHRASE_SEARCH_V1, "count": 6, "records": 50}
+        return policy
+
+    def failure(si):
+        if down[0] and si["task_type"] == "abstract_screening":
+            return ModelStepResult("failed", error="SYNTHETIC paused connection")
+
+    monkeypatch.setattr(fast_path, "freeze_budget", first_rule)
+    openalex = PlainOpenAlex()
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, FakeAdapter(fail=failure))) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, QUESTION)
+        view, run = wait(client, rid, run_id)
+        assert run["status"] == "paused", run
+        # Resumed under today's code, which would freeze the second rule for a new run.
+        monkeypatch.setattr(fast_path, "freeze_budget", freeze)
+        down[0] = False
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+        view, run = wait(client, rid, run_id)
+    assert run["status"] == "completed", run
+    store = store_at(tmp_path)
+    assert fast_path.phrase_search(store.run(run_id)["budget"])["rule"] == fast_path.PHRASE_SEARCH_V1
+    assert openalex.plain == [] and len(openalex.sent("phrase")) == 6
 
 
 class PacerClock:
@@ -322,6 +447,7 @@ def test_a_connection_that_answers_one_call_at_a_time_is_not_asked_for_phrases(t
     step = store.existing_step(run_id, phrase_search.STEP_KEY)
     assert (step["status"], step["error_code"]) == ("cancelled", phrase_search.SERIAL)
     assert frozen_route(store, run_id) | {"rule": None} == {"rule": None, "count": 6, "records": 50,
+                                                             "plain_records": fast_path.PHRASE_PLAIN_RECORDS,
                                                              "status": "not_written", "reason": phrase_search.SERIAL}
     assert not openalex.sent("phrase") and not phrase_steps(store, run_id)
 
@@ -354,6 +480,7 @@ def test_the_phrase_step_is_given_no_steering(tmp_path, monkeypatch):
 # ---- one route over a run of the clock library: the deadline, a crash and a pause -----------------------------------
 
 PHRASES = [{"text": "synthetic short phrase number 1", "kind": "subject"}]
+SENDS = 2  # the one phrase's plain request and its semantic request (`phrase_search_v2`)
 
 
 class HeldSearch:
@@ -409,6 +536,12 @@ def phrase_page(lib):
     return step, hits
 
 
+def plain_status(lib):
+    """The phrase's plain request's step status and error code."""
+    step = lib.store.existing_step(lib.run["id"], fast_search.plain_phrase_key(0))
+    return step["status"], step["error_code"]
+
+
 def past_the_cutoff(lib, seconds=1):
     """Move the run's clock `seconds` past the search stage's deadline."""
     deadline = fast_path.stage_deadline(lib.store, lib.run, "search")
@@ -454,7 +587,7 @@ def test_the_deadline_watch_closes_a_phrase_request_still_out_before_the_keyword
     assert asyncio.run(watched()) == "cancelled"
     step, hits = phrase_page(lib)
     assert (step["status"], step["error_code"], hits) == ("cancelled", phrase_search.CUTOFF, 0)
-    assert len(send.calls) == 1
+    assert len(send.calls) == SENDS and plain_status(lib) == ("cancelled", phrase_search.CUTOFF)
 
 
 def test_a_phrase_request_a_crash_cut_after_it_started_is_never_sent_again(library, tmp_path):
@@ -473,8 +606,8 @@ def test_a_phrase_request_a_crash_cut_after_it_started_is_never_sent_again(libra
         await resumed.sender
         return resumed.tasks
 
-    assert asyncio.run(crash()) == {} and len(send.calls) == 1
-    assert phrase_page(lib)[0]["status"] == "outcome_unknown"
+    assert asyncio.run(crash()) == {} and len(send.calls) == SENDS
+    assert phrase_page(lib)[0]["status"] == "outcome_unknown" and plain_status(lib)[0] == "outcome_unknown"
 
 
 def test_a_phrase_request_a_pause_cut_after_it_started_is_closed_and_not_sent_again(library, tmp_path):
@@ -489,9 +622,46 @@ def test_a_phrase_request_a_pause_cut_after_it_started_is_closed_and_not_sent_ag
         await resumed.sender
         return resumed.tasks
 
-    assert asyncio.run(pause()) == {} and len(send.calls) == 1
+    assert asyncio.run(pause()) == {} and len(send.calls) == SENDS
     step, hits = phrase_page(lib)
     assert (step["status"], step["error_code"], hits) == ("cancelled", phrase_search.INTERRUPTED, 0)
+    assert plain_status(lib) == ("cancelled", phrase_search.INTERRUPTED)
+
+
+def test_a_plain_request_cut_by_the_deadline_while_out_leaves_no_open_reservation(library, tmp_path, monkeypatch):
+    # The real send path over a transport that never answers: the cut closes each reservation to the one attempt that
+    # was handed to the client, for the run and for the request's own count. Two 429 waits are allowed, so each
+    # request reserves three attempts, as a Detailed run's do.
+    monkeypatch.setitem(fast_search.PROVIDER_WAIT, "quick", 2)
+    release = asyncio.Event()
+
+    async def hang(request):
+        await release.wait()
+        return httpx.Response(500)
+
+    lib = library
+    flow = unit_flow(lib, tmp_path, None)
+    del flow._send_search  # the flow's own send, reservation and all
+
+    async def cut():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(hang)) as http:
+            flow.deps.http = http
+            flow.deps.settings = Settings(data_dir=tmp_path / "data")
+            route = unit_route(lib, flow)
+            while len(route.tasks) < SENDS or not all(
+                    lib.store.existing_step(lib.run["id"], key)["status"] == "running" for key in route.tasks):
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.05)  # both requests are with the client
+            past_the_cutoff(lib, 1)
+            await route.close()
+            release.set()
+
+    asyncio.run(cut())
+    usage = lib.store.run(lib.run["id"])["usage"]
+    keys = (fast_search.plain_phrase_key(0), fast_search.phrase_key(0))
+    assert {key: usage["query_requests"][key] for key in keys} == {key: 1 for key in keys}
+    assert usage["provider_requests"] == SENDS
+    assert plain_status(lib) == ("cancelled", phrase_search.CUTOFF)
 
 
 def question_failed(lib, delivery_class):
@@ -533,5 +703,5 @@ def test_a_question_request_that_failed_after_it_was_handed_does_not_block_the_p
         return route
 
     route = asyncio.run(scenario())
-    assert len(send.calls) == 1 and route.reason is None
+    assert len(send.calls) == SENDS and route.reason is None
     assert lib.store.existing_step(lib.run["id"], fast_search.phrase_key(0))["status"] == "succeeded"

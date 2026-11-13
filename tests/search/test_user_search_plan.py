@@ -52,7 +52,8 @@ class Providers:
                 self.counts.append(query)
                 return httpx.Response(200, json={"meta": {"count": self.table.get(query, 50)}, "results": []})
             kind = ("group_by" if params.get("group_by") else
-                    "semantic" if params.get("search.semantic") else "fetch")
+                    "semantic" if params.get("search.semantic") else
+                    "plain" if params.get("search") is not None else "fetch")
             self.log.append((host, kind))
             self.events.append(kind)
             if query:
@@ -256,8 +257,9 @@ def test_the_protocol_freezes_before_the_first_request_that_fetches_search_resul
     assert events.count("freeze") == 1 and "fetch" in events
     assert events.index("freeze") < events.index("fetch")
     # Before it went the planning requests (term counts, the field distribution) and the question's own semantic
-    # request, which the design sends first of all and which no planning step writes (P2, Ç1).
-    assert set(events[:events.index("freeze")]) <= {"group_by", "semantic"}
+    # request, which the design sends first of all and which no planning step writes (P2, Ç1); the short phrase
+    # requests beside the plan, semantic and plain, may open before it too.
+    assert set(events[:events.index("freeze")]) <= {"group_by", "semantic", "plain"}
     assert events.index("semantic") < events.index("freeze")
 
 

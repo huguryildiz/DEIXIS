@@ -353,7 +353,7 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     # Every planned provider search was opened after the protocol step, which already held the criterion. The question's
     # own request and the short phrase requests beside the plan are the exception: they open before it.
     searches = [i for i, key in enumerate(keys) if key.startswith("search:") and key != "search:fast:semantic"
-                and not key.startswith(fast_search.PHRASE_KEY)]
+                and not key.startswith((fast_search.PHRASE_KEY, fast_search.PLAIN_PHRASE_KEY))]
     assert searches and min(searches) > keys.index("protocol")
     body = body_of(tmp_path, rid, 1)
     assert body["inclusion_criterion"] == RUNS[1]["criterion"]  # run 1 is the base run of these three proposals

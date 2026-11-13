@@ -1,14 +1,17 @@
 """Short semantic searches beside the plan (`fast_path.PHRASE_SEARCH_RULE`).
 
 One model step writes a few short plain phrases from the question alone, and each phrase is sent to OpenAlex semantic
-search as a request of its own. The records join the pool like any search record, each phrase request a query list of
-its own. The route never holds the run up:
+search as a request of its own. Under the second rule each phrase also goes to OpenAlex's plain `search=` route, one
+page without `sort`, as a request of its own beside the semantic one. The records join the pool like any search record,
+each phrase request a query list of its own. The route never holds the run up:
 
 - The phrase step goes through no limiter the plan uses, and its calls are given on top of the run's preset. On a
   connection that answers one call at a time (a model this computer runs) the step is not asked at all.
 - The step is given the question and its English sentence only: no steering, no record.
 - A phrase request goes out only after the question's own semantic request was handed to the HTTP client, through the
-  same semantic call and its pacer, one phrase at the pacer at a time; the keyword search never waits for one.
+  same semantic call and its pacer, one phrase at the pacer at a time; the keyword search never waits for one. A plain
+  request goes out at the same point and waits for no semantic pacer: only the run's shared OpenAlex gate spaces its
+  start, and the stop is checked again after that wait (`openalex.PLAIN_START`).
 - At the protocol freeze an unfinished phrase step is cancelled, not waited for. At the search stage's own deadline
   every phrase request still waiting or in flight is closed and recorded as cancelled, and a reply that comes after
   that deadline is not written.
@@ -71,6 +74,15 @@ def requests(phrases: list[dict[str, Any]], rule: dict[str, Any], years: dict[st
             for index, phrase in enumerate(phrases)]
 
 
+def plain_requests(phrases: list[dict[str, Any]], records: int, years: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """One OpenAlex plain `search=` request per phrase, in the step's order: no sort, one page of `records`, and the
+    run's date scope in the form that route takes (the same years the semantic request is bounded to)."""
+    return [fast_search.with_date_scope(
+        {"index": index, "provider_id": "openalex", "endpoint": openalex.PLAIN_ENDPOINT,
+         "query_text": phrase["text"], "limit": records, "kind": phrase["kind"]}, years)
+            for index, phrase in enumerate(phrases)]
+
+
 class Route:
     """The short phrase searches of one discovery run, from the run's start to the end of its search stage."""
 
@@ -78,12 +90,13 @@ class Route:
                  handed: asyncio.Event | None = None):
         self.flow, self.run, self.scope = flow, run, scope
         self.rule = fast_path.phrase_search(run["budget"])
+        self.plain_records = fast_path.phrase_plain_records(self.rule)  # None: the run froze no plain request
         self.first_request = first_request  # the question's own semantic request
         self.handed = handed or asyncio.Event()  # set once that request is with the HTTP client
         self.watcher: asyncio.Task | None = None  # the watch on the search stage's deadline
         self.model_task: asyncio.Task | None = None  # the phrase step
         self.sender: asyncio.Task | None = None  # the task that opens the phrase requests
-        self.tasks: dict[int, asyncio.Task] = {}  # one task per phrase request, by phrase place
+        self.tasks: dict[str, asyncio.Task] = {}  # one task per phrase request, by its step key
         self.reason: str | None = None  # why the route sends nothing, once that is known
         self.closed = False  # the search stage has ended
 
@@ -178,19 +191,30 @@ class Route:
             self._close_step(FROZEN, "cancelled")
         phrases = self._result()
         record = {"rule": self.rule["rule"], "count": self.rule["count"], "records": self.rule["records"]}
+        if self.plain_records is not None:
+            record["plain_records"] = self.plain_records  # the second rule: each phrase's plain request too
         if phrases is None:
             return record | {"status": "not_written", "reason": self.reason}
         years = self.run["budget"]["fast_path"].get("date_scope")
-        return record | {"status": "ready", "phrases": phrases, "requests": requests(phrases, self.rule, years)}
+        record |= {"status": "ready", "phrases": phrases, "requests": requests(phrases, self.rule, years)}
+        if self.plain_records is not None:
+            record["plain_requests"] = plain_requests(phrases, self.plain_records, years)
+        return record
 
-    def _specs(self) -> list[dict[str, Any]]:
-        """The phrase requests of this run: the frozen ones once the protocol is frozen, else the step's own."""
+    def _specs(self) -> list[tuple[dict[str, Any], str, int]]:
+        """The phrase requests of this run, each with its step key and admission class: the frozen ones once the
+        protocol is frozen, else the step's own. The plain requests come first, as they wait for no semantic pacer."""
         frozen = self._frozen()
         if frozen is not None:
-            return list(frozen.get("requests") or [])
-        phrases = self._result()
-        years = self.run["budget"]["fast_path"].get("date_scope")
-        return requests(phrases, self.rule, years) if phrases else []
+            semantic, plain = list(frozen.get("requests") or []), list(frozen.get("plain_requests") or [])
+        else:
+            phrases = self._result() or []
+            years = self.run["budget"]["fast_path"].get("date_scope")
+            semantic = requests(phrases, self.rule, years) if phrases else []
+            # Only a run that froze the second rule has plain requests.
+            plain = plain_requests(phrases, self.plain_records, years) if phrases and self.plain_records else []
+        return ([(spec, fast_search.plain_phrase_key(spec["index"]), fast_search.PLAIN_PHRASE_CLASS) for spec in plain]
+                + [(spec, fast_search.phrase_key(spec["index"]), fast_search.PHRASE_CLASS) for spec in semantic])
 
     def _question_sent(self) -> bool:
         """Whether the question's own semantic request is stored as really sent: it answered, or it ended without an
@@ -236,24 +260,25 @@ class Route:
             return
         send_page = fast_search.page_sender(self.flow, self.run, self.scope, {}, False, {"failure": None,
                                                                                           "s2_task": None})
-        for spec in specs:
+        for spec, key, klass in specs:
             if self.closed:
                 return
-            step = store.existing_step(run_id, fast_search.phrase_key(spec["index"]))
+            step = store.existing_step(run_id, key)
             if step is not None and step["status"] != "pending":
                 continue  # answered, failed, cancelled or cut before: never sent again
             handed = asyncio.Event()
-            task = asyncio.create_task(self._request(send_page, spec, handed))
-            self.tasks[spec["index"]] = task
-            # One phrase at the pacer at a time: the next goes to it only once this one is with the client or has
-            # ended, so a seed or planned semantic request never queues behind all of them.
-            await self._first(task, handed)
+            task = asyncio.create_task(self._request(send_page, spec, key, klass, handed))
+            self.tasks[key] = task
+            if klass == fast_search.PHRASE_CLASS:
+                # One phrase at the pacer at a time: the next goes to it only once this one is with the client or has
+                # ended, so a seed or planned semantic request never queues behind all of them.
+                await self._first(task, handed)
         await asyncio.gather(*self.tasks.values(), return_exceptions=True)
 
-    async def _request(self, send_page: Any, spec: dict[str, Any], handed: asyncio.Event) -> None:
-        """Send one phrase request and record it as any search page is recorded."""
+    async def _request(self, send_page: Any, spec: dict[str, Any], key: str, klass: int,
+                       handed: asyncio.Event) -> None:
+        """Send one phrase request (semantic or plain) and record it as any search page is recorded."""
         store, run_id = self.flow.store, self.run["id"]
-        key = fast_search.phrase_key(spec["index"])
         # Opened before it is sent: before this run's freeze it carries no protocol hash, after it this run's own.
         step = store.step(run_id, key, KIND, protocol_hash=fast_search.frozen_protocol_hash(store, self.run))
         if step["status"] == "pending":
@@ -262,7 +287,7 @@ class Route:
         token = common.on_handed.set(handed.set)  # this request's own attempts only: the variable is per task
         try:
             # A reply after the deadline is not written (`_InTime` between the reply and its write).
-            result, _ = await send_page(spec, key, limit=spec["limit"], klass=fast_search.PHRASE_CLASS,
+            result, _ = await send_page(spec, key, limit=spec["limit"], klass=klass,
                                         index=spec["index"], terminal="single_page", after=_InTime(self._past_cutoff))
         except LateReply:
             result = None
@@ -312,10 +337,9 @@ class Route:
         self._stop_watch()
         await self._cancel_sending()
         store, run_id = self.flow.store, self.run["id"]
-        for spec in self._specs():
+        for _, key, _ in self._specs():
             # A request never started, one waiting at the pacer and one in flight all end here.
-            fast_search.cancel_step(store, run_id, fast_search.phrase_key(spec["index"]), KIND,
-                                    self.reason or CUTOFF, ("pending", "running"))
+            fast_search.cancel_step(store, run_id, key, KIND, self.reason or CUTOFF, ("pending", "running"))
 
     async def stop(self) -> None:
         """The run stopped or ended: a request never started stays pending, so a resume sends it; one already started
@@ -324,8 +348,7 @@ class Route:
         self._stop_watch()
         await self._cancel_sending()
         store, run_id = self.flow.store, self.run["id"]
-        for spec in self._specs():
-            key = fast_search.phrase_key(spec["index"])
+        for _, key, _ in self._specs():
             if store.existing_step(run_id, key) is not None:  # only a request this route opened
                 fast_search.cancel_step(store, run_id, key, KIND, INTERRUPTED, ("running",))
         if self.model_task is not None:

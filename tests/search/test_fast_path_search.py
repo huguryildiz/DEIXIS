@@ -440,7 +440,7 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         keyword = lambda view: [(s["provider"], s["status"]) for s in view["search_runs"] if s["query_text"] == attempts[0]]
         assert keyword(view) == [("openalex", "rate_limited")]
         assert [(s["operation_key"], s["status"]) for s in run["steps"] if s["operation_key"].startswith("search:")
-                and not s["operation_key"].startswith(fast_search.PHRASE_KEY)] == [
+                and not s["operation_key"].startswith((fast_search.PHRASE_KEY, fast_search.PLAIN_PHRASE_KEY))] == [
             ("search:fast:semantic", "succeeded"), ("search:0", "failed")]
         assert view["counts"]["unique"] == 1
         assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1"

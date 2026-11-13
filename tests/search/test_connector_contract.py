@@ -368,8 +368,8 @@ def check_case(provider_id, endpoint_id, fixture, case):
         shape = "next_page" if case["name"] == "second_page" else "first_page" if case["name"] == "first_page" else "kill_search" if endpoint_id else "unpaged"
         assert baseline.recorded_request(requests[0])["params"] == endpoint_fixture(fixture, endpoint_id)["request_params"][shape]
     if case["name"].startswith("identity_"):
-        # Semantic search uses the identical OpenAlex record parser.
-        identity_endpoint = None if provider_id == "openalex" and endpoint_id == "semantic" else endpoint_id
+        # Semantic and plain search use the identical OpenAlex record parser.
+        identity_endpoint = None if provider_id == "openalex" and endpoint_id in ("semantic", "plain") else endpoint_id
         mismatch = IDENTITY_KNOWN_MISMATCHES.get((provider_id, identity_endpoint, case["name"]))
         if mismatch:
             assert expected == mismatch["expected"] and case["ledger"] == mismatch["ledger"]
@@ -381,7 +381,8 @@ CASES = [(pid, e.endpoint_id, FIXTURES[pid], case)
          for pid, f in facade.connectors().items() if pid in FIXTURES for e in f.descriptor.endpoints
          for ep in FIXTURES[pid]["endpoints"] if ep["endpoint_id"] == e.endpoint_id for case in ep["cases"]]
 # A representative sample of CASES (the full grid was cut in the stage-5 test simplification).
-SAMPLE_IDS = {"openalex/default/g3/positive", "openalex/semantic/g5/root_array", "semantic_scholar/bulk/g3/positive",
+SAMPLE_IDS = {"openalex/default/g3/positive", "openalex/semantic/g5/root_array", "openalex/plain/g3/positive",
+              "semantic_scholar/bulk/g3/positive",
               # The passage endpoint is the one search that sends a second request, so its own row is replayed.
               "semantic_scholar/snippet/g3/positive"}
 CONFORMANCE_SAMPLE = [(p, e, f, c) for p, e, f, c in CASES if f"{p}/{e or 'default'}/g{c['group']}/{c['name']}" in SAMPLE_IDS]

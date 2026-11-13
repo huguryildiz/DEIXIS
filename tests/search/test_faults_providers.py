@@ -54,7 +54,7 @@ def fault_run(tmp_path, mode):
 def step_statuses(run):
     # The short phrase requests follow the question's request once it is sent and have outcomes of their own.
     return {s["operation_key"]: s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")
-            and not s["operation_key"].startswith(fast_search.PHRASE_KEY)}
+            and not s["operation_key"].startswith((fast_search.PHRASE_KEY, fast_search.PLAIN_PHRASE_KEY))}
 
 
 @pytest.mark.parametrize("provider", ["openalex", "semantic_scholar"])

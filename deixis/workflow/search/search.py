@@ -34,8 +34,13 @@ BROAD_CLASS = 3
 # The admission class of the short phrase searches' pages: behind every planned request, so a record a planned request
 # also brings keeps the place that request gave it.
 PHRASE_CLASS = 4
+# The admission class of the plain phrase requests' pages: behind the semantic phrase requests, so a record both bring
+# keeps the place the semantic request gave it.
+PLAIN_PHRASE_CLASS = 5
 # The step key of one short phrase request, by the phrase's place in the step's answer.
 PHRASE_KEY = "search:fast:semantic:phrase:"
+# The step key of the same phrase's plain request (`phrase_search_v2`), by the same place.
+PLAIN_PHRASE_KEY = "search:fast:plain:phrase:"
 # One more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
 # question's. A plan frozen without `block_semantic`, or with one whose `query_text` is empty, sends none.
 # The 6 Nov rules turned it off for new plans (113 works added, 3 in the top 50, no reference paper in that pilot): they
@@ -138,13 +143,18 @@ def phrase_key(index):
     return f"{PHRASE_KEY}{index}"
 
 
+def plain_phrase_key(index):
+    return f"{PLAIN_PHRASE_KEY}{index}"
+
+
 def sent_plan(body):
     """The requests a frozen protocol body plans to send, each with the step key its pages are stored under.
 
     A fast path body sends its `fast_path_search` plan: the semantic request, the block terms' semantic request when the
     plan froze one, one per seed at version 2, the OpenAlex keyword queries, the query of each field source the depth
     searches, the query of the second independent index a depth that pays for one plans, and, at Detailed depth,
-    the Semantic Scholar bulk query; each short phrase request where the plan froze phrases. The plan's dropped
+    the Semantic Scholar bulk query; each short phrase request where the plan froze phrases, and its plain request
+    under the second phrase rule. The plan's dropped
     queries are left out:
     they stand in `compiled_queries` but were never meant to be sent. A body without the plan sends every compiled
     query under `search:<index>`. A field source's query carries the text that is really sent, which is the
@@ -180,6 +190,11 @@ def sent_plan(body):
               "origin": "phrase", "key": phrase_key(spec["index"]), "arm": "phrase_semantic", "watchable": False,
               **date_bound(years, spec)}
              for spec in (plan.get("phrase_search") or {}).get("requests") or []]
+    # The same phrases' plain requests, where the plan froze them under the second phrase rule.
+    sent += [{"provider_id": spec["provider_id"], "endpoint": spec["endpoint"], "query_text": spec["query_text"],
+              "origin": "phrase", "key": plain_phrase_key(spec["index"]), "arm": "phrase_plain", "watchable": False,
+              **date_bound(years, spec)}
+             for spec in (plan.get("phrase_search") or {}).get("plain_requests") or []]
     # An author query is not watchable: a watch sends the query text without the author filter. The bound the
     # plan's own copy carries is written in, so a recorded request reads with what it was really sent with.
     sent += [dict(compiled[item["index"]], key=f"search:{item['index']}", arm="keyword",

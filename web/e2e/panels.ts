@@ -164,7 +164,7 @@ export async function openPlanPanel(page: Page): Promise<Locator> {
   if (!(await editPlan.count())) {
     const turn = page.locator('.chat-toggle', { hasText: 'Ran search & screening' }).filter({ hasNotText: 'for question revision' }).last()
     if (await turn.getAttribute('aria-expanded') !== 'true') await turn.click()
-    await page.locator('.chat-step-line', { hasText: 'Planned the searches' }).last().click()
+    await page.locator('.chat-step-line', { hasText: /Planned the|Used your saved plan/ }).last().click()
   }
   await editPlan.click()
   await expect(opened).toBeVisible()

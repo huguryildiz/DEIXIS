@@ -56,13 +56,13 @@ def test_a_terms_evidence_is_read_back_from_the_text_the_step_sent():
     start, end = draft["setting"][0]["evidence"]["span"]
     assert source["title"][start:end] == draft["setting"][0]["term"]
 
-    # A phrase the field does not hold at that place is refused, whatever the model wrote about it.
+    # An inaccurate span is corrected when the phrase is still in that field.
     moved = plan()
     moved["setting"][0]["evidence"] = moved["setting"][0]["evidence"] | {"span": [start + 1, end + 1]}
-    assert issues(moved) == ["plan_term_not_at_span"]
+    assert issues(moved) == []
     outside = plan()
     outside["task"][0]["evidence"] = outside["task"][0]["evidence"] | {"span": [0, 10_000]}
-    assert issues(outside) == ["plan_span_outside_field"]
+    assert issues(outside) == []
 
     # A record the step did not send, and a field of a record it did not send, are refused too.
     unknown = plan()
@@ -73,6 +73,40 @@ def test_a_terms_evidence_is_read_back_from_the_text_the_step_sent():
     from_keywords = plan()
     from_keywords["setting"][0]["evidence"] = from_keywords["setting"][0]["evidence"] | {"field": "keywords"}
     assert "plan_field_not_sent" in {i.code for i in contracts.validate_model_output(without, from_keywords).issues}
+
+
+def test_a_plan_term_is_located_in_its_own_field_and_the_nearest_occurrence_is_kept():
+    draft = plan()
+    term = draft["setting"][0]
+    original = term["evidence"]["span"][:]
+    term["evidence"]["span"] = [original[0] + 2, original[1] + 2]
+    report = contracts.validate_model_output(STEP_INPUT, draft)
+    assert report.ok and report.result["setting"][0]["evidence"]["span"] == original
+    assert report.normalised == [{"path": "/setting/0/evidence/span", "stamped": "located_span",
+                                  "model_value": [original[0] + 2, original[1] + 2], "located_span": original}]
+
+    absent = plan()
+    # This phrase appears in the record's keywords and abstract, but not in the named title.
+    absent["setting"][0]["term"] = "subsynchronous oscillation"
+    assert issues(absent) == ["plan_term_not_at_span"]
+
+    varied_input = json.loads(json.dumps(STEP_INPUT))
+    varied_input["sources"][0]["title"] += "; Remote  \tEntanglement, wind-integrated"
+    varied = plan()
+    varied["setting"][0]["term"] = "remote entanglement"
+    varied["setting"][0]["evidence"]["span"] = [0, 2]
+    varied_report = contracts.validate_model_output(varied_input, varied)
+    varied_span = varied_report.result["setting"][0]["evidence"]["span"]
+    assert varied_report.ok and varied_input["sources"][0]["title"][varied_span[0]:varied_span[1]] == "Remote  \tEntanglement"
+
+    repeated_input = json.loads(json.dumps(STEP_INPUT))
+    repeated_input["sources"][0]["title"] += " " + term["term"].lower()
+    repeated = plan()
+    second = repeated_input["sources"][0]["title"].rindex(term["term"].lower())
+    repeated["setting"][0]["evidence"]["span"] = [second + 2, second + 2 + len(term["term"])]
+    nearby = contracts.validate_model_output(repeated_input, repeated)
+    assert nearby.ok
+    assert nearby.result["setting"][0]["evidence"]["span"] == [second, second + len(term["term"])]
 
 
 def test_the_chains_starting_works_are_checked_against_the_records_the_step_was_given():
@@ -131,7 +165,14 @@ def test_a_run_writes_one_plan_call_from_the_pages_records(tmp_path, monkeypatch
 
     # The mock's record carries the provider's own keywords for this run; everything else is the shared harness.
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
-    adapter = FakeAdapter()
+    def offset_plan(si):
+        answer = json.loads(valid_response(si))
+        if si["task_type"] == "search_plan":
+            span = answer["setting"][0]["evidence"]["span"]
+            answer["setting"][0]["evidence"]["span"] = [span[0] + 2, span[1] + 2]
+        return json.dumps(answer)
+
+    adapter = FakeAdapter(responder=offset_plan)
     client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
@@ -157,6 +198,14 @@ def test_a_run_writes_one_plan_call_from_the_pages_records(tmp_path, monkeypatch
                                 "schema_version": "deixis.search_plan.v2",
                                 "skill_package_hash": sent[0]["skill_package_hash"]}
     assert frozen["answer"]["seed_work_ids"] == [sent[0]["sources"][0]["work_id"]]
+    session = client.app.state.store.conn.execute(
+        "SELECT m.raw_output, m.validation_json FROM model_sessions m JOIN step_inputs si ON si.id = m.step_input_id "
+        "WHERE si.run_id = ? AND si.task_type = 'search_plan'", (run_id,)).fetchone()
+    model_span = json.loads(session["raw_output"])["setting"][0]["evidence"]["span"]
+    saved_span = frozen["answer"]["setting"][0]["evidence"]["span"]
+    assert saved_span == [model_span[0] - 2, model_span[1] - 2]
+    assert {"path": "/setting/0/evidence/span", "stamped": "located_span", "model_value": model_span,
+            "located_span": saved_span} in json.loads(session["validation_json"])["normalised"]
     # The plan's own fingerprint (P4): what it read and what wrote it, frozen with the protocol and recomputable
     # from the StepInput the call really carried.
     from deixis.workflow.search import plan_identity

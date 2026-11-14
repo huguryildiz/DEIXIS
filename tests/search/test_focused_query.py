@@ -120,7 +120,9 @@ def test_a_focused_concepts_evidence_is_read_back_like_a_chosen_terms():
     assert good["focused"], "the fake writes one focused concept for this fixture"
     moved = json.loads(json.dumps(good))
     moved["focused"][0]["evidence"]["span"] = [0, 4]
-    assert "plan_term_not_at_span" in issues(moved)
+    corrected = contracts.validate_model_output(STEP_INPUT, moved)
+    assert corrected.ok
+    assert corrected.result["focused"][0]["evidence"]["span"] == good["focused"][0]["evidence"]["span"]
     unknown = json.loads(json.dumps(good))
     unknown["focused"][0]["evidence"]["record_id"] = "srv_SYNTHEnotsent"
     assert "plan_record_unknown" in issues(unknown)

@@ -512,6 +512,7 @@ class ValidationReport:
     result: dict[str, Any] | None = None
     issues: list[Issue] = field(default_factory=list)
     warnings: list[Issue] = field(default_factory=list)
+    normalised: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -2540,12 +2541,48 @@ def _plan_record_fields(step_input: dict[str, Any]) -> dict[str, dict[str, str]]
     return fields
 
 
+def _locate_plan_term(text: str, wanted: str, model_start: int) -> list[int] | None:
+    """Find the nearest span with the same phrase normalisation, retaining original character offsets."""
+    phrase = normalize_phrase(wanted)
+    if not phrase:
+        return None
+    folded: list[str] = []
+    starts: list[int] = []
+    ends: list[int] = []
+    for index, char in enumerate(text):
+        # A whitespace run is one space, as in normalize_phrase; keep its original bounds.
+        if char.isspace():
+            if folded and folded[-1] == " ":
+                ends[-1] = index + 1
+            else:
+                folded.append(" ")
+                starts.append(index)
+                ends.append(index + 1)
+            continue
+        # Lowercasing can expand a Unicode character, so each output character maps back to its source.
+        for lower in char.lower():
+            folded.append(lower)
+            starts.append(index)
+            ends.append(index + 1)
+    field = "".join(folded)
+    best: tuple[int, int, int] | None = None
+    position = field.find(phrase)
+    while position != -1:
+        start, end = starts[position], ends[position + len(phrase) - 1]
+        if normalize_phrase(text[start:end]) == phrase:
+            candidate = (abs(start - model_start), start, end)
+            if best is None or candidate < best:
+                best = candidate
+        position = field.find(phrase, position + 1)
+    return [best[1], best[2]] if best is not None else None
+
+
 def _check_search_plan(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
                        report: ValidationReport) -> None:
     """What the records the step was given say, against what the plan claims they say.
 
-    Every chosen term names the record, the field and the span it was read from, and code reads that span back from
-    the stored text: a phrase the field does not hold at that place is an error, whatever the model wrote about it.
+    Every chosen term names the record, field and span it was read from. Code corrects an inaccurate span when that
+    field holds the phrase; a phrase absent from the field is an error.
     The chain's starting works are checked the same way, against the records sent and not against the library. Both
     get the step's one repair.
     """
@@ -2568,14 +2605,17 @@ def _check_search_plan(step_input: dict[str, Any], allow: dict[str, set[str]], d
                                            f"{evidence['field']} of {record} was not sent"))
                 continue
             start, end = evidence["span"]
-            if start >= end or end > len(text):
-                report.issues.append(Issue("plan_span_outside_field", f"{path}/span",
-                                           f"[{start}, {end}) in a field of {len(text)} characters"))
+            wanted = term["term"]
+            if 0 <= start < end <= len(text) and normalize_phrase(text[start:end]) == normalize_phrase(wanted):
                 continue
-            found, wanted = text[start:end], term["term"]
-            if normalize_phrase(found) != normalize_phrase(wanted):
+            located = _locate_plan_term(text, wanted, start)
+            if located is None:
                 report.issues.append(Issue("plan_term_not_at_span", f"{path}/span",
                                            f"{wanted!r} is not what that span holds"))
+                continue
+            report.normalised.append({"path": f"{path}/span", "stamped": "located_span",
+                                      "model_value": [start, end], "located_span": located})
+            evidence["span"] = located
     # A focused concept the main query's own blocks already hold adds no query: it would search what the main query
     # already searches and spend one of the depth's plans for nothing.
     chosen = {normalize_phrase(term["term"]) for block in ("setting", "task") for term in draft[block]}

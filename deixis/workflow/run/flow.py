@@ -6662,6 +6662,7 @@ class ResearchFlow:
                 else:
                     salvage = []
             warnings = [vars(w) for w in link_prunes + salvage + report.warnings]
+            normalised_changes.extend(report.normalised)
             recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues], "warnings": warnings,
                                          "normalised": normalised_changes}
             if patch_record is not None:

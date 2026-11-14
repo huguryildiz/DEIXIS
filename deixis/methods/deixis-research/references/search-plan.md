@@ -71,8 +71,8 @@ it.
 - `relation`: how the term bears on the question, in your own words, at most
   160 characters.
 
-Code reads that span back from the text you were given and refuses the whole
-answer when the phrase is not there, so count the offsets from the text in
+Code reads the phrase from that field. A slightly wrong span is corrected;
+a phrase the field does not hold is refused. Count offsets from the text in
 this StepInput and from nothing else. Two terms that merely appear in the same
 paper are not synonyms of each other; the records must show the same thing
 being named twice.

@@ -3,19 +3,18 @@ import { ChevronRight, FileText } from 'lucide-react'
 import { api, type Answer, type AnswerMethod } from '../lib/api'
 import { t, uiLocale } from '../lib/i18n'
 import { completionAnswered, openAlexFailure, providerName } from '../lib/labels'
-import { AnswerFlowNote } from './FlowReport'
 import './MethodBox.css'
 
 // How the answer was reached, from stored rows only (no model call). Counts stay apart: found, read, tried, included,
-// given and cited answer different questions, and what no row measures is said, not guessed. The box under the answer
-// (mockup `.methods`, R26) says it in one paragraph; "Full method" opens every count, and the answer's boundary (where
+// given and cited answer different questions, and what no row measures is said, not guessed. The report's method box
+// says it in one paragraph; "Full method" opens every count, and the answer's boundary (where
 // the works stood when it started, what it was given; §2.2) closes it.
 
 const num = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 const maybe = (n: number | null) => (n === null ? t('not recorded') : num(n))
 
-// In an earlier report (`inReport`) the report itself closes with the answer's boundary, and there is no funnel to open.
-export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inReport = false }: { researchId: string; answer: Answer; reviewPending: boolean; onShowFunnel?: (opener: HTMLElement) => void; inReport?: boolean }) {
+// Shown inside a report, which itself closes with the answer's boundary.
+export function MethodBox({ researchId, answer, reviewPending }: { researchId: string; answer: Answer; reviewPending: boolean }) {
   const answerId = answer.id
   const [method, setMethod] = useState<AnswerMethod | null>(null)
   useEffect(() => {
@@ -48,8 +47,7 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
         : t('{reason}, so Semantic Scholar was searched in its place, and that request did not answer either.', { reason: openAlexFailure(search.completion.failures) })}{' '}</>}
       {readingsUnknown ? t('How many abstracts and full texts the model read was not recorded when this answer started.')
         : <>{selection.abstract_read !== null && selection.abstract_read > 0
-        ? <>{found !== null ? t('The model read the abstracts of {read} of {found} works against the criterion', { read: num(selection.abstract_read), found: num(found) }) : t('The model read the abstracts of {read} works against the criterion', { read: num(selection.abstract_read) })}
-          {found !== null && found > selection.abstract_read && onShowFunnel && <> (<button type="button" className="link" onClick={e => onShowFunnel(e.currentTarget)}>{t('see what was not read')}</button>)</>}.</>
+        ? <>{found !== null ? t('The model read the abstracts of {read} of {found} works against the criterion', { read: num(selection.abstract_read), found: num(found) }) : t('The model read the abstracts of {read} works against the criterion', { read: num(selection.abstract_read) })}.</>
         : t('No model reading of abstracts is recorded.')}{' '}
       {selection.full_text_read !== null && selection.full_text_read > 0
         ? <>{t(selection.full_text_read === 1 ? '{n} work was read in its full text (selected pages)' : '{n} works were read in their full text (selected pages)', { n: num(selection.full_text_read) })}{selection.included !== null ? t('; included when the answer started: {n}.', { n: num(selection.included) }) : '.'}</>
@@ -118,7 +116,6 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
         <ul className="method-unmeasured">{method.not_measured.map(item => <li key={item}>{t(item)}</li>)}</ul>
       </section>
     </div>
-    {!inReport && <AnswerFlowNote answer={answer} />}
     </details>
   </section>
 }

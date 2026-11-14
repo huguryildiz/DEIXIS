@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ArrowRight, Lightbulb, Upload, X } from 'lucide-react'
 import type { Source } from '../lib/api'
 import { t } from '../lib/i18n'
+import { Button } from '@/components/ui/button'
 
 // A short author-year tag ("Li24") from the stored record, the way the cards list works; the full key stays in the title.
 export function shortTag(source: Source) {
@@ -48,7 +49,8 @@ export function PdfSuggestCard({ works, total, onOpen, onUpload }: { works: Sour
   </section>
 }
 
+// A small quiet button under a finished search's first works: it opens the Sources panel on the whole list.
 export const OpenAllButton = ({ n, passed = false, onClick }: { n: number; passed?: boolean; onClick: (opener: HTMLElement) => void }) =>
-  <button type="button" className="done-card-open" onClick={e => onClick(e.currentTarget)}>{passed
+  <Button variant="outline" size="sm" onClick={e => onClick(e.currentTarget)}>{passed
     ? t(n === 1 ? 'Open the {n} work that passed the abstract stage' : 'Open the {n} works that passed the abstract stage', { n })
-    : t(n === 1 ? 'Open the {n} included source' : 'Open all {n} included sources', { n })}<ArrowRight size={16} aria-hidden /></button>
+    : t(n === 1 ? 'Open the {n} included source' : 'Open all {n} included sources', { n })}<ArrowRight size={14} aria-hidden /></Button>

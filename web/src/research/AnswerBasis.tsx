@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { BookOpen, ChevronRight } from 'lucide-react'
 import { type Answer, type ResearchView } from '../lib/api'
 import { t, uiLocale } from '../lib/i18n'
 import { statementExcludedReasons } from '../lib/labels'
@@ -12,13 +12,13 @@ type Row = { label: string; n: number; note?: string; level: number; onClick?: (
 export type Part = { label: string; n: number; tone: 'idle' | 'open' | 'out' | 'next' | 'read' }
 
 // A stacked bar with its legend: widths are shares of the parts' own sum, so the bar always fills its row.
-export function Bar({ title, parts, num }: { title: string; parts: Part[]; num: (n: number) => string }) {
+export function Bar({ title, parts, num, aside }: { title: string; parts: Part[]; num: (n: number) => string; aside?: ReactNode }) {
   const shown = parts.filter(part => part.n > 0)
   const total = shown.reduce((sum, part) => sum + part.n, 0)
   if (total === 0) return null
   const text = shown.map(part => `${part.label} ${num(part.n)}`).join(', ')
   return <div className="answer-basis-bar">
-    <span className="answer-basis-bar-title">{title}</span>
+    <span className="answer-basis-bar-title">{title}{aside && <span className="answer-basis-bar-aside">{aside}</span>}</span>
     <span className="answer-basis-bar-track" role="img" aria-label={`${title}: ${text}`}>
       {shown.map(part => <span key={part.label} className={`is-${part.tone}`} style={{ flexGrow: part.n }} title={`${part.label} ${num(part.n)}`} />)}
     </span>
@@ -28,11 +28,10 @@ export function Bar({ title, parts, num }: { title: string; parts: Part[]; num: 
   </div>
 }
 
-export function AnswerBasis({ view, answer, onSources, onAnswer }: {
-  view: ResearchView; answer: Answer | null | undefined; onSources: (filter: 'all' | 'included') => void; onAnswer: () => void
-}) {
-  // The full list is closed by default; the lead and the two bars stay in view.
-  const [open, setOpen] = useState(false)
+type BasisProps = { view: ResearchView; answer: Answer | null | undefined; onSources: (filter: 'all' | 'included') => void; onAnswer: () => void }
+
+// The stored counts both basis pieces read; null when the research has no search funnel (attached PDFs only).
+function basisCounts({ view, answer, onSources, onAnswer }: BasisProps) {
   const funnel = view.counts.funnel
   const b = view.counts.flow?.buckets
   if (!funnel || !b) return null
@@ -102,23 +101,52 @@ export function AnswerBasis({ view, answer, onSources, onAnswer }: {
     { label: t('Waiting for you'), n: forYou, tone: 'next' },
     { label: t('No PDF found'), n: noPdf, tone: 'open' },
   ]
+  return { funnel, num, readFull, met, noPdf, rows, lead, found, fullText }
+}
 
-  return <section className="answer-basis" aria-labelledby="answer-basis-title">
-    <h3 id="answer-basis-title">
-      <button type="button" className="answer-basis-toggle" aria-expanded={open} aria-controls="answer-basis-rows" onClick={() => setOpen(!open)}>
-        <ChevronRight size={14} aria-hidden className="answer-basis-chevron" />{t(answer ? 'How this answer was built' : 'From search to sources')}
-      </button>
-    </h3>
-    <p className="answer-basis-lead">{lead}</p>
-    <Bar title={t('{n} works found', { n: num(funnel.unique) })} parts={found} num={num} />
-    <Bar title={t('{n} passed to full text', { n: num(funnel.candidates) })} parts={fullText} num={num} />
-    {open && <ul className="answer-basis-rows" id="answer-basis-rows">
-      {rows.map(row => {
-        const body = <><span className="answer-basis-label">{row.label}</span><b className="tnum">{num(row.n)}</b>{row.note && <span className="answer-basis-note">{row.note}</span>}</>
-        return <li key={row.label} className={`is-level-${row.level}${row.strong ? ' is-strong' : ''}`}>
-          {row.onClick ? <button type="button" onClick={row.onClick}>{body}</button> : <div>{body}</div>}
-        </li>
-      })}
-    </ul>}
+// Inside the search step's details: the summary sentence and the bar of what became of the works found.
+export function SearchBasis(props: BasisProps) {
+  const c = basisCounts(props)
+  if (!c) return null
+  return <div className="chat-basis">
+    <p className="answer-basis-lead">{c.lead}</p>
+    <Bar title={t('{n} works found', { n: c.num(c.funnel.unique) })} parts={c.found} num={c.num} />
+  </div>
+}
+
+// The full-text step of the timeline: one quiet line of counts. Its details, closed by default, hold the full-text bar
+// and the whole list from found down to cited.
+export function FulltextLine(props: BasisProps) {
+  const [open, setOpen] = useState(false)
+  const c = basisCounts(props)
+  if (!c) return null
+  const { num } = c
+  // Read, met and no-PDF counts; a count of zero is left out, and a search that passed nothing says so.
+  const text = c.readFull || c.funnel.candidates
+    ? [t(c.readFull === 1 ? '{n} full text read' : '{n} full texts read', { n: num(c.readFull) }), c.met > 0 && t('{n} met the criterion', { n: num(c.met) }),
+      c.noPdf > 0 && t('{n} without a PDF', { n: num(c.noPdf) })].filter(Boolean).join(' · ')
+    : t('No full text read')
+  return <section className="chat-turn is-line">
+    <div className="chat-group">
+      <div className="chat-head">
+        <button type="button" className="chat-toggle" aria-expanded={open} aria-controls="answer-basis-rows" onClick={() => setOpen(!open)}>
+          <span className="chat-line-icon" aria-hidden><BookOpen size={14} /></span>
+          <span className="chat-line-text">{text}</span>
+          <ChevronRight size={15} className="chat-line-chev" aria-hidden />
+        </button>
+      </div>
+      {open && <div className="chat-basis" id="answer-basis-rows">
+        <Bar title={t('{n} passed to full text', { n: num(c.funnel.candidates) })} parts={c.fullText} num={num} />
+        <h3>{t(props.answer ? 'How this answer was built' : 'From search to sources')}</h3>
+        <ul className="answer-basis-rows">
+          {c.rows.map(row => {
+            const body = <><span className="answer-basis-label">{row.label}</span><b className="tnum">{num(row.n)}</b>{row.note && <span className="answer-basis-note">{row.note}</span>}</>
+            return <li key={row.label} className={`is-level-${row.level}${row.strong ? ' is-strong' : ''}`}>
+              {row.onClick ? <button type="button" onClick={row.onClick}>{body}</button> : <div>{body}</div>}
+            </li>
+          })}
+        </ul>
+      </div>}
+    </div>
   </section>
 }

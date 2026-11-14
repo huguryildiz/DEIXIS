@@ -180,7 +180,9 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     const manuscript = row(page, 'SYNTHETIC molecule schedule letter', true)
     await expect(manuscript.getByText('Another version of the record above: submitted manuscript. It follows the record’s selection')).toBeVisible()
     await expect(row(page, 'SYNTHETIC molecule schedule letter').locator('.source-status')).toContainText('different version (submitted manuscript) · not used for this version')
-    // With a search behind it, the unique-work count sits in "How this answer was built", not the facts strip.
+    // With a search behind it, the unique-work count sits in the search step line's details, not the facts strip.
+    const discovery = page.locator('.chat-toggle', { hasText: 'Ran search & screening' })
+    if (await discovery.getAttribute('aria-expanded') !== 'true') await discovery.click()
     await expect(page.locator('.answer-basis-lead')).toContainText('6 works found')  // five searched works and the uploaded seed
     await expect(manuscript.getByRole('button', { name: 'Include' })).toHaveCount(0)  // Only the work's head has a selection
     await expect(row(page, 'SYNTHETIC molecule schedule letter').getByRole('button', { name: 'Include' })).toBeDisabled()
@@ -383,6 +385,9 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await showAnswer(page)
     const artifact = page.getByRole('button', { name: /Open report:/ })
     await expect(artifact).toBeVisible()
+    // The sticky composer covers whatever sits behind it; the scan reads the answer at the top of the thread, not a step
+    // line that the search's open details happen to push under the composer.
+    await artifact.evaluate(el => el.scrollIntoView({ block: 'start' }))
     found.push(...await axeScan(page, 'answer thread'))
     await openPanel(page, 'sources')
     found.push(...await axeScan(page, 'Sources'))

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowUp, ArrowUpRight, BadgeCheck, ChevronRight, SearchCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, type Answer, type AnswerReviewState, type Claim, type EvidenceLedger, type Limitation, type ReviewTrigger, type Source, type ValidationIssue, type Verdict } from '../lib/api'
+import { api, type Answer, type AnswerReviewState, type Claim, type Limitation, type ReviewTrigger, type Source, type ValidationIssue, type Verdict } from '../lib/api'
 import { equationReaderName, locatorText, pauseReasonText, retractionNote, verdictLabels, versionText, versionTones } from '../lib/labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../lib/labels'
 import { MathText } from '../components/MathText'
@@ -118,26 +118,6 @@ export type AnswerReviewControl = { surface: ReviewSurfaceState; revision: numbe
 // changes: the answer diff of this version's report (P4, S21): whether it is shown, the stored version it is compared
 // with (answerDiff.comparisonBase) and the head's Show/Hide changes.
 export type AnswerChanges = { on: boolean; base: ComparisonBase; onToggle: () => void }
-
-// The answer's reading depth and its evidence ledger as two tiles above the prose, each with a bar of its stored counts:
-// full text against abstract only over the cited works, and cited against left out (with or without a reason) over the
-// works the answer was given. The sentences stay as they were; the bars only draw the same numbers.
-function EvidenceStrip({ answer, basis, ledger }: { answer: Answer; basis: string | null; ledger: EvidenceLedger | null }) {
-  const depth = basisCounts(answer)
-  const seg = (n: number, total: number, cls: string) => n > 0 && <i className={cls} style={{ flexGrow: n / Math.max(1, total) }} />
-  return <div className="evidence-strip">
-    {basis && <div className={`evidence-tile${depth.fromAbstract && !depth.fromFull ? ' is-thin' : ''}`}>
-      <span className="evidence-tile-label">{t('Reading depth')}</span>
-      <span className="evidence-tile-bar" aria-hidden>{seg(depth.fromFull, depth.n, 'is-full')}{seg(depth.fromAbstract, depth.n, 'is-abstract')}</span>
-      <p className="foot-note answer-basis">{basis}</p>
-    </div>}
-    {ledger && <div className="evidence-tile">
-      <span className="evidence-tile-label">{t('Coverage of the given works')}</span>
-      <span className="evidence-tile-bar" aria-hidden>{seg(ledger.cited.length, ledger.given.length, 'is-full')}{seg(ledger.excluded.length, ledger.given.length, 'is-left')}{seg(ledger.unaccounted.length, ledger.given.length, 'is-unknown')}</span>
-      <p className="foot-note answer-ledger">{ledgerLine(ledger)}</p>
-    </div>}
-  </div>
-}
 
 // A claim's text with the measured values its cited passages also state set in bold; the backend finds them by number,
 // so bold says "this value is in the cited passage", not that the model thought it important.
@@ -331,7 +311,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       })}</ol>
     </>}
     {/* An earlier report has no thread part, so its own method record (with Full method) stays in its report (§0.5). */}
-    {!ctx && answer.status === 'structurally_valid' && answer.start_snapshot !== undefined && <MethodBox key={answer.id} researchId={researchId} answer={answer} reviewPending={reviewPending} inReport />}
+    {!ctx && answer.status === 'structurally_valid' && answer.start_snapshot !== undefined && <MethodBox key={answer.id} researchId={researchId} answer={answer} reviewPending={reviewPending} />}
     {/* The structural check (mockup `.check`), with the cited sources' bibliography files (P3). */}
     <p className="legacy-mini-note check">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model && <>{t('Model')}: <ModelName connection={answer.model.connection} text={modelText(answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown'))} />.</>} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}
       {refs.size > 0 && <> <ExportLinks researchId={researchId} sources="cited" answerId={answer.id} /></>}</p>
@@ -394,7 +374,6 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
         <span className="report-artifact-copy"><strong>{title}</strong>
           <span className="report-artifact-meta">{t('Report')} · V{version} · {t(answer.claims.length === 1 ? '{n} claim' : '{n} claims', { n: count(answer.claims.length) })} · {t(cited === 1 ? '{n} source' : '{n} sources', { n: count(cited) })}</span></span>
       </button>}
-    {((basis && sections.length > 0) || ledger) && <EvidenceStrip answer={answer} basis={sections.length > 0 ? basis : null} ledger={ledger} />}
     {sections.length > 0 && <div className="prose answer-prose">{sections.slice(0, PROSE_SECTIONS).map(({ claims }, index) => <p key={index}>
       {claims.map(claim => <span className="claim" data-answer-claim={claim.id} key={claim.id}><ClaimText claim={claim} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge is-inference">{t('interpretation')}</span>}
@@ -404,7 +383,6 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {/* The sections past the thread's two stay in the report; say so, or a formula or result in them looks missing. */}
     {sections.length > PROSE_SECTIONS && <p className="foot-note answer-more"><button type="button" className="link" onClick={() => onReportOpenChange(true)}>
       {t(sections.length - PROSE_SECTIONS === 1 ? 'Read 1 more section in the report' : 'Read {n} more sections in the report', { n: count(sections.length - PROSE_SECTIONS) })}</button></p>}
-    {answer.start_snapshot !== undefined && <MethodBox key={answer.id} researchId={researchId} answer={answer} reviewPending={ctx.reviewPending} onShowFunnel={opener => ctx.onPanel('funnel', opener)} />}
     <div className="answer-acts">
       {cited > 0 && <Button variant="outline" size="sm" className="answer-pill" onClick={e => ctx.onShowSources('cited', e.currentTarget)}><BookOpen size={15} aria-hidden />{t(cited === 1 ? 'View {n} cited source' : 'View {n} cited sources', { n: count(cited) })}</Button>}
       <Button variant="outline" size="sm" className="answer-pill" onClick={e => ctx.onPanel('table', e.currentTarget)}><Table2 size={15} aria-hidden />{t('Evidence table')}</Button>

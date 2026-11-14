@@ -51,7 +51,7 @@ import { RevisionForm } from './RevisionForm'
 import { EarlierRevision, QuestionBubble } from './QuestionBubble'
 import { RunChip, SideRunStatus, TitleButton, TitleEditRow } from './Topbar'
 import { RunSlotContext } from '../shell/runSlot'
-import { AnswerBasis } from './AnswerBasis'
+import { FulltextLine, SearchBasis } from './AnswerBasis'
 import { SourcesPanel, type StateFilter } from './SourcesPanel'
 import { SplitPanel, StackPanel } from './SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './usePanelStack'
@@ -935,12 +935,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span title={t('How much the run may screen and read')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
-    {/* With a search behind it, the counts read as one list from found down to cited; otherwise the strip above. */}
-    <AnswerBasis view={view} answer={answer} onSources={showSources} onAnswer={showAnswer} />
-
       <div className="research-thread">
-      {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
+      {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. With a
+          search behind it, the counts from found down to cited sit in the search and full-text step lines. */}
       <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
+        searchBasis={<SearchBasis view={view} answer={answer} onSources={showSources} onAnswer={showAnswer} />}
+        afterSearch={<FulltextLine view={view} answer={answer} onSources={showSources} onAnswer={showAnswer} />}
+        shownAnswerRunId={answer?.run_id}
         onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
         onGiveKeyTerms={() => reviseQuestion('terms')}
         onReviseQuestion={() => reviseQuestion('question')}

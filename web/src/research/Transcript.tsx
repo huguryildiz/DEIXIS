@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { api, type DateScope, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from '../lib/api'
 import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
@@ -6,6 +6,7 @@ import { broadIndexReasonText, conditionalSearchArmLabels, fieldSourceReasonText
 import { ConnectionIcon } from '../components/connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ChainSummary, SearchSummary, StatStrip, type StatItem } from './SearchSummary'
+import { Bar } from './AnswerBasis'
 import { ModelName } from '../components/ModelName'
 import { effortLabels, modelRoles } from '../home/Home'
 import { AnswerStepVisual } from './FlowReport'
@@ -180,8 +181,12 @@ const scopeYearsText = (scope: DateScope) =>
   : scope.from_year !== null ? t('{year} onwards', { year: scope.from_year })
   : t('up to {year}', { year: scope.to_year ?? '' })
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, shownAnswerRunId, searchBasis = null, afterSearch = null, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
+  // The search counts inside the latest finished search's details, and the full-text step line drawn after that search.
+  searchBasis?: ReactNode; afterSearch?: ReactNode
+  // The run of the answer the page shows (an earlier valid version when a late revision failed), not the newest answer.
+  shownAnswerRunId?: string
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
   onControlRun?: (run: Run, action: 'pause' | 'resume' | 'cancel') => void
@@ -230,15 +235,21 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [active])
-  // The current question opens the thread as the user's turn (ResearchView's question bubble, S8).
+  // The current question opens the thread as the user's turn (ResearchView's question bubble, S8). The runs read as a
+  // timeline of quiet step lines; the latest answer follows them directly, never inside a run's folded details.
+  const searchRun = runs.find(r => r.id === latestDiscovery)
   return <>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
-    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
+    {!searchRun && afterSearch}
+    {runs.map((run, i) => <Fragment key={run.id}><RunTurn run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
       modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onReviseQuestion={onReviseQuestion}
       onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} onOpenPassage={onOpenPassage} onOpenSource={onOpenSource} onOpenSourceList={onOpenSourceList} busy={busy}
-      queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
-      {view.answers[0]?.run_id === run.id ? latestAnswer : null}
-    </RunTurn>)}
+      queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}
+      basis={run.id === latestDiscovery ? searchBasis : null} showsLatestAnswer={Boolean(latestAnswer) && shownAnswerRunId === run.id} />
+      {/* The full-text step follows the search it belongs to once that search stopped working. */}
+      {run.id === latestDiscovery && !ACTIVE.has(run.status) && afterSearch}
+    </Fragment>)}
+    {latestAnswer}
     {!runs.length && <div className="chat-say"><Sparkles size={18} strokeWidth={1.6} aria-hidden /><p>{emptyText}</p></div>}
     <div ref={end} className="chat-end" />
     {active && !atEnd && <button type="button" className="chat-jump" onClick={() => end.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'end' })}><ArrowDown size={15} aria-hidden />{t('Jump to latest')}</button>}
@@ -246,7 +257,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, onOpenSourceList, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, onOpenSourceList, busy, queueLine = null, basis = null, showsLatestAnswer = false }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
@@ -261,7 +272,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   onEditPlan?: (opener: HTMLElement) => void
   onOpenPassage?: (passageId: string, anchor: string | null) => void
   busy: boolean
-  queueLine?: { count: number; open: () => void } | null; children: ReactNode
+  queueLine?: { count: number; open: () => void } | null; basis?: ReactNode; showsLatestAnswer?: boolean
 }) {
   const active = ACTIVE.has(run.status)
   const [open, setOpen] = useState<boolean | null>(null)
@@ -326,8 +337,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     })().catch(() => { /* Keep the last recorded assessment if its status refresh fails. */ })
     return () => { live = false }
   }, [run.id, run.kind, run.status, view.research.id, reviewTargets, candidateReviewPlan, reviewTargetKind, reviewTargetId])
-  // A finished run folds away once something follows it; the current question's latest search and the latest answer stay open.
-  const expanded = open ?? (run.status !== 'completed' || keepOpen)
+  // A finished run is one quiet line; a live, paused, failed or cancelled run is a card.
+  const line = run.status === 'completed'
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
   const steps = run.steps ?? []
@@ -363,6 +374,11 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // already run out in this run. A completed run went on with the requests that finished; a run paused on the budget
   // offers the key in its pause notice.
   const searchSteps = steps.filter(s => s.kind.startsWith('provider_search'))
+  // Searches of a finished run that failed: named on its collapsed line, and the run starts open so its retry is in view.
+  const failedSearches = line ? searchSteps.filter(troubled).length : 0
+  // A quiet finished line starts folded; a live, paused, failed or cancelled run, or a finished one with failed
+  // searches, starts open so its state and controls are in view.
+  const expanded = open ?? (!line || failedSearches > 0)
   const budgetStopped = (s: Step) => troubled(s) && ['quota_exhausted', 'rate_limited'].includes((s.error as { service_kind?: string } | null)?.service_kind ?? '')
   const refused = searchSteps.filter(s => budgetStopped(s) && s.delivery_class === 'rejected_not_executed')
   const notSent = searchSteps.filter(s => budgetStopped(s) && s.delivery_class === 'before_send')
@@ -1104,7 +1120,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         parts.push(<ChainSummary key="chain-visual" links={poolLinks ? poolLinks.links ?? 0 : null} backward={chainRecords('backward')} forward={chainRecords('forward')}
           seeds={chainSeeds} asks={asks} works={brought.works} only={brought.only} />)
         if (!asks) parts.push(<div key="no-request-lead">{t('This depth opens no citation request of its own.')}</div>)
-        if (chainDone && chainStats.length) parts.push(<div key="chain-requests" className="chain-requests"><span className="search-summary-head">{t('Requests')}</span><StatStrip items={chainStats} /></div>)
+        if (chainDone && chainStats.length) parts.push(<div key="chain-requests" className="step-strip"><span className="search-summary-head">{t('Requests')}</span><StatStrip items={chainStats} /></div>)
       } else parts.push(...rows)
       const limits = run.approval?.chaining
       // How the chain picks its seeds and which works it keeps, with the arrival cutoff (fast_chain_v1), as the approval
@@ -1200,18 +1216,27 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     if (key === 'review' && run.kind === 'answer' && !group.length && answer?.status === 'structurally_valid') {
       parts.push(<div key="anchors">{t('Each cited quote was found in a stored passage that was given to this step.')}</div>)
       const review = answer.review
-      parts.push(row(review?.model?.resolved_model ? t('Claim review by {model}', { model: review.model.resolved_model }) : t('Claim review'),
-        !review ? t('Not recorded for this answer') : review.status !== 'completed' ? t('No usable review') : tally(review.reviews.map(r => r.verdict)).map(([verdict, n]) => `${n} ${t(verdictLabels[verdict as Verdict])}`).join(' · '), 'review'))
+      // A completed review leads as one stacked bar of its verdicts, the reviewer's name beside the title.
+      if (review?.status === 'completed' && review.reviews.length) parts.push(<Bar key="review" title={t('Claim review')} num={n => n.toLocaleString(uiLocale())}
+        aside={review.model?.resolved_model ? <ModelName connection={review.model.connection} text={modelText(review.model.resolved_model)} /> : null}
+        parts={(['supported', 'partially_supported', 'not_supported', 'cannot_assess'] as const).map(verdict => ({
+          label: t(verdictLabels[verdict]), n: review.reviews.filter(r => r.verdict === verdict).length,
+          tone: verdict === 'supported' ? 'read' as const : verdict === 'partially_supported' ? 'open' as const : verdict === 'not_supported' ? 'out' as const : 'idle' as const }))} />)
+      else parts.push(row(t('Claim review'), !review ? t('Not recorded for this answer') : t('No usable review'), 'review'))
     }
     // Where each anchor was found and how (evidence_links.anchor_match): exact after whitespace collapse, normalized after
     // case and punctuation folding, fuzzy at a ratio of 0.9 or more. Shown whether or not a reviewer model also ran.
     if (key === 'review' && run.kind === 'answer' && answer?.status === 'structurally_valid') {
       const anchors = answer.claims.flatMap(c => c.evidence.map((e, i) => ({ key: `${c.id}:${i}`, claim: c.label, e })))
+      // How the anchors were matched, as a strip of counts above the table.
+      if (anchors.length) parts.push(<div key="anchor-matches" className="step-strip"><span className="search-summary-head">{t('How each anchor was matched')}</span>
+        <StatStrip items={tally(anchors.map(a => a.e.anchor_match ?? 'unrecorded')).map(([match, n]) => ({ n, label: match === 'unrecorded' ? t('match not recorded') : t(anchorMatchLabels[match as keyof typeof anchorMatchLabels]) }))} /></div>)
       if (anchors.length) parts.push(<div key="anchor-table" className="step-table-wrap">
-        <table className="step-table"><caption className="sr-only">{t('Located anchors')}</caption>
+        <table className="step-table is-anchors"><caption className="sr-only">{t('Located anchors')}</caption>
           <thead><tr><th scope="col">{t('Claim and where its anchor was found')}</th><th scope="col">{t('Match')}</th></tr></thead>
           <tbody>{shown('anchors', anchors).map(({ key: k, claim, e }) => {
-            const where = `${e.kind === 'abstract' ? t('abstract') : t('p. {page}', { page: e.printed_label ?? e.physical_page ?? '?' })} · ${e.title}`
+            // The place as a quiet label, then the full title, which wraps instead of being cut.
+            const where = <><span className="step-anchor-where">{e.kind === 'abstract' ? t('abstract') : t('p. {page}', { page: e.printed_label ?? e.physical_page ?? '?' })}</span>{e.title}</>
             return <tr key={k}>
               <td><span className="step-table-cite"><code>{claim}</code>{onOpenPassage
                 ? <button type="button" className="step-table-link" title={e.title} onClick={() => onOpenPassage(e.passage_id, e.anchor_text)}>{where}</button>
@@ -1242,20 +1267,25 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const modelDown = run.status === 'paused' && modelDownPause(run)
   const changesSinceStop = modelDown ? (view.model_changes ?? []).filter(change => change.changed_at > run.updated_at) : []
   const vocabularyEnd = run.status === 'failed' && (run.pause_reason === 'vocabulary_too_broad' || run.pause_reason === 'vocabulary_empty')
+  const pauseWarning = userPaused || run.pause_reason === 'spend_threshold' || (selectionStop && resumable)
   // A live run is a progress card: the phase now running names its icon, the bar shows the stage reached, and the phases
   // not reached yet are listed faded below the live one.
-  // The latest finished search of this question revision closes as a card: what it found, its first included works.
-  // The latest answer closes the same way, with its claim and source counts. Included and passed-the-abstract-stage
-  // stay apart: a fast-path answer may read works that passed the abstract stage while none is included yet.
+  // The latest finished search of this question revision reads as one line of counts: found, passed to full text,
+  // included; its details hold its first included works. The latest answer's line counts its claims and sources.
+  // Included and passed stay apart: a fast-path answer may read works that passed while none is included yet.
   const doneSearch = run.kind === 'discovery' && run.status === 'completed' && latestDiscovery
   const doneAnswer = run.kind === 'answer' && run.status === 'completed' && Boolean(answer) && keepOpen
   const doneCard = doneSearch || doneAnswer
   const includedRecords = doneSearch ? includedReading(view).records : []
   const passed = funnel?.candidates ?? 0
   const found = funnel?.unique_in_research ?? funnel?.unique ?? 0
+  const localNum = (n: number) => n.toLocaleString(uiLocale())
   const doneTitle = doneAnswer ? t('{claims} claims from {sources} sources', { claims: answer!.claims.length, sources: citedSources })
-    : includedRecords.length ? t('{found} works found · {included} included', { found, included: includedRecords.length })
-    : t('{found} works found · {passed} passed the abstract stage', { found, passed })
+    : [t('{n} works found', { n: localNum(found) }), passed > 0 && t('{n} passed to full text', { n: localNum(passed) }),
+      includedRecords.length > 0 && t('{n} included', { n: localNum(includedRecords.length) })].filter(Boolean).join(' · ')
+  // The icon of a finished run's line, by what the run did.
+  const LineIcon = run.kind === 'discovery' ? Search : run.kind === 'pdf_ocr' ? ScanText : run.kind === 'review' ? ShieldCheck
+    : run.kind === 'answer' || run.kind === 'report' ? FileText : BookOpen
   const nextName = (key: PhaseKey) => t(key === 'pdf' && run.kind !== 'discovery' ? (attachedOnly ? 'read the attached PDFs' : 'download open-access PDFs') : nextNames[key])
   const runningAt = phaseStates.findIndex(state => state === 'running')
   const stage = stageOffset + (runningAt < 0 ? Math.max(0, phaseStates.findIndex(state => state === 'waiting')) : runningAt) + 1
@@ -1265,18 +1295,21 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const waitingRow = (key: string, text: string) => <li key={key} className="chat-step step is-waiting" style={{ opacity: Math.max(0.3, 0.85 - 0.15 * fadeRank++) }}>
     <span className="chat-step-line"><span className="chat-step-icon ico" role="img" aria-label={t('Not started')} /><span className="chat-step-text">{text}</span></span>
   </li>
-  return <section className={`chat-turn${active ? ' is-active' : ''}${doneCard ? ' is-done' : ''}`}>
+  return <section className={`chat-turn${active ? ' is-active' : ''}${line ? ' is-line' : ''}`}>
     <div className="chat-group">
       {/* One head element in every state (live, finished, plain): the toggle stays the same DOM node when a run starts,
           finishes or resumes, so keyboard focus on it survives the change. */}
-      <div className={doneCard ? 'chat-live-head chat-done-head' : active ? 'chat-live-head' : 'chat-head'}>
+      <div className={active ? 'chat-live-head' : 'chat-head'}>
         <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
-          {doneCard ? <>
-            <span className="chat-live-icon" aria-hidden>{doneAnswer ? <FileText size={17} /> : <Check size={18} />}</span>
-            <span className="chat-live-title"><small>{label}</small><span>{doneTitle}</span></span>
+          {line ? <>
+            <span className="chat-line-icon" aria-hidden><LineIcon size={14} /></span>
+            {/* The run's name stays in the line's text for screen readers; the counts are what is shown. */}
+            <span className="chat-line-text">{doneCard ? <><span className="sr-only">{label}: </span>{doneTitle}</>
+              : <>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</>}
+              {failedSearches > 0 && <> · <em className="chat-step-missed"><TriangleAlert size={12} aria-hidden />{plural(failedSearches, '{n} search failed', '{n} searches failed')}</em></>}</span>
             <span className="chat-when">{startedText(started)}</span>
             <time>{durationText(secondsBetween(started, clock))}</time>
-            {expanded ? <ChevronDown size={16} className="chat-done-chev" aria-hidden /> : <ChevronRight size={16} className="chat-done-chev" aria-hidden />}
+            <ChevronRight size={15} className="chat-line-chev" aria-hidden />
           </> : active ? <>
             <span className="chat-live-icon" aria-hidden><LiveIcon size={17} /></span>
             <span className="chat-live-title"><small className="shimmer-text">{t('In progress')} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</small>
@@ -1294,9 +1327,14 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
             : <Button variant="outline" size="sm" disabled={busy} onClick={() => onControlRun(run, 'pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
           <Button variant="outline" size="sm" className="chat-live-cancel" disabled={busy} onClick={() => onControlRun(run, 'cancel')}><X size={14} aria-hidden />{t('Cancel')}</Button>
         </span> : <span className="chat-live-pill"><i aria-hidden />{t('Working')}</span>)}
+        {/* A live run's state, announced as it moves from stage to stage. */}
+        {active && <span className="sr-only" role="status">{label} · {t('In progress')} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</span>}
       </div>
-      {doneCard && includedRecords.length > 0 && <div className="chat-done-works"><WorkRows works={[...includedRecords].sort(byRank).slice(0, 3)} onOpen={onOpenSource} /></div>}
-      {doneSearch && onOpenSourceList && (includedRecords.length > 0 || passed > 0) && <div className="chat-done-foot">{includedRecords.length > 0
+      {/* A finished search's details open with its counts, its first included works and the way to all of them. */}
+      {/* The current revision's search shows its stored counts whenever its details are open, whatever its status. */}
+      {expanded && basis}
+      {expanded && doneCard && includedRecords.length > 0 && <div className="chat-done-works"><WorkRows works={[...includedRecords].sort(byRank).slice(0, 3)} onOpen={onOpenSource} /></div>}
+      {expanded && doneSearch && onOpenSourceList && (includedRecords.length > 0 || passed > 0) && <div className="chat-done-foot">{includedRecords.length > 0
         ? <OpenAllButton n={includedRecords.length} onClick={() => onOpenSourceList('included')} />
         : <OpenAllButton n={passed} passed onClick={() => onOpenSourceList('passed')} />}</div>}
       {active && expanded && <div className="chat-live-bar" role="progressbar" aria-label={t('stage {n} of {total}', { n: stage, total: stageTotal })}
@@ -1372,7 +1410,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       </>}
     </div>
 
-    {run.status === 'paused' && <div className={`chat-note notice ${userPaused || run.pause_reason === 'spend_threshold' || (selectionStop && resumable) ? 'is-warning' : 'is-error'}`}>
+    {/* A blocking stop is announced as an alert; a pause the person asked for or can resume as is is not. */}
+    {run.status === 'paused' && <div className={`chat-note notice ${pauseWarning ? 'is-warning' : 'is-error'}`} role={pauseWarning ? undefined : 'alert'}>
       {userPaused ? <Pause size={16} aria-hidden /> : <TriangleAlert size={16} aria-hidden />}
       <div className="notice-body">
         {userPaused
@@ -1410,7 +1449,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         </div>
       </div>
     </div>}
-    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note notice ${vocabularyEnd ? 'is-warning' : run.status === 'failed' ? 'is-error' : 'is-neutral'}`}>
+    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note notice ${vocabularyEnd ? 'is-warning' : run.status === 'failed' ? 'is-error' : 'is-neutral'}`}
+      role={!vocabularyEnd && run.status === 'failed' ? 'alert' : undefined}>
       <TriangleAlert size={16} aria-hidden />
       <div className="notice-body">
         <p>{vocabularyEnd ? pauseReasonText(run.pause_reason, run.error, uniformSearch) : <b>{pauseReasonText(run.pause_reason, run.error, uniformSearch)}</b>}</p>
@@ -1418,8 +1458,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {vocabularyEnd && !olderRevision && onRewrite && <RewriteField question={view.scope.question} keyTerms={view.scope.key_terms ?? null} busy={busy} onRewrite={onRewrite} />}
       </div>
     </div>}
-    {children}
-    {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
+    {!showsLatestAnswer && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>
 }
 

@@ -1602,15 +1602,6 @@ class Store:
         row = self.conn.execute("SELECT output_json FROM run_steps WHERE id = ?", (step_id,)).fetchone()
         return json.loads(row[0]) if row and row[0] else None
 
-    def user_upload_assets(self, asset_ids: set[str]) -> set[str]:
-        """Of these files, the ones a person uploaded (slice 21: what semantic search sends of them is counted)."""
-        ids = sorted(asset_ids)
-        found: set[str] = set()
-        for start in range(0, len(ids), 500):
-            chunk = ids[start:start + 500]
-            found |= {row[0] for row in self.conn.execute(
-                f"SELECT id FROM source_assets WHERE origin = 'user_upload' AND id IN ({','.join('?' * len(chunk))})", chunk)}
-        return found
 
     def set_step_output(self, step_id: str, output: Any) -> None:
         """Add to a finished step's stored output (the compiled queries of a search plan) without a second step event."""

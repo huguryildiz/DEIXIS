@@ -38,7 +38,6 @@ THRESHOLDS = {"proposal_runs": PROPOSAL_RUNS, "proposal_majority": PROPOSAL_MAJO
 PARTS_PER_PROPOSAL = (2, 5)
 PHRASES_PER_PART = (6, 15)
 MAX_PHRASE_WORDS = 4
-MAX_EXCLUSION_TITLE_WORDS = 30
 
 _EDGES = re.compile(r"^\W+|\W+$", re.UNICODE)
 

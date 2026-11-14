@@ -202,7 +202,7 @@ class PROCESSENTRY32W(ctypes.Structure):
 
 kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
 kernel32.OpenProcess.restype = wintypes.HANDLE
-PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, SYNCHRONIZE = 0x1000, 0x0001, 0x00100000
+PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE = 0x1000, 0x0001
 _info_cache: dict[int, tuple[int | None, str]] = {}
 
 

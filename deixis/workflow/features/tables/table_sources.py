@@ -34,7 +34,6 @@ from typing import Any
 
 from deixis.workflow.screen.decisions import DecisionStore
 
-FOLLOWS_INCLUDED = 1
 FOLLOWS_TABLE_SOURCES = 2
 ABSTRACT_FULLTEXT_CODES = ("no_fulltext", "text_unreadable")
 

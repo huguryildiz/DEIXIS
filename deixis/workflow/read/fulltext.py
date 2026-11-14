@@ -29,11 +29,6 @@ OWNED_CODES = ("not_read_yet", "text_unreadable", "no_fulltext")
 # Which group of the retrieval order a work belongs to; the order of the tuple is the order they are fetched in. The
 # fourth group is the works citation chaining brought: it has its own room and never takes a keyword work's.
 GROUPS = ("user", "candidate", "unresolved", "chain")
-KEYWORD_GROUPS = GROUPS[:3]
-# How many works one retrieval run fetches at once (slice 13e). Each host is still asked one request at a time
-# (`documents.fetch.host_gate`), so this bounds the hosts in flight, not the requests to one publisher. The same for
-# every effort; whether 4 is the right number was not measured.
-FULLTEXT_FETCH_PARALLEL = 4
 
 
 def fetch_budget(effort: str) -> dict[str, Any]:

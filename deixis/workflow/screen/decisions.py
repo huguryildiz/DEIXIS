@@ -214,16 +214,6 @@ class DecisionStore:
             " ORDER BY rank", (ranking_step_id,),
         )]
 
-    def signal_ranks(self, ranking_step_id: str, signals: tuple[str, ...]) -> dict[str, dict[str, tuple[float, bool]]]:
-        """One ranking step's stored places in these signals, as `ranking.fuse` reads them."""
-        ranks: dict[str, dict[str, tuple[float, bool]]] = {}
-        marks = ",".join("?" * len(signals))
-        for row in self.conn.execute(
-            f"SELECT source_version_id, signal, rank, available FROM record_signal_ranks WHERE ranking_step_id = ?"
-            f" AND signal IN ({marks})", (ranking_step_id, *signals),
-        ):
-            ranks.setdefault(row["signal"], {})[row["source_version_id"]] = (row["rank"], bool(row["available"]))
-        return ranks
 
     def latest_ranking(self, research_id: str, scope_revision: int) -> list[str] | None:
         """The inspection order this question revision was last ranked in; `None` when it was never ranked.

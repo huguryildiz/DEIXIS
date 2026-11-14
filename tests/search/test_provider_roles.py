@@ -11,7 +11,6 @@ Records and questions are SYNTHETIC and every provider is mocked: passing shows 
 import httpx
 from fastapi.testclient import TestClient
 
-from deixis.providers.registry import verification_providers
 from fakes import PlanOnlyAdapter
 from test_vocabulary_flow import QUESTION, CountingOpenAlex, app_for, start, wait
 

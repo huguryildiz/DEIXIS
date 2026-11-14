@@ -46,11 +46,9 @@ class Model:
     license: str
     official: bool  # published by the model's own makers (Qwen, or ggml-org for BAAI's bge-m3)
     memory_gb: float  # an estimate, see the module docstring
-    pooling: str  # "last", "cls" or "rank"
     multilingual: bool
     english_query_required: bool  # the query instruction is English: a non-English question needs an English sentence
     dimensions: int | None = None
-    query_instruction: str | None = None
 
     @property
     def url(self) -> str:
@@ -70,21 +68,21 @@ CATALOG: tuple[Model, ...] = (
           "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF", "a02f48bb4f057028298c21fa033da2b30d7742d5",
           "qwen3-reranker-0.6b-q8_0.gguf", 639_153_184,
           "22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48", "Apache-2.0", True, 2.1,
-          "rank", True, False),
+          True, False),
     Model("qwen3-reranker-4b", "reranker", "Qwen3-Reranker-4B", "Qwen (community conversion, Voodisss)", "4B", "qwen3",
           "Voodisss/Qwen3-Reranker-4B-GGUF-llama_cpp", "1b452c803342e73ac3644551b727dfd51a09fd5b",
           "Qwen3-Reranker-4B.Q8_0.gguf", 4_279_678_912,
           "102ac400d68f02877c2fdfecf0732872652298448352b6faf28ec7f8dca8c913", "Apache-2.0", False, 6.0,
-          "rank", True, False),
+          True, False),
     Model("qwen3-reranker-8b", "reranker", "Qwen3-Reranker-8B", "Qwen (community conversion, Voodisss)", "8B", "qwen3",
           "Voodisss/Qwen3-Reranker-8B-GGUF-llama_cpp", "646e3a1fc04936cab940ad02e18ee6b14af46263",
           "Qwen3-Reranker-8B.Q8_0.gguf", 8_047_134_304,
           "13815d68c755c6293161a9aebc986976af90b35a7c9ffd2e074e58d28ddfe4ae", "Apache-2.0", False, 9.8,
-          "rank", True, False),
+          True, False),
     Model("bge-reranker-v2-m3", "reranker", "bge-reranker-v2-m3", "BAAI (community conversion, gpustack)", "0.6B", "bge",
           "gpustack/bge-reranker-v2-m3-GGUF", "3093af03b1a635e67b084b1d8c03c5f5e020fd05", "bge-reranker-v2-m3-Q8_0.gguf",
           635_676_416, "a43c7c9b11a4c1517e5bf95151960e1621d1b72f7a493364b01e386cf1aaa1d3", "Apache-2.0", False, 2.0,
-          "rank", True, False),
+          True, False),
 )
 KINDS = ("reranker",)
 

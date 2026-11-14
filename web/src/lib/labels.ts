@@ -342,7 +342,7 @@ export const refreshReasons: Record<string, string> = {
 
 // Why a selection the person added to a follow-up points at no passage this research can read. It is a state, not
 // an error: the text they picked still travels with the question, as their own words.
-export const attachmentReasons: Record<string, string> = {
+const attachmentReasons: Record<string, string> = {
   source_removed: 'The source this came from was removed from this research, so the answer could not read it.',
   passage_not_current: 'The text this came from was replaced or read again since, so the answer could not read it.',
   cell_not_filled: 'This cell holds no value yet, so there was nothing to read behind it.',
@@ -562,7 +562,7 @@ const providerNames: Record<string, string> = {
 }
 export const providerName = (id: string) => providerNames[id] ?? id
 
-export const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', copilot_cli: 'GitHub Copilot CLI', deepseek: 'DeepSeek', gemini: 'Gemini', gemini_cli: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral', anthropic: 'Anthropic API', openai: 'OpenAI API', openrouter: 'OpenRouter', mimo: 'Xiaomi MiMo', voyage: 'Voyage AI', local_server: 'Local server' }
+const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', copilot_cli: 'GitHub Copilot CLI', deepseek: 'DeepSeek', gemini: 'Gemini', gemini_cli: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral', anthropic: 'Anthropic API', openai: 'OpenAI API', openrouter: 'OpenRouter', mimo: 'Xiaomi MiMo', voyage: 'Voyage AI', local_server: 'Local server' }
 export const connectionName = (id: string) => connectionNames[id] ?? id
 // Dollars for a person to read: whole dollars from ten up, cents below, "under $0.01" for a sliver.
 export const money = (usd: number) => usd === 0 ? '$0.00' : usd < 0.01 ? t('under $0.01') : `$${usd.toLocaleString(uiLocale(), usd >= 10 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -1068,7 +1068,7 @@ export const citationRefusals: Record<string, string> = {
 
 // Reverse citation search (R3): the statement check panel. The results are V3's; the words say what the check is
 // (support located in given passages) and never that a work disagrees: no "challenges" result exists yet (R5).
-export const statementResultLabels: Record<CitationResult, string> = {
+const statementResultLabels: Record<CitationResult, string> = {
   found_whole: 'Supports the whole statement', found_partial: 'Supports part of the statement', not_found_in_given: 'Not found in the given passages',
 }
 // R4b: the class the backend presents each completed work in (`statement.support_class`). A result whose parts

@@ -54,7 +54,6 @@ from deixis.storage import library_lock
 from deixis.tools import child_record
 from deixis.tools.child_env import child_env
 
-LOCAL_BATCH = 16  # records per request (a starting value, not measured), so a pause waits at most one batch
 LOCAL_IDLE_SECONDS = 300  # an idle server is stopped: it holds its model in memory
 READY_TIMEOUT_SECONDS = 120  # loading the model and answering the probe
 LOCK_WAIT_SECONDS = 30  # waiting for a model's in-use lock that an install's check or a removal holds

@@ -76,7 +76,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 /* One compact "Models" button (mockup): the label and the chevron show; the model names stay as its accessible text and
    in the popover. */
 .models-summary-label{margin-right:2px}
-.models-summary>svg:not(.models-summary-chevron){display:none}
+.models-summary>svg{display:none}
 @media(max-width:520px){
   .model-palette-backdrop{display:block;position:fixed;z-index:59;inset:0;background:#0006}
   .model-palette-positioner{position:fixed!important;inset:auto 10px 10px!important;width:auto!important;transform:none!important}

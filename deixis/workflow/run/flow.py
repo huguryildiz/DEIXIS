@@ -2405,9 +2405,6 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output=output)
         return chained
 
-    def _merge_step_output(self, step_id: str, extra: dict[str, Any], identity: dict[str, Any]) -> None:
-        """Write `latest stored output | extra | identity`: `set_step_output` replaces the whole output."""
-        self.store.set_step_output(step_id, (self.store.step_output(step_id) or {}) | extra | identity)
 
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
                            page: Page | None = None, stop: Callable[[], bool] | None = None,

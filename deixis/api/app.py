@@ -315,11 +315,6 @@ class OllamaModelBody(BaseModel):
     model: str = Field(min_length=1, max_length=200)
 
 
-class SemanticChoice(BaseModel):
-    provider: Literal["gemini", "builtin", "openai", "voyage", "cohere", "ollama", "lm_studio", "off"]
-    model: str | None = Field(default=None, min_length=1, max_length=200)
-
-
 class RerankChoice(BaseModel):
     """The reranker for the order records are read in (Voyage when nothing is saved). `model` names the built-in catalog
     reranker (required for `builtin`). `pool_factor` (records reranked as a multiple of those a run reads) and

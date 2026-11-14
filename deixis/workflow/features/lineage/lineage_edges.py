@@ -46,8 +46,6 @@ def edge_state(to: EdgeTo, frm: EdgeFrom) -> str:
     return "present" if ids & normalized_openalex_ids(to.referenced_ids) else "absent_in_read_list"
 
 
-def unexpected_no_citation_edge(state: str) -> bool:
-    return state == "absent_in_read_list"
 
 
 def derive_edges(tos: Iterable[EdgeTo], froms: Iterable[EdgeFrom]) -> tuple[Edge, ...]:

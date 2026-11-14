@@ -4,7 +4,7 @@ import { switchTheme } from './theme'
 // The research page shows one side panel beside the thread (UI parity S7a). Specs open panels and find them through
 // these helpers instead of the old research tabs. A panel's URL segment is its name; the old tab names still open
 // the same panel (waiting → pdfs, evidence → table, followup → watch, candidates → cands).
-export const PANEL_TITLES = {
+const PANEL_TITLES = {
   sources: 'Sources',
   queue: /^Awaiting your decision \(\d+\)$/,
   pdfs: 'Get more full text',
@@ -17,7 +17,7 @@ export const PANEL_TITLES = {
 export type PanelName = keyof typeof PANEL_TITLES
 
 // The menu row that opens each panel (its name ends with the panel's count, when it has one).
-export const MENU_ROWS: Record<PanelName, RegExp> = {
+const MENU_ROWS: Record<PanelName, RegExp> = {
   sources: /^Sources\b/, queue: /^Awaiting your decision\b/, pdfs: /^Get more full text\b/, table: /^Evidence table\b/,
   watch: /^Follow-up\b/, cands: /^Candidates\b/, activity: /^Activity\b/, funnel: /^Search funnel\b/,
 }
@@ -32,7 +32,7 @@ export function panel(page: Page, title: string | RegExp): Locator {
 // From 1100px the rail and the single-key shortcuts open the Sources, queue, PDF and table panels; the menu keeps those
 // rows only below 1100px (S11). A page in the 1100px range or wider presses the panel's key, the way a person does with
 // no pointer: S Sources, Q queue, P PDFs, T table, F Search funnel (shortcuts.spec.ts covers the keys themselves).
-export const RAIL_KEYS: Partial<Record<PanelName, string>> = { sources: 's', queue: 'q', pdfs: 'p', table: 't', funnel: 'f' }
+const RAIL_KEYS: Partial<Record<PanelName, string>> = { sources: 's', queue: 'q', pdfs: 'p', table: 't', funnel: 'f' }
 const wide = (page: Page) => (page.viewportSize()?.width ?? 1280) >= 1100
 
 // Opens a panel the way a person does, from the topbar's Research actions menu (or by its key, see above), and returns it
@@ -67,14 +67,6 @@ export async function closePanel(page: Page) {
 export const reportPanel = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.report-document') })
 export const sourcePanel = (page: Page) => panel(page, 'Source details')
 
-// The Evidence table's stacked panels (UI parity S15a): a cell, titled "<source> · <column>", and the evidence report.
-export const cellPanel = (page: Page, column: string) => panel(page, new RegExp(` · ${column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
-export const evidenceReportPanel = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.evidence-report-document') })
-// A row of the table's ⋯ menu (Save as template, Remove all columns, Add rows, Development lines, Move to Trash, …).
-export async function tableMenu(page: Page, item: string | RegExp) {
-  await page.locator('[data-split-panel]').getByRole('button', { name: 'More table actions' }).click()
-  await page.getByRole('menuitem', { name: item }).click()
-}
 
 // Back to the panel below (the report a source was opened from). Escape would end the whole stack.
 export async function backPanel(page: Page) {
@@ -86,21 +78,6 @@ export async function showAnswer(page: Page) {
   if (await page.locator('[data-split-panel]').count()) await closePanel(page)
 }
 
-// The same, by keyboard alone: focus the Research actions button, open its menu with Enter, walk down to the row with
-// ArrowDown, and activate it with Enter. Returns once the panel shows.
-export async function openPanelByKeyboard(page: Page, name: PanelName): Promise<Locator> {
-  const more = page.getByRole('button', { name: 'Research actions' })
-  await more.focus()
-  await page.keyboard.press('Enter')
-  const row = page.getByRole('menuitem', { name: MENU_ROWS[name] })
-  await expect(row).toBeVisible()
-  for (let i = 0; i < 12 && !(await row.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('ArrowDown')
-  await expect(row).toBeFocused()
-  await page.keyboard.press('Enter')
-  const opened = panel(page, PANEL_TITLES[name])
-  await expect(opened).toBeVisible()
-  return opened
-}
 
 // A panel's count, which the old tab carried. Candidates, Follow-up and Activity keep it on their menu row. The queue's count
 // is on the topbar's "N waiting for you" chip (or the open panel's title) and the PDFs' count on the rail's "N waiting for a PDF" row.
@@ -139,23 +116,9 @@ export async function chooseTheme(page: Page, theme: 'light' | 'dark') {
   await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
 }
 
-// A card of the human queue (UI parity S14, P39): a list item named by its work's title.
-export const queueCards = (page: Page) => page.getByRole('list', { name: 'Rows awaiting your decision' })
-export const queueCard = (page: Page, title: string) => page.locator('.queue-panel').getByRole('listitem', { name: title, exact: true })
-
-// The audit sample sits in the Search funnel panel, collapsed under the stages (S14, §2.2). Opens it and returns it.
-export async function openAudit(page: Page): Promise<Locator> {
-  const opened = await openPanel(page, 'funnel')
-  const more = opened.locator('details.funnel-more')
-  if (!(await more.evaluate(el => (el as HTMLDetailsElement).open))) await more.locator(':scope > summary').click()
-  const audit = opened.locator('.audit-panel')
-  await expect(audit).toBeVisible()
-  return audit
-}
-
 // The Search plan panel (UI parity S23b, P42) opens from "Edit plan" in the plan step of the current question's latest
 // search, the way a person reaches it. Unfolds that run and its plan step when they are closed; returns the panel.
-export const planPanel = (page: Page) => panel(page, 'Search plan')
+const planPanel = (page: Page) => panel(page, 'Search plan')
 export async function openPlanPanel(page: Page): Promise<Locator> {
   const opened = planPanel(page)
   if (await opened.count()) { await expect(opened).toBeVisible(); return opened }

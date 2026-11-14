@@ -44,7 +44,6 @@ PLAYWRIGHT_PORTS = range(8777, 8825)
 LIVE_PORTS = {8765} | set(range(8858, 8865))
 LINT_BASELINE = 17
 STAGES = ("preflight", "f09", "process", "install", "pytest", "web", "playwright", "capacity")
-GATED = ("f09", "process", "capacity")  # wall-clock stages: they wait for a quiet machine first (the pytest stage's own workers keep the 1-minute load high afterwards)
 QUIET_LOAD = 4.0  # F09 grows a child to 1 GiB against a 90 s clock; under heavy load or swap it times out first (it failed at load 6 to 11, passed at 4.4; same limit as capacity.LOAD_LIMIT)
 QUIET_WAIT_SECONDS = 600
 QUIET_FREE_MEMORY = 50  # percent; F09 failed twice at a 1-minute load below 4 while memory was tight (swap in use), and passed with 69% free

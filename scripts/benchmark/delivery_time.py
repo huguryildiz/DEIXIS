@@ -26,8 +26,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-# The stages whose end is the handover to answer writing, and the one that follows it.
-HANDOVER_STAGE = "read"
 
 
 def _rows(conn: sqlite3.Connection, sql: str, *args: Any) -> list[sqlite3.Row]:

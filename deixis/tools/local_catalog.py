@@ -94,7 +94,7 @@ def ollama_size_tag(sizes: dict[str, float], chip: str, chips: list[str]) -> str
 def lmstudio_families(page: str) -> list[dict[str, str]]:
     """Catalog entries in page order that can be downloaded (not cloud-only): their slug and display name."""
     families = []
-    for attrs, slug, body in re.findall(r'<a ([^>]*data-model-page-has-downloads="true"[^>]*)href="/models/([a-z0-9._-]+)"(.*?)</a>',
+    for slug, body in re.findall(r'<a (?:[^>]*data-model-page-has-downloads="true"[^>]*)href="/models/([a-z0-9._-]+)"(.*?)</a>',
                                         page, flags=re.S):
         title = re.search(r'<div class="text-lg font-medium">([^<]+)</div>', body)
         if title and "embed" not in slug:

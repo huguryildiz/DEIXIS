@@ -11,7 +11,7 @@ import asyncio
 import base64
 import itertools
 import json
-from collections import Counter, deque
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
@@ -59,7 +59,6 @@ class TurnResult:
     items: list[dict[str, Any]] = field(default_factory=list)
     final_text: str | None = None
     token_usage: dict[str, Any] | None = None
-    notification_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def tool_item_types(self) -> list[str]:
@@ -207,7 +206,6 @@ class CodexAppServer:
             started = await self.request("turn/start", params)
             turn_id = started["turn"]["id"]
             result = TurnResult(turn_id=turn_id, status="inProgress")
-            counts: Counter[str] = Counter()
             if on_started:
                 await on_started(turn_id)
             loop = asyncio.get_running_loop()
@@ -223,7 +221,6 @@ class CodexAppServer:
                     result.status = "client_timeout"
                     break
                 method = message["method"]
-                counts[method] += 1
                 if method == "__eof__":
                     result.status = "server_exited"
                     break
@@ -243,7 +240,6 @@ class CodexAppServer:
         messages = [i for i in result.items if i.get("type") == "agentMessage"]
         finals = [m for m in messages if m.get("phase") == "final_answer"] or messages
         result.final_text = finals[-1]["text"] if finals else None
-        result.notification_counts = dict(counts)
         return result
 
     async def close(self) -> None:

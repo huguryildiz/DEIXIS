@@ -493,7 +493,6 @@ def _check_gap_bases(store: Store, reports: ReportStore, report_id: str, *, curr
             continue
         refs = [row["ref_value"] for row in store.conn.execute(
             "SELECT ref_value FROM report_claim_refs WHERE claim_id = ? AND ref_kind = 'gap_ref'", (claim["id"],))]
-        valid_refs = [ref for ref in refs if ref in gap_ids]
         for ref in refs:
             if ref not in gap_ids:
                 issues.append(_issue("gap_ref_unknown", claim["section_id"], f"ERROR: {claim['claim_key']} names {ref}."))

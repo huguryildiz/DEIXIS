@@ -8,13 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 
 MAX_SCHEMA_REPAIRS = 1
 # A report section gets a second repair; frozen into a report run's budget, so older runs keep one.
 REPORT_SECTION_REPAIRS = 2
 MAX_RATE_LIMIT_MODEL_RETRIES = 2  # extra resends after a rate-limited response, before the call halts as today
-MAX_ACTIVE_MODEL_CALLS = 1
 MAX_TRANSIENT_NETWORK_RETRIES = 2
 
 
@@ -28,9 +26,6 @@ class EffortBudget:
     core_depth: int = 0
 
 
-# Read only by scripts/benchmark/spend_ledger.py; no run reads these tables.
-SW_READ_LIMIT = {"quick": 400, "standard": 1_000, "detailed": 1_000}
-PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 
 # Which domain source an sw discovery run searches, read from the OpenAlex field distribution of its gate query
 # (slice 14). A source is searched when the fields it covers hold at least ROUTE_SHARE of the records together.

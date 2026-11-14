@@ -100,10 +100,6 @@ class RateBudget:
     def seconds_left(self) -> float:
         return max(0.0, MAX_WAIT_SECONDS - self.waited_seconds)
 
-    @classmethod
-    def from_output(cls, output: dict[str, Any] | None, on_wait: Callable[["RateBudget"], None] | None = None) -> "RateBudget":
-        output = output or {}
-        return cls(float(output.get("waited_seconds") or 0), int(output.get("rate_limited_waits") or 0), on_wait)
 
     def counts(self) -> dict[str, Any]:
         return {"rate_limited_waits": self.rate_limited_waits, "waited_seconds": round(self.waited_seconds, 1)}
@@ -287,16 +283,6 @@ def document(title: str | None, abstract: str | None) -> str:
     return "\n\n".join(part for part in ((title or "").strip(), (abstract or "").strip()) if part)
 
 
-def reorder(automatic: list[str], candidates: list[str], scores: dict[str, float]) -> list[str]:
-    """`automatic` with the places of `candidates` filled by the same records ordered by score (highest first; an
-    equal score keeps the automatic order). Every other record keeps its place, so nothing is added or dropped."""
-    places = [i for i, rid in enumerate(automatic) if rid in set(candidates)]
-    position = {rid: i for i, rid in enumerate(automatic)}
-    ranked = sorted((automatic[i] for i in places), key=lambda rid: (-scores[rid], position[rid]))
-    order = list(automatic)
-    for place, rid in zip(places, ranked):
-        order[place] = rid
-    return order
 
 
 async def rerank(choice: Choice, client: httpx.AsyncClient, local: Any, query: str, documents: list[str],

@@ -32,13 +32,6 @@ RULE = "date_scope_v1"
 # these two stand for the open side of a one-sided bound where a provider's own route insists on both.
 EARLIEST_YEAR = 1500
 LATEST_YEAR = 2200
-# What `read` recognises, by name, so a question's reading can be checked against the words it was read from.
-RECOGNISED = (
-    "since/from/after/onwards + a date, and their Turkish forms (beri, itibaren, sonra, sonrası)",
-    "before/until/up to + a date, and their Turkish forms (önce, öncesi, kadar)",
-    "a span written with a dash, `to`, `through` or `between … and …` (2019-2024, between 2019 and 2024)",
-    "last/past N years, and `son N yıl`",
-)
 
 _YEAR = r"(?:1[5-9]\d\d|20\d\d|21\d\d)"
 _MONTH = (r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*"

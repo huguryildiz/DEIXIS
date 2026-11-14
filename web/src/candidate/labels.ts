@@ -17,7 +17,7 @@ export const outcomeLabels: Record<string, string> = {
   pending: 'no published assessment', queued: 'queued', pause_requested: 'pause requested', cancelled: 'cancelled', skipped: 'skipped',
 }
 export const stepStateLabels: Record<string, string> = { ...outcomeLabels, pending: 'not started' }
-export const reasonLabels: Record<string, string> = {
+const reasonLabels: Record<string, string> = {
   not_searched: 'No search has been recorded for this version.',
   whole_claim_stated: 'One assessed work states the whole claim under the same conditions; its quoted text is shown below. Whether the text supports the claim has not been checked.',
   partial_overlap: 'Partial overlap was recorded for the assessed works. This assessment did not establish that the whole claim is stated together under the same conditions.',
@@ -48,7 +48,7 @@ export const runReasonLabels: Record<string, string> = {
   outcome_unknown: 'Whether the request completed is unknown.', budget_exhausted: 'The run’s budget was exhausted.',
 }
 // Status labels read their own contextual keys (i18n `tc`), so "Open" the status is not the verb "Open".
-export const statusText = (code: string) => statusLabels[code] ? tc('candidate status', statusLabels[code]) : code
+const statusText = (code: string) => statusLabels[code] ? tc('candidate status', statusLabels[code]) : code
 export const label = (map: Record<string, string>, code: string) => map === statusLabels ? statusText(code) : map[code] ? t(map[code]) : code
 export const reasonText = (computed: CandidateComputed, code = computed.reason) => reasonLabels[code] ? t(reasonLabels[code], { assessed: computed.facts.assessed, found: computed.facts.found, unread: computed.facts.unread }) : code
 export const dateText = (date: string) => new Date(date).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' })

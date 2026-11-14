@@ -37,13 +37,8 @@
 .semantic-builtin .status-chip{justify-self:start;margin-top:2px}
 .semantic-builtin .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .semantic-builtin .actions .btn-pri{border:1px solid transparent}
-.semantic-model{margin-left:auto;border:1px solid var(--strong-line);border-radius:5px;background:transparent;padding:4px 7px;font-size:11px;color:var(--ink)}
 .local-tool-facts dt{margin:0}
 .local-tool-facts dd{font-size:11px}
-.local-tool-details-panel .cmd{width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:var(--hover-surface);font-size:11px;line-height:1.5}
-.local-tool-details-panel .cmd code{font-size:11px;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
-.local-tool-details-panel .cmd code span span{white-space:nowrap}
-@media(max-width:600px){.semantic-model{margin-left:0;width:100%}}
 
 /* Inline notices (Notice.tsx): a blocking error, something that needs attention, or information. */
 .notice{--notice:var(--muted);display:flex;align-items:flex-start;gap:10px;margin:0 0 16px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);color:var(--ink-2);font-size:13px;line-height:1.55}

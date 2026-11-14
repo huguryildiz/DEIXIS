@@ -447,7 +447,6 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
     verified = ranking.seed_rows(store, run, scope, versions, in_pool)
     query, blocks = ranking.query_vocabulary(scope, vocabulary)
     keyword_step = store.existing_step(run["id"], "ranking")
-    keyword_output = keyword_step["output"]
     counts = {row["work_id"]: row["cited_by_count"] for row in store.conn.execute(
         "SELECT work_id, MAX(cited_by_count) AS cited_by_count FROM source_versions"
         " WHERE work_id IN (SELECT v.work_id FROM corpus_memberships m"

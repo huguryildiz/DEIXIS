@@ -62,8 +62,6 @@ def paper_match(versions, paper):
     return matched, possible, requested
 
 
-def paper_versions(conn, paper):
-    return paper_match(rows(conn, 'SELECT * FROM source_versions'), paper)[0]
 
 
 def identity_state(paper, matched, possible):

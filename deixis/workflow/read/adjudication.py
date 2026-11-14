@@ -24,8 +24,6 @@ from typing import Any
 
 from deixis.domain.contracts import locate_anchor
 from deixis.domain.rules import (
-    FULLTEXT_CRITERION_PASSAGES,
-    FULLTEXT_PASSAGES_PER_CALL,
     FULLTEXT_QUOTE_MIN_CHARS,
     FULLTEXT_READ_LIMIT,
     FULLTEXT_READ_RULE,
@@ -52,8 +50,6 @@ FRESH_MODEL_CODES = (
 OWNED_CODES = ("not_read_yet", *FRESH_MODEL_CODES)
 
 # Re-exported so the protocol body and the flow read the same numbers this module plans with.
-PASSAGES_PER_CALL = FULLTEXT_PASSAGES_PER_CALL
-CRITERION_PASSAGES = FULLTEXT_CRITERION_PASSAGES
 QUOTE_MIN_CHARS = FULLTEXT_QUOTE_MIN_CHARS
 RUNS = FULLTEXT_RUNS
 READ_RULE = FULLTEXT_READ_RULE

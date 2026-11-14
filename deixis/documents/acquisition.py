@@ -423,10 +423,6 @@ async def file_verdict(store: Store, source_version_id: str, url: str, data: byt
 # content answer never stands in for the DOI lookup's when the code asks which routes a record still has unanswered.
 CONTENT_LOOKUP_STATUS = {"pdf": "completed", "tei_only": "zero_results", "no_content": "zero_results",
                          "quota_exhausted": "rate_limited", "failed": "failed", "no_key": "auth_required"}
-# What a content attempt can end as. `attachable` is a copy the file check says is this work, waiting for the
-# person: code never attaches a copy whose version nothing settled, and the content address settles none.
-CONTENT_OUTCOMES = ("attachable", "not_attached", "tei_only", "no_content", "no_key", "no_work_id",
-                    "quota_exhausted", "failed")
 
 
 async def _openalex_content(store: Store, research_id: str, source_version_id: str, client: httpx.AsyncClient,

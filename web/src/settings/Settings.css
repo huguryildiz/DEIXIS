@@ -485,10 +485,6 @@
 .connection-sheet .builtin-facts dt{color:var(--muted)}
 .connection-sheet .builtin-facts dd{margin:0;min-width:0;overflow-wrap:anywhere;color:var(--ink-2)}
 .connection-sheet .builtin-facts .builtin-fit{display:flex;margin-top:2px}
-.app .settings-page .builtin-legacy{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ink-2);font-size:12.5px}
-.app .settings-page .builtin-legacy > span{display:inline-flex;align-items:center;gap:7px;min-width:0}
-.app .settings-page .builtin-legacy svg{flex:none;color:var(--muted)}
-.app .settings-page .builtin-legacy button{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;font-size:12px}
 .connection-sheet .ollama-update{padding:10px 12px;border:1px solid var(--accent-line);border-radius:10px;background:var(--accent-tint);color:var(--ink)}
 .connection-sheet .ollama-update code{font-size:12px}
 .connection-sheet div.ollama-update{display:flex;align-items:center;justify-content:space-between;gap:12px}

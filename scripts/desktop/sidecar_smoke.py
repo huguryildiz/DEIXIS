@@ -490,7 +490,7 @@ def ocr_row(client: httpx.Client, data: Path, work: Path) -> None:
     oasset = asset_of(data, osvid)
     started = client.post(f"/api/researches/{orid}/sources/{osvid}/assets/{oasset['id']}/ocr")
     if started.status_code == 202:
-        oview, orun = wait_run(client, orid, started.json()["id"])
+        _, orun = wait_run(client, orid, started.json()["id"])
         text = sc_text(data, oasset["id"])
         row("ocr", orun["status"] == "completed" and "release" in text.lower(), run=orun["status"],
             pause=orun.get("pause_reason"), failure=orun.get("failure_reason"), text=text[:80])

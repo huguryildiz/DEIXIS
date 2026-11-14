@@ -273,11 +273,6 @@ def _configured(searchable: bool | None = None) -> list[str]:
             if c.access_mode() != "not_configured" and (searchable is None or c.searchable == searchable)]
 
 
-def verification_providers() -> list[str]:
-    """Configured connectors that are never searched: they answer about a record whose DOI is already known."""
-    return _configured(searchable=False)
-
-
 def configured_providers() -> list[str]:
     """Every connector with the access it needs, searched or not: what a new research holds in its scope."""
     return _configured()

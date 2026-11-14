@@ -898,7 +898,6 @@ class Audit:
             return self.refuse("unsupported environment: " + "; ".join(engine_problems))
         self.hash_locks("before")
         self._i01 = {"evidence": [], "numbers": {}, "names": ()}
-        self.i01_state = {"ok": True}
 
         # I01a: uv sync, then the keyring check before anything else runs deixis code or the network
         sync = self.install_step("uv sync", [str(self.bin / "uv"), "sync"], self.export, LIMITS["uv_sync"])

@@ -96,7 +96,7 @@ def seeded_app(tmp_path, monkeypatch, n=3, **kwargs):
 
 
 def serial(app):
-    """One work fetched at a time: the fast read's fetch slots, not `FULLTEXT_FETCH_PARALLEL`, bound it."""
+    """One work fetched at a time: the fast read's fetch slots bound it."""
     app.state.worker.flow.deps.fetch_slots = FetchSlots(1)
 
 

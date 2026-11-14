@@ -37,7 +37,6 @@ import logging
 import time
 from typing import Any
 
-from deixis.storage.db import dumps
 
 log = logging.getLogger("deixis.followup_fulltext")
 
@@ -51,7 +50,6 @@ STEP_KIND = "code:followup_fulltext"
 # fewest words that may ever stand for "it names it": one shared word is a coincidence, and on a short question a
 # single match would otherwise clear the share.
 COVERED, COVERED_LEAST = 0.5, 2
-NOT_TRIED = {"past_limit": "the turn tries at most two works", "deadline": "the turn's wait was over"}
 # A file the routes read on another version of the work than the pool gives. Its pages are stored and a later
 # question reads them; this turn does not, because swapping a version inside a frozen pool would drop the passages
 # the person's own selection points at. Counted so the turn can say the file arrived and it did not read it.
@@ -290,7 +288,3 @@ def stored(store: Any, run_id: str) -> dict[str, Any] | None:
     """This turn's attempt as it was written, for the published turn's scanned scope."""
     step = store.existing_step(run_id, STEP_KEY)
     return (step["output"] or {}) if step and step["status"] == "succeeded" else None
-
-
-def record_json(record: dict[str, Any] | None) -> str | None:
-    return dumps(record) if record else None

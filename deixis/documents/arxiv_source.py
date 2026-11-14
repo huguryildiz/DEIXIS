@@ -84,8 +84,6 @@ PARAMS = {"min_recall": MIN_RECALL, "min_margin": MIN_MARGIN, "prose_words": PRO
           "order_score_offset": ORDER_SCORE_OFFSET, "absorb_overlap": ABSORB_OVERLAP, "max_group_chars": MAX_GROUP_CHARS,
           "max_macro_depth": MAX_MACRO_DEPTH, "max_expander_calls": MAX_EXPANDER_CALLS}
 
-ELIGIBILITY_REFUSALS = ("no_version", "version_conflict", "record_identity_unknown", "record_identity_conflict",
-                        "record_version_conflict")
 
 # Clock and sleep, replaced by tests; every wait and every stamp of this module reads them.
 clock: Callable[[], float] = time.time

@@ -9,6 +9,12 @@ reading to the spend; a rise (the daily allowance reset, or a top-up) hides the 
 open reservations are counted as spent then. A reservation is refused once spend so far plus every open reservation
 plus the new one would pass the cap. The product sends a question's requests itself, so a question is the smallest
 unit a runner can reserve for; the bound is what makes that unit safe.
+
+`openalex_prices.json`, beside this file, holds prices measured on 7 Nov 2026 from `x-ratelimit-credits-used` and
+`x-ratelimit-cost-usd`: a request carrying any `search.*` parameter costs 10 credits, its cursor continuations as
+much as its first page, and so does a `group_by` beside one; a filter-only listing, `works_by_ids` among them, costs
+1; a record fetched by its id is free. One credit is 0.0001 USD. The `list` class had been priced as a search, ten
+times its cost, which only over-reserved.
 """
 from __future__ import annotations
 

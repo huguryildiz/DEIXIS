@@ -8,9 +8,11 @@ across a resume, and that every source the depth does not send carries its own r
 import asyncio
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
+from deixis.providers import arxiv
 from deixis.providers.common import ProviderRecord, SearchOutcome
 from deixis.runtime.config import Settings
 from deixis.storage import db
@@ -18,7 +20,9 @@ from deixis.workflow.run import fast_path, views
 from deixis.workflow.run.flow import ResearchFlow
 from deixis.workflow.run.store import Store
 from deixis.workflow.search import routing, search as fast_search, small_batch
+from overlap_flow_helpers import discover
 from test_fast_path_clock import FakeClock
+from test_small_batch_flow import app_for, client_of
 
 QUESTION = "SYNTHETIC field source question"
 QUERIES = [{"provider_id": "openalex", "query_text": "SYNTHETIC alpha"},
@@ -184,6 +188,116 @@ def test_the_field_source_is_searched_beside_the_keyword_queries(tmp_path):
     # What the request may read in all is its own share, not the page it asked for.
     assert row["read_limit"] == plan["field"][0]["records"] == 250
     lib.conn.close()
+
+
+def test_a_frozen_arxiv_field_source_sends_and_records_its_reply(tmp_path, monkeypatch):
+    lib = _library(tmp_path, "arxiv-field.sqlite")
+    _routing(lib, [{"provider_id": "arxiv", "reason": "share", "share": 0.9831}])
+    plan = fast_search.build_plan(lib.store, lib.run, scope_of(lib), QUERIES)
+    frozen = lib.store.freeze_protocol(lib.rid, 1, {"fast_path_search": plan})
+    protocol = lib.store.step(lib.run["id"], "protocol", "protocol:freeze")
+    lib.store.start_step(protocol["id"])
+    lib.store.finish_step(protocol["id"], "succeeded", output={"protocol_revision": frozen["protocol_revision"],
+                                                               "protocol_hash": frozen["hash"]})
+    flow = _flow(lib, tmp_path)
+    sent = []
+    feed = ('<feed xmlns="http://www.w3.org/2005/Atom" '
+            'xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">'
+            '<opensearch:totalResults>1</opensearch:totalResults><entry>'
+            '<id>https://arxiv.org/abs/2601.00001v1</id><title>SYNTHETIC article</title>'
+            '<summary>SYNTHETIC abstract</summary><published>2026-01-02</published>'
+            '</entry></feed>')
+
+    async def reply(request):
+        sent.append(request.url.params["search_query"])
+        return httpx.Response(200, text=feed)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(reply)) as client:
+            flow.deps.http = client
+            original = flow._send_search
+
+            async def send(run_id, connector, query, limit, page=None, **kwargs):
+                if connector.provider_id == "arxiv":
+                    return await original(run_id, connector, query, limit, page, **kwargs)
+                return SearchOutcome("zero_results", "before_send", "SYNTHETIC", "keyless")
+
+            flow._send_search = send
+            return await fast_search.execute(flow, lib.run, scope_of(lib),
+                                             fast_search.stored_plan(lib.store, lib.run), False)
+
+    monkeypatch.setattr(arxiv, "_last_request", 0.0)
+    assert asyncio.run(asyncio.wait_for(run(), 5)) is None
+    step = lib.store.existing_step(lib.run["id"], f"search:{plan['field'][0]['index']}")
+    assert step["status"] == "succeeded" and step["output"]["result_count"] == 1
+    assert sent == [plan["field"][0]["query"]["query_text"]]
+    assert lib.conn.execute("SELECT result_count FROM search_runs WHERE provider = 'arxiv'").fetchone()[0] == 1
+    lib.conn.close()
+
+
+@pytest.mark.parametrize("arm,provider", [("field", "arxiv"), ("broad", "scopus")])
+def test_a_source_task_exception_is_recorded_and_other_sources_finish(tmp_path, arm, provider):
+    lib = _library(tmp_path, f"raised-{arm}.sqlite")
+    _routing(lib, [{"provider_id": "arxiv", "reason": "share", "share": 0.9831}])
+    plan = fast_search.build_plan(lib.store, lib.run, scope_of(lib), QUERIES)
+    spec = plan["field"].pop()
+    if arm == "broad":
+        spec = spec | {"query": {"provider_id": provider, "query_text": "SYNTHETIC broad"},
+                       "page_records": 100}
+        plan["broad"] = spec
+    else:
+        plan["field"] = [spec]
+    flow = _flow(lib, tmp_path)
+
+    async def send(run_id, connector, query, limit, page=None, **kwargs):
+        if connector.provider_id == provider:
+            raise RuntimeError("SYNTHETIC adapter raised")
+        return SearchOutcome("zero_results", "before_send", "SYNTHETIC", "keyless")
+
+    flow._send_search = send
+    assert asyncio.run(asyncio.wait_for(fast_search.execute(flow, lib.run, scope_of(lib), plan, False), 5)) is None
+    step = lib.store.existing_step(lib.run["id"], f"search:{spec['index']}")
+    assert step["status"] == "failed"
+    assert step["error_code"] == "source_task_exception"
+    assert "RuntimeError" in step["error_json"] and "SYNTHETIC adapter raised" in step["error_json"]
+    assert lib.store.existing_step(lib.run["id"], "search:0")["status"] == "succeeded"
+    assert lib.store.run(lib.run["id"])["status"] == "running"
+    lib.conn.close()
+
+
+def test_discovery_completes_when_its_arxiv_field_task_raises(tmp_path, monkeypatch):
+    original_route = routing.route
+
+    def field_route(*args, **kwargs):
+        result = original_route(*args, **kwargs)
+        result["status"] = "read"
+        result["total"] = 1
+        result["fields"] = [{"field": "Physics and Astronomy", "count": 1, "share": 1.0}]
+        result["chosen"] = [row for row in result["chosen"] if row["provider_id"] in ("openalex", "semantic_scholar")]
+        result["chosen"].append({"provider_id": "arxiv", "reason": "share", "share": 1.0})
+        result["left_out"] = [row for row in result["left_out"] if row["provider_id"] != "arxiv"]
+        result["providers"] = ["openalex", "semantic_scholar", "arxiv"]
+        return result
+
+    monkeypatch.setattr(routing, "route", field_route)
+    original_send = ResearchFlow._send_search
+
+    async def send(self, run_id, connector, query, limit, page=None, **kwargs):
+        if connector.provider_id == "arxiv":
+            raise RuntimeError("SYNTHETIC adapter raised")
+        return await original_send(self, run_id, connector, query, limit, page, **kwargs)
+
+    monkeypatch.setattr(ResearchFlow, "_send_search", send)
+    app, _ = app_for(tmp_path, monkeypatch, n=3, reading="off")
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client, effort="quick")
+        assert run["status"] == "completed"
+        plan = fast_search.stored_plan(app.state.store, app.state.store.run(run_id))
+        (spec,) = plan["field"]
+        assert spec["query"]["provider_id"] == "arxiv"
+        step = app.state.store.existing_step(run_id, f"search:{spec['index']}")
+        assert step["status"] == "failed" and step["error_code"] == "source_task_exception"
+        assert app.state.store.existing_step(run_id, "search:0")["status"] == "succeeded"
 
 
 def test_new_quick_run_searches_its_field_source(tmp_path):

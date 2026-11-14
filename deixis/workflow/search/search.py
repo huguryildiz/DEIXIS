@@ -999,32 +999,46 @@ async def execute(flow, run, scope, plan, retry_failed):
         provider whose adapter serves fewer records than that."""
         provider = spec["query"]["provider_id"]
         state = {"number": 0, "cursor": FIRST_PAGE, "before": 0, "total": None}
+        key = f"search:{spec['index']}"
         # The share is counted in the records each page reserved, which is the one measure a page this run already
         # recorded and a page sent now both report. A resume walks the same page keys again and reads the recorded
         # ones back, so the share is spent once however often the walk is repeated.
         spent = 0
-        while spent < spec["records"]:
-            key = f"search:{spec['index']}" + (f":page:{state['number']}" if state["number"] else "")
-            if fast_path.past_deadline(store, run, "search"):
-                cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
-                return
-            limit = min(page_records, spec["records"] - spent)
-            # The expanded text where the plan froze one (PubMed's headings), the compiled text otherwise. The
-            # query keeps its compiled text, which is what the plan's own word record is read back against.
-            result, reserved = await send(mesh.sent_query(spec["query"]), key, number=state["number"], cursor=state["cursor"],
-                                          before=state["before"], total=state["total"], limit=limit,
-                                          klass=klass, index=spec["request_index"], cap=spec["records"],
-                                          terminal="record_cap" if spent + limit >= spec["records"] else None)
-            if result is None:
-                cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
-                return
-            spent += reserved
-            if result.get("stop_reason") or not result.get("next_cursor"):
-                return
-            state |= {"number": state["number"] + 1, "cursor": result.get("next_cursor"),
-                      "before": result.get("read_total", state["before"]),
-                      "total": result.get("provider_total") if result.get("provider_total") is not None
-                      else state["total"]}
+        try:
+            while spent < spec["records"]:
+                key = f"search:{spec['index']}" + (f":page:{state['number']}" if state["number"] else "")
+                if fast_path.past_deadline(store, run, "search"):
+                    cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
+                    return
+                limit = min(page_records, spec["records"] - spent)
+                # The expanded text where the plan froze one (PubMed's headings), the compiled text otherwise. The
+                # query keeps its compiled text, which is what the plan's own word record is read back against.
+                result, reserved = await send(mesh.sent_query(spec["query"]), key, number=state["number"], cursor=state["cursor"],
+                                              before=state["before"], total=state["total"], limit=limit,
+                                              klass=klass, index=spec["request_index"], cap=spec["records"],
+                                              terminal="record_cap" if spent + limit >= spec["records"] else None)
+                if result is None:
+                    cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
+                    return
+                spent += reserved
+                if result.get("stop_reason") or not result.get("next_cursor"):
+                    return
+                state |= {"number": state["number"] + 1, "cursor": result.get("next_cursor"),
+                          "before": result.get("read_total", state["before"]),
+                          "total": result.get("provider_total") if result.get("provider_total") is not None
+                          else state["total"]}
+        except Exception as exc:
+            # A source can fail before page_sender creates its step. Keep the failure on that source's page.
+            step = store.step(run_id, key, f"provider_search:{provider}")
+            if step["status"] in ("succeeded", "failed", "cancelled", "outcome_unknown"):
+                key = f"search:{spec['index']}:page:{state['number'] + 1}"
+                step = store.step(run_id, key, f"provider_search:{provider}")
+            if step["status"] != "running":
+                store.start_step(step["id"])
+            reason = f"{type(exc).__name__}: {common.redact(str(exc), CONNECTORS[provider].api_key())}"
+            store.finish_step(step["id"], "failed", output={"status": "failed", "result_count": 0,
+                                                              "stop_reason": "source_task_exception"},
+                              error_code="source_task_exception", error={"error": reason[:300]})
 
     field_tasks = [asyncio.create_task(paged_source(spec, field_send, FIELD_CLASS, plan["page_size"]))
                    for spec in plan.get("field") or []]
@@ -1118,9 +1132,14 @@ async def execute(flow, run, scope, plan, retry_failed):
         if raising:
             semantic_task.cancel()  # the stage is already ending with an error or a stop
         outcome = (await asyncio.gather(semantic_task, return_exceptions=True))[0]
+        source_outcomes = await asyncio.gather(*field_tasks, return_exceptions=True)
+        source_errors = [result for result in source_outcomes if isinstance(result, BaseException)]
+        if source_errors:
+            original = sys.exc_info()[1]
+            errors = ([original] if isinstance(original, BaseException) else []) + source_errors
+            if not raising and isinstance(outcome, BaseException):
+                errors.append(outcome)
+            raise BaseExceptionGroup("search task failures could not all be recorded", errors)
         if not raising and isinstance(outcome, BaseException):
             raise outcome
-        for task in field_tasks:
-            if not task.done():
-                await task
     return shared["failure"]

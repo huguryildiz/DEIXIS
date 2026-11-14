@@ -12,6 +12,7 @@ import json
 import pytest
 
 from deixis.storage.db import new_id, now
+from deixis.documents import acquisition
 from deixis.workflow.answer import followup, followup_fulltext as attempt, followup_scope
 from test_fast_path_answer import setup, user
 from test_followup_attachments import quiet, work_of
@@ -150,6 +151,40 @@ def test_the_turns_wait_stops_a_route_and_says_it_did_not_settle(tmp_path, monke
     assert [item["reason"] for item in record["not_tried"]] == ["deadline"]
     step = lib.store.existing_step(run["id"], f"fulltext_work:{record['tried'][0]['work_id']}")
     assert (step["status"], step["error_code"]) == ("outcome_unknown", "followup_deadline")
+
+
+@pytest.mark.parametrize("route", ["other_copy", "fetch"])
+def test_a_completed_turn_closes_cancelled_fetch_steps(tmp_path, monkeypatch, route):
+    lib = _library(tmp_path)
+    turn, run = _turn(lib)
+    source_id = lib.sources[0]
+    work_id = work_of(lib, source_id)
+    run["budget"]["followup_fulltext"]["fulltext_seconds"] = 0.2
+    entered = []
+
+    async def held(*args, **kwargs):
+        entered.append(route)
+        await asyncio.sleep(1)
+
+    if route == "fetch":
+        lib.store.conn.execute(
+            "UPDATE source_versions SET oa_pdf_url = ?, oa_pdf_version = ?, version_label = ? WHERE id = ?",
+            ("https://example.org/held.pdf", "publishedVersion", "publishedVersion", source_id))
+        monkeypatch.setattr(lib.flow.deps, "fetch_pdf", held)
+    else:
+        monkeypatch.setattr(acquisition, "acquire_for_source", held)
+
+    asyncio.run(followup.answer(lib.flow, run, lib.store.scope(lib.rid)))
+    lib.store.update_run(run["id"], status="completed")
+    nested = lib.store.existing_step(run["id"], f"{route}:{source_id}")
+    parent = lib.store.existing_step(run["id"], f"fulltext_work:{work_id}")
+    rows = lib.store.conn.execute("SELECT status FROM run_steps WHERE run_id = ?", (run["id"],)).fetchall()
+
+    assert entered == [route]
+    assert followup.turn(lib.store, lib.rid, turn["id"])["status"] != "pending"
+    assert lib.store.run(run["id"])["status"] == "completed"
+    assert nested["status"] == parent["status"] == "outcome_unknown"
+    assert all(row["status"] != "running" for row in rows)
 
 
 def test_a_turn_queued_before_the_rule_tries_nothing(tmp_path, monkeypatch):

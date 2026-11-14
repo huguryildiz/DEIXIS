@@ -3080,51 +3080,56 @@ class ResearchFlow:
                                                    kept["sha256"], kept["byte_size"])
             final_url = kept["final_url"]
         self.store.start_step(step["id"])
-        if data is None:
-            self.store.add_usage(run["id"], "downloads")
-            result = await self.deps.fetch_pdf(source["oa_pdf_url"])
-            if result.status != "ok":
-                # The address that answered after any redirect and its declared type, so refusals count per host.
-                self.store.finish_step(step["id"], "failed", error_code=f"fetch_{result.status}",
-                                       error={"http_status": result.http_status, "error": result.error, "url": source["oa_pdf_url"],
-                                              "final_url": result.final_url, "media_type": result.media_type})
-                return
-            data, final_url = result.data, result.final_url
-        sha = hashlib.sha256(data).hexdigest()
-        papers.mkdir(parents=True, exist_ok=True)
         try:
-            placement = await file_restore.store_pdf_file(self.store, papers, self.deps.settings.recovery_dir, data,
-                                                          caller="run_fetch", research_id=run["research_id"])
-            read = await text_retry.read_verified(self.store, papers, self.deps.settings.recovery_dir,
-                storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
-        except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
-            refused = isinstance(exc, file_restore.FileRestoreRefused)
-            self.store.finish_step(step["id"], "failed",
-                error_code="fetch_file_repair_refused" if refused else "fetch_file_busy",
-                error={"url": source["oa_pdf_url"], **({"code": exc.code} if refused else {})})
-            return
-        path = placement.path
-        extraction = read.extraction
-        if fast_path.enforces(run["budget"], "read"):
-            from deixis.workflow.read.background_fetch import before_publish
+            if data is None:
+                self.store.add_usage(run["id"], "downloads")
+                result = await self.deps.fetch_pdf(source["oa_pdf_url"])
+                if result.status != "ok":
+                    # The address that answered after any redirect and its declared type, so refusals count per host.
+                    self.store.finish_step(step["id"], "failed", error_code=f"fetch_{result.status}",
+                                           error={"http_status": result.http_status, "error": result.error, "url": source["oa_pdf_url"],
+                                                  "final_url": result.final_url, "media_type": result.media_type})
+                    return
+                data, final_url = result.data, result.final_url
+            sha = hashlib.sha256(data).hexdigest()
+            papers.mkdir(parents=True, exist_ok=True)
             try:
-                await before_publish(self, run, source["work_id"])
-            except RunStopped:
-                # Stopped after the download: nothing is published and the step does not stay `running` under a
-                # stopped run. It keeps the stored file's identity, so the link that answered is not asked twice.
-                self.store.finish_step(step["id"], "cancelled", error_code="run_stopped", output={"kept_download": {
-                    "sha256": sha, "byte_size": len(data), "final_url": final_url}})
-                raise
-        asset_id = self.store.add_asset_with_pages(
-            source["id"], sha, len(data), path.name, "download", final_url, None,
-            extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
-            input_observation=read.observation,
-        )
-        status = "succeeded" if extraction.status in ("succeeded", "partial") else "partial"
-        self.store.finish_step(step["id"], status, output={"asset_id": asset_id, "extraction_status": extraction.status,
-                                                          "page_count": extraction.page_count,
-                                                          "passage_count": self.store.asset_passage_count(asset_id)},
-                               error_code=None if status == "succeeded" else f"extraction_{extraction.status}")
+                placement = await file_restore.store_pdf_file(self.store, papers, self.deps.settings.recovery_dir, data,
+                                                              caller="run_fetch", research_id=run["research_id"])
+                read = await text_retry.read_verified(self.store, papers, self.deps.settings.recovery_dir,
+                    storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
+            except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
+                refused = isinstance(exc, file_restore.FileRestoreRefused)
+                self.store.finish_step(step["id"], "failed",
+                    error_code="fetch_file_repair_refused" if refused else "fetch_file_busy",
+                    error={"url": source["oa_pdf_url"], **({"code": exc.code} if refused else {})})
+                return
+            path = placement.path
+            extraction = read.extraction
+            if fast_path.enforces(run["budget"], "read"):
+                from deixis.workflow.read.background_fetch import before_publish
+                try:
+                    await before_publish(self, run, source["work_id"])
+                except RunStopped:
+                    # Stopped after the download: nothing is published and the step does not stay `running` under a
+                    # stopped run. It keeps the stored file's identity, so the link that answered is not asked twice.
+                    self.store.finish_step(step["id"], "cancelled", error_code="run_stopped", output={"kept_download": {
+                        "sha256": sha, "byte_size": len(data), "final_url": final_url}})
+                    raise
+            asset_id = self.store.add_asset_with_pages(
+                source["id"], sha, len(data), path.name, "download", final_url, None,
+                extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                input_observation=read.observation,
+            )
+            status = "succeeded" if extraction.status in ("succeeded", "partial") else "partial"
+            self.store.finish_step(step["id"], status, output={"asset_id": asset_id, "extraction_status": extraction.status,
+                                                              "page_count": extraction.page_count,
+                                                              "passage_count": self.store.asset_passage_count(asset_id)},
+                                   error_code=None if status == "succeeded" else f"extraction_{extraction.status}")
+        except asyncio.CancelledError:
+            # A deadline can cancel a download or extraction after this step starts.
+            self.store.finish_step(step["id"], "outcome_unknown", error_code="fetch_cancelled")
+            raise
 
     def _needs_other_copy(self, research_id: str, source: dict[str, Any], refusal: dict[str, Any]) -> bool:
         """A blocked (403) or missing (404) link leads to one lookup per source; "Find PDF" repeats it on request."""
@@ -3163,6 +3168,10 @@ class ResearchFlow:
             # Stopped before publication: the step does not stay `running` under a stopped run; the lookup rows keep
             # what answered, and a resumed run asks only what did not.
             self.store.finish_step(step["id"], "cancelled", error_code="run_stopped")
+            raise
+        except asyncio.CancelledError:
+            # A deadline can cancel acquisition without stopping its run; close this attempt before it unwinds.
+            self.store.finish_step(step["id"], "outcome_unknown", error_code="acquisition_cancelled")
             raise
         except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
             refused = isinstance(exc, file_restore.FileRestoreRefused)

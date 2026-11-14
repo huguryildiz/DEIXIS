@@ -2010,6 +2010,36 @@ def locate_anchor(quote: str, passage: str) -> AnchorMatch | None:
     return AnchorMatch("fuzzy", passage[spans[start][0]:spans[end - 1][1]], round(ratio, 3))
 
 
+def trim_answer_anchor_quotes(task_type: str, step_input: dict[str, Any], draft: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """Shorten overlong answer anchors only when the cited, given passage still locates them."""
+    changes: list[dict[str, Any]] = []
+    if task_type not in ("grounded_answer", "followup_answer") or not isinstance(draft, dict):
+        return draft, changes
+    passages = {p["passage_id"]: p["text"] for p in step_input["passages"]
+                if p["passage_id"] in step_input["allowlist"]["passage_ids"]}
+    anchors = draft.get("citation_anchors")
+    for index, anchor in enumerate(anchors if isinstance(anchors, list) else []):
+        if not isinstance(anchor, dict):
+            continue
+        quote, passage_id = anchor.get("quote"), anchor.get("passage_id")
+        passage = passages.get(passage_id) if isinstance(passage_id, str) else None
+        if not isinstance(quote, str) or len(quote) <= 600 or not isinstance(passage, str):
+            continue
+        # Try whole-word endings from longest to shortest.
+        endings = [match.end() for match in re.finditer(r"\w+", quote[:601])
+                   if 12 <= match.end() <= 600 and (match.end() == len(quote) or not quote[match.end()].isalnum())]
+        # A quote without a usable word ending gets only a few in-word cuts.
+        candidates = sorted(endings, reverse=True) if endings else (600, 599, 598)
+        for end in candidates:
+            prefix = quote[:end].rstrip()
+            if len(prefix) >= 12 and locate_anchor(prefix, passage) is not None:
+                anchor["quote"] = prefix
+                changes.append({"path": f"/citation_anchors/{index}/quote", "trimmed_from": len(quote),
+                                "trimmed_to": len(prefix)})
+                break
+    return draft, changes
+
+
 # Verify Citations (review round 1): structural rules a citation check's parts and quotes must meet. They fail
 # closed: a missed positive is acceptable, a wrong one is not. `locate_anchor` ignores punctuation and case and
 # tolerates near matches, so "significantly improves" is found in "does not significantly improve", "p > 5" in

@@ -41,17 +41,21 @@ def draft_with_defect(si, defect):
         draft["claims"][0]["passage_ids"].append("psg_UNKNOWN0001")
     elif defect == "empty":
         draft["citation_anchors"] = []
+    elif defect == "long_located":
+        anchor["quote"] = first["text"][:700]
+    elif defect == "long_unfindable":
+        anchor["quote"] = "ABSENT QUOTE " * 60
     return draft
 
 
-def run_step(tmp_path, defects):
+def run_step(tmp_path, defects, first_text="SYNTHETIC first passage about release scheduling."):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
     rid = store.create_research("SYNTHETIC question?", "attached", "quick", [], "fake", "fake-model", "en")
     sid = store.create_upload_source("SYNTHETIC source")
     pids = [store._insert_passage(sid, None, "abstract", None, None, "synthetic_fixture", None, None, text)
-            for text in ("SYNTHETIC first passage about release scheduling.",
+            for text in (first_text,
                          "SYNTHETIC second passage about a relay budget.")]
     raw_outputs = []
 
@@ -68,6 +72,31 @@ def run_step(tmp_path, defects):
     result = asyncio.run(flow._model_step(store.run(run["id"]), store.scope(rid), "synthetic:answer",
                         "grounded_answer", source_ids=[sid], passage_rows=[store.passage(pid) for pid in pids]))
     return result, store, adapter, raw_outputs, pids
+
+
+@pytest.mark.parametrize("defect, expected_calls", [("long_located", 1), ("long_unfindable", 2)])
+def test_overlong_answer_anchor_uses_one_call_only_when_trimmed_quote_locates(tmp_path, defect, expected_calls):
+    passage = "SYNTHETIC release schedule " + " ".join(f"word{i:03d}" for i in range(100))
+    result, store, adapter, raw_outputs, _ = run_step(tmp_path, [defect], first_text=passage)
+    try:
+        assert len(adapter.calls) == expected_calls
+        assert len(json.loads(raw_outputs[0])["citation_anchors"][0]["quote"]) > 600
+        validations = [json.loads(row[0]) for row in store.conn.execute(
+            "SELECT validation_json FROM model_sessions ORDER BY rowid")]
+        if defect == "long_located":
+            assert not result.get("invalid") and validations[0]["ok"]
+            quote = result["result"]["citation_anchors"][0]["quote"]
+            assert 12 <= len(quote) <= 600 and contracts.locate_anchor(quote, passage) is not None
+            assert validations[0]["normalised"][-1] == {
+                "path": "/citation_anchors/0/quote", "trimmed_from": 700, "trimmed_to": len(quote)}
+        else:
+            assert result["invalid"] and not validations[0]["ok"]
+            assert any(issue["code"] == "schema_invalid" and issue["path"] == "/citation_anchors/0/quote"
+                       for issue in validations[0]["issues"])
+            assert not any("trimmed_to" in change for validation in validations
+                           for change in validation["normalised"])
+    finally:
+        store.conn.close()
 
 
 @pytest.mark.parametrize("defect", ["unfindable"])

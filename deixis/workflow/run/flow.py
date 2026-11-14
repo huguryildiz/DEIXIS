@@ -6265,6 +6265,8 @@ class ResearchFlow:
                 normalised_changes.extend(stamps)
                 output_text, stamps = contracts.stamp_step_input_id(task_type, payload, output_text)
                 normalised_changes.extend(stamps)
+                output_text, trims = contracts.trim_answer_anchor_quotes(task_type, payload, output_text)
+                normalised_changes.extend(trims)
                 if resplit is not None:
                     # Parts of a split claim that kept the offending label get new labels; nothing else changes.
                     output_text, relabelled = contracts.relabel_split_claims(output_text, resplit["labels"])

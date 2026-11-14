@@ -5,7 +5,7 @@ import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
 import { broadIndexReasonText, conditionalSearchArmLabels, fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
 import { ConnectionIcon } from '../components/connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
-import { SearchSummary } from './SearchSummary'
+import { ChainSummary, SearchSummary, StatStrip, type StatItem } from './SearchSummary'
 import { ModelName } from '../components/ModelName'
 import { effortLabels, modelRoles } from '../home/Home'
 import { AnswerFlowNote } from './FlowReport'
@@ -407,6 +407,18 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     requests?.unproven ? plural(requests.unproven, '{n} request with an unknown outcome, not known to be sent', '{n} requests with an unknown outcome, not known to be sent') : '',
     chainNew === undefined ? '' : plural(chainNew, '{n} new work', '{n} new works'),
   ].filter(Boolean).join(' · ')
+  // The same request outcomes as a quiet strip of numbers for the chain summary; zero rows are left out.
+  const chainStats: StatItem[] = ([
+    [chainSeeds, 'seed work chosen', 'seed works chosen'],
+    [requests?.sent ?? 0, 'request sent', 'requests sent'],
+    [requests?.answered ?? 0, 'answered', 'answered'],
+    [requests?.late ?? 0, 'answered after the cutoff, not kept', 'answered after the cutoff, not kept'],
+    [requests?.failed ?? 0, 'failed', 'failed'],
+    [requests?.unknown ?? 0, 'unknown outcome', 'unknown outcome'],
+    [pagesNotNeeded, 'page not needed', 'pages not needed'],
+    [otherNotSent, 'not sent', 'not sent'],
+    [requests?.unproven ?? 0, 'unknown, not known to be sent', 'unknown, not known to be sent'],
+  ] as const).filter(([n]) => n > 0).map(([n, one, many]) => ({ n, label: t(n === 1 ? one : many) }))
   // A pdf_ocr run: its PDF, the pages without text it found, and what became of the merged text.
   const ocrSource = run.kind === 'pdf_ocr' ? view.sources.find(s => s.source_version_id === run.target?.source_version_id) : undefined
   const ocrAsset = ocrSource?.access.assets.find(a => a.id === run.target?.asset_id)
@@ -1083,21 +1095,30 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     }
     if (key === 'chain') {
       const asks = (run.approval?.chaining?.request_limit ?? 1) > 0
-      if (poolLinks) parts.push(row(t('Citations inside the first page of results'),
+      // With counted chain works the tiles and the bar lead; the text rows open under Details.
+      const brought = run.source_counts?.counted ? run.source_counts.chain : undefined
+      const rows: ReactNode[] = []
+      if (poolLinks) rows.push(row(t('Citations inside the first page of results'),
         plural(poolLinks.links ?? 0, '{n} link seen without a request', '{n} links seen without a request'), 'pool'))
       if (asks) {
-        parts.push(row(t(chainSeeds === 1 ? 'Reference list of {n} seed work' : 'Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record kept', '{n} records kept'), 'backward'))
-        parts.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record kept', '{n} records kept'), 'forward'))
+        rows.push(row(t(chainSeeds === 1 ? 'Reference list of {n} seed work' : 'Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record kept', '{n} records kept'), 'backward'))
+        rows.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record kept', '{n} records kept'), 'forward'))
       } else {
-        parts.push(<div key="no-request">{t('This depth opens no citation request of its own.')}</div>)
+        rows.push(<div key="no-request">{t('This depth opens no citation request of its own.')}</div>)
       }
-      if (run.source_counts?.counted && run.source_counts.chain) parts.push(row(t('Works the chain brought'), t('{works} works, {only} not found by any search', { works: run.source_counts.chain.works, only: run.source_counts.chain.only }), 'brought'))
-      if (chainDone) parts.push(<div key="requests">{chainLine}</div>)
+      if (brought) rows.push(row(t('Works the chain brought'), t('{works} works, {only} not found by any search', { works: brought.works, only: brought.only }), 'brought'))
+      if (chainDone) rows.push(<div key="requests">{chainLine}</div>)
+      if (brought) {
+        parts.push(<ChainSummary key="chain-visual" links={poolLinks ? poolLinks.links ?? 0 : null} backward={chainRecords('backward')} forward={chainRecords('forward')}
+          seeds={chainSeeds} asks={asks} works={brought.works} only={brought.only} />)
+        if (!asks) parts.push(<div key="no-request-lead">{t('This depth opens no citation request of its own.')}</div>)
+        if (chainDone && chainStats.length) parts.push(<div key="chain-requests" className="chain-requests"><span className="search-summary-head">{t('Requests')}</span><StatStrip items={chainStats} /></div>)
+      } else parts.push(...rows)
       const limits = run.approval?.chaining
       // How the chain picks its seeds and which works it keeps, with the arrival cutoff (fast_chain_v1), as the approval
       // record said it before S9.
       // The rule prose folds under one disclosure, so the panel reads as its counts first.
-      if (limits) parts.push(<details key="how" className="step-how"><summary>{t('How the chain chooses and keeps works')}</summary>
+      if (limits) parts.push(<details key="how" className="step-how chain-how"><summary>{t('How the chain chooses and keeps works')}</summary>
         {/* Every depth reads the links inside the first page, which cost nothing; only the requests depend on the depth. */}
         <p>{t('Each record of the first page of results arrives with its own reference list, so a citation between two of those records is seen without asking OpenAlex for anything.')}</p>
         {asks
@@ -1106,7 +1127,12 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {/* Seed PDFs come first (fast_chain.pdf_seeds): each one matched to an OpenAlex work is a seed before the search's. */}
         {asks && <p>{t('Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.')}</p>}
         {limits.rescue_quota > 0 && <p>{t('Up to {rescue} linked works that no term reaches are kept all the same, so the reranker judges them against your question; the term check still records what it decided about them.', { rescue: limits.rescue_quota })}</p>}
-        {asks && <p>{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</p>}
+        {asks && <div className="chain-limits"><span>{t('At most')}</span><StatStrip items={[
+          { n: limits.backward_requests, label: t('reference requests') },
+          { n: limits.forward_requests, label: t('citing requests') },
+          { n: limits.citing_cap, label: t('citing works per request') },
+          { n: limits.attempt_limit, label: t('attempts with retries') },
+        ]} /></div>}
       </details>)
     }
     const sourceTitle = (svid: string, title: string) => onOpenSource

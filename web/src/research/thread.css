@@ -743,3 +743,13 @@ button.step-table-link{cursor:pointer}
 .search-summary-tiles b{color:var(--ink);font-size:16px;font-weight:600}
 .search-summary-more{margin-top:2px}
 @media (max-width:560px){.search-summary-routes li{grid-template-columns:minmax(0,1fr) auto}.search-summary-track{grid-column:1/-1;grid-row:2}}
+/* The citation chain's request outcomes and limits (research/SearchSummary.tsx StatStrip): numbers split by hairlines. */
+.stat-strip{display:flex;flex-wrap:wrap;row-gap:4px;margin:0 0 0 -13px;padding:0;list-style:none;color:var(--muted);font-size:12.5px;clip-path:inset(0 0 0 13px)}
+/* Every entry starts with a hairline; the list's shifted, clipped left edge hides the one that opens each line. */
+.stat-strip li{display:inline-flex;align-items:baseline;gap:5px;padding:0 12px;border-left:1px solid var(--line)}
+.stat-strip b{color:var(--ink);font-weight:600}
+.chain-requests{display:grid;gap:6px;margin-top:2px}
+.chain-requests .search-summary-head{margin:0}
+.chain-how>:not(summary){max-width:68ch;color:var(--muted);font-size:12.5px;line-height:1.55}
+.chain-how>p{margin:8px 0 0}
+.chain-limits{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}

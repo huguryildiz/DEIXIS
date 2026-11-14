@@ -71,3 +71,36 @@ export function SearchSummary({ counts, unique, fields, broad }: {
     </>}
   </div>
 }
+
+// The citation chain at a glance: one tile per place its records came from, then one bar of the works it brought,
+// split into works no search found (dark) and works a search also found (light). Every number is a stored count.
+export function ChainSummary({ links, backward, forward, seeds, asks, works, only }: {
+  links: number | null; backward: number; forward: number; seeds: number; asks: boolean; works: number; only: number
+}) {
+  const width = (n: number) => `${works > 0 ? (n / works) * 100 : 0}%`
+  return <div className="search-summary-visual">
+    <ul className="search-summary-tiles">
+      {links !== null && <li><span>{t('Citations inside the first page')}</span><span><b className="tnum">{count(links)}</b> {t('links, no request')}</span></li>}
+      {asks && <li><span>{t(seeds === 1 ? 'References of {n} seed work' : 'References of {n} seed works', { n: count(seeds) })}</span><span><b className="tnum">{count(backward)}</b> {t('records kept')}</span></li>}
+      {asks && <li><span>{t('Works citing the seeds')}</span><span><b className="tnum">{count(forward)}</b> {t('records kept')}</span></li>}
+    </ul>
+    <p className="search-summary-head">{t('Works the chain brought')}</p>
+    <ul className="search-summary-routes">
+      <li>
+        <span className="search-summary-route">{t('Citation chain')}</span>
+        <span className="search-summary-track" aria-hidden>
+          <span className="is-only" style={{ width: width(only) }} />
+          <span className="is-shared" style={{ width: width(Math.max(0, works - only)) }} />
+        </span>
+        <span className="search-summary-count"><b className="tnum">{count(works)}</b> · {t('{n} new', { n: count(only) })}</span>
+      </li>
+    </ul>
+    <p className="search-summary-legend" aria-hidden><span><i className="is-only" />{t('Not found by any search')}</span><span><i className="is-shared" />{t('Also found by a search')}</span></p>
+  </div>
+}
+
+// A row of numbers with short labels, split by hairlines: the quiet form for counts that need no bar.
+export type StatItem = { n: number; label: string }
+export function StatStrip({ items }: { items: StatItem[] }) {
+  return <ul className="stat-strip">{items.map(item => <li key={item.label}><b className="tnum">{count(item.n)}</b>{item.label}</li>)}</ul>
+}

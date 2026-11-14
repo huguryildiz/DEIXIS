@@ -753,3 +753,28 @@ button.step-table-link{cursor:pointer}
 .chain-how>:not(summary){max-width:68ch;color:var(--muted);font-size:12.5px;line-height:1.55}
 .chain-how>p{margin:8px 0 0}
 .chain-limits{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+/* "How the order was made" (research/ProbeTables.tsx): one bar per ranking signal, then a top-100/top-200 table. */
+.signal-scored{display:grid;gap:7px;margin:4px 0 6px;padding:0;list-style:none;font-size:12.5px}
+.signal-scored li{display:grid;grid-template-columns:minmax(0,150px) minmax(0,1fr) auto;align-items:center;gap:10px}
+.signal-scored-name{color:var(--ink);overflow-wrap:anywhere}
+.signal-scored-count{color:var(--muted);white-space:nowrap}
+.signal-scored-count b{color:var(--ink);font-weight:600}
+.signal-scored li.is-off .signal-scored-name{color:var(--muted)}
+.signal-scored-reason{grid-column:2/-1;color:var(--muted)}
+.signal-capture-track{display:block;height:6px;overflow:hidden;border-radius:999px;background:var(--line)}
+.signal-capture-track>span{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+.signal-capture{width:100%;margin:4px 0 6px;border-collapse:collapse;table-layout:fixed;font-size:12.5px}
+.signal-capture th,.signal-capture td{padding:7px 0;white-space:normal;overflow-wrap:anywhere;border-top:1px solid var(--line);text-align:left;vertical-align:top;font-weight:400}
+.signal-capture thead th{padding-top:0;border-top:0;color:var(--muted);font-size:12px}
+.signal-capture tbody th{padding-right:12px;color:var(--ink);overflow-wrap:anywhere}
+.signal-capture td,.signal-capture thead th+th{width:30%;padding-left:12px}
+.signal-capture td .signal-capture-track{margin-top:4px}
+.signal-capture-value{display:inline-flex;align-items:baseline;gap:4px;color:var(--muted)}
+.signal-capture-value b{color:var(--ink);font-weight:600}
+.signal-capture small{display:block;margin-top:3px;color:var(--muted);font-size:11.5px}
+@media (max-width:560px){.signal-scored li{grid-template-columns:minmax(0,1fr) auto}.signal-scored li>.signal-capture-track{grid-column:1/-1;grid-row:2}.signal-scored-reason{grid-column:1/-1}}
+/* The answer step at a glance (research/FlowReport.tsx AnswerStepVisual): tiles, two stacked bars, fine print. */
+.answer-step-visual{gap:10px}
+.answer-step-visual .answer-basis-bar{margin:0}
+.answer-step-note{margin:-4px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.answer-step-note.is-attention{color:var(--warn-ink)}

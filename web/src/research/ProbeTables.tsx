@@ -78,21 +78,30 @@ export function NotFoundReport({ probes }: { probes: Probes }) {
   </div>
 }
 
-function captureText(row: SignalCapture) {
-  const tied = [row.tied_100 ? t('{n} tied at the 100 cut', { n: row.tied_100 }) : '', row.tied_200 ? t('{n} tied at the 200 cut', { n: row.tied_200 }) : ''].filter(Boolean)
-  return t('{top100} in the top 100, {top200} in the top 200', { top100: row.top_100, top200: row.top_200 }) + (tied.length ? ` (${tied.join(', ')})` : '')
-}
-
-function Captures({ rows }: { rows: SignalCapture[] }) {
-  return <ul className="chat-arm-list">{rows.filter(row => row.top_100 || row.top_200 || row.tied_100 || row.tied_200).map(row => <li key={row.signal}>
-    <span className="chat-arm-source">{t(signalLabels[row.signal] ?? row.signal)}</span><span>{captureText(row)}</span>
-  </li>)}</ul>
+// How many of the counted works one signal placed in its top 100 and top 200, as a small table with a bar per cell
+// scaled to the counted works; ties at a cut are written under the number.
+function Captures({ rows, total }: { rows: SignalCapture[]; total: number }) {
+  const shown = rows.filter(row => row.top_100 || row.top_200 || row.tied_100 || row.tied_200)
+  const cell = (n: number, tied: number) => <td>
+    <span className="signal-capture-value"><b className="tnum">{count(n)}</b><span>{t('of {n}', { n: count(total) })}</span></span>
+    <span className="signal-capture-track" aria-hidden><span style={{ width: `${total > 0 ? Math.min(1, n / total) * 100 : 0}%` }} /></span>
+    {tied > 0 && <small>{plural(tied, '{n} tied at the cut', '{n} tied at the cut')}</small>}
+  </td>
+  return <table className="signal-capture">
+    <thead><tr><th scope="col"><span className="sr-only">{t('Signal')}</span></th><th scope="col">{t('Top 100')}</th><th scope="col">{t('Top 200')}</th></tr></thead>
+    <tbody>{shown.map(row => <tr key={row.signal}>
+      <th scope="row">{t(signalLabels[row.signal] ?? row.signal)}</th>
+      {cell(row.top_100, row.tied_100)}{cell(row.top_200, row.tied_200)}
+    </tr>)}</tbody>
+  </table>
 }
 
 // The signal table of one keyword ranking step: descriptive counts with their denominator, never a verdict (SW7.6).
 export function SignalReport({ table, probes }: { table: SignalTable; probes: Probes | null | undefined }) {
   const ran = table.signals.filter(s => s.ran && s.available !== 0)
   const off = table.signals.filter(s => !s.ran)
+  // The scored bars share one scale: the most records any signal scored.
+  const scale = Math.max(0, ...ran.map(s => s.available ?? 0))
   const min = probes?.judge_min ?? 30
   const person = table.person
   const hasDecisions = !!probes && (probes.verified > 0 || probes.negatives.criterion_not_met > 0
@@ -108,21 +117,22 @@ export function SignalReport({ table, probes }: { table: SignalTable; probes: Pr
     {hasDecisions && <p className="chat-arm-note">{t('Your decisions in this question revision: {list}.', { list: decisions })}</p>}
     {probes?.read && probes.included_by_agreement > 0 && <p className="chat-arm-note">{t('{n} included by two agreeing runs, not confirmed by you.', { n: probes.included_by_agreement })}</p>}
     {(ran.length > 0 || off.length > 0) && <><p className="chat-arm-head">{t('Ranking signals')}</p>
-    <ul className="chat-arm-list">
-      {ran.map(s => <li key={s.signal}><span className="chat-arm-source">{t(signalLabels[s.signal] ?? s.signal)}</span>
-        <span>{s.available === null ? t('ran') : plural(s.available, 'scored {n} record', 'scored {n} records')}</span></li>)}
-      {off.map(s => <li key={s.signal}><span className="chat-arm-source">{t(signalLabels[s.signal] ?? s.signal)}</span>
-        <span>{t('not run: {reason}', { reason: signalReasonText(s.reason) })}</span></li>)}
+    <ul className="signal-scored">
+      {ran.map(s => <li key={s.signal}><span className="signal-scored-name">{t(signalLabels[s.signal] ?? s.signal)}</span>
+        <span className="signal-capture-track" aria-hidden><span style={{ width: `${s.available === null || scale === 0 ? 100 : (s.available / scale) * 100}%` }} /></span>
+        <span className="signal-scored-count">{s.available === null ? t('ran') : <><b className="tnum">{count(s.available)}</b> {t(s.available === 1 ? 'record scored' : 'records scored')}</>}</span></li>)}
+      {off.map(s => <li key={s.signal} className="is-off"><span className="signal-scored-name">{t(signalLabels[s.signal] ?? s.signal)}</span>
+        <span className="signal-scored-reason">{t('not run: {reason}', { reason: signalReasonText(s.reason) })}</span></li>)}
     </ul></>}
     {person.denominator > 0 && <><p className="chat-arm-head">{plural(person.denominator, 'Your confirmed works in this ranking: {n}', 'Your confirmed works in this ranking: {n}')}</p>
     <p className="chat-arm-note">{person.status === 'too_few'
       ? t('Too few to judge a signal by (fewer than {min}).', { min })
       : t('Counts only; a comparison needs an outside reference set.')}</p>
-    <Captures rows={person.rows} /></>}
+    <Captures rows={person.rows} total={person.denominator} /></>}
     {table.agreement.denominator > 0 && <>
       <p className="chat-arm-head">{plural(table.agreement.denominator, 'Included by two agreeing runs, in this ranking: {n}', 'Included by two agreeing runs, in this ranking: {n}')}</p>
       <p className="chat-arm-note">{t('These were read because they were near the top of this order; their places are not a signal’s success.')}</p>
-      <Captures rows={table.agreement.rows} />
+      <Captures rows={table.agreement.rows} total={table.agreement.denominator} />
     </>}
     {table.embedding && <p className="chat-arm-note">{t('The embedding moved up {n} records. Decided after the ranking: {included} included by two agreeing runs, {verified} you confirmed; {before} decided before it; {unknown} with no readable order. A moved-up record could be decided because it was read.', {
       n: table.embedding.moved_up, included: table.embedding.moved_up_then_included, verified: table.embedding.moved_up_then_verified,

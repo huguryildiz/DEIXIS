@@ -9,10 +9,10 @@ import { statementExcludedReasons } from '../lib/labels'
 // rows of one level add up to the row above. A row with nothing to say is left out.
 type Row = { label: string; n: number; note?: string; level: number; onClick?: () => void; strong?: boolean }
 // One bar segment: a share of the bar's own total, coloured by its tone, named again in the legend beside its count.
-type Part = { label: string; n: number; tone: 'idle' | 'open' | 'out' | 'next' | 'read' }
+export type Part = { label: string; n: number; tone: 'idle' | 'open' | 'out' | 'next' | 'read' }
 
 // A stacked bar with its legend: widths are shares of the parts' own sum, so the bar always fills its row.
-function Bar({ title, parts, num }: { title: string; parts: Part[]; num: (n: number) => string }) {
+export function Bar({ title, parts, num }: { title: string; parts: Part[]; num: (n: number) => string }) {
   const shown = parts.filter(part => part.n > 0)
   const total = shown.reduce((sum, part) => sum + part.n, 0)
   if (total === 0) return null

@@ -8,7 +8,7 @@ import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ChainSummary, SearchSummary, StatStrip, type StatItem } from './SearchSummary'
 import { ModelName } from '../components/ModelName'
 import { effortLabels, modelRoles } from '../home/Home'
-import { AnswerFlowNote } from './FlowReport'
+import { AnswerStepVisual } from './FlowReport'
 import type { ModelText } from '../lib/modelText'
 import { t, uiLanguage, uiLocale } from '../lib/i18n'
 import { REPORT_HEADINGS } from '../review/reportHeadings'
@@ -788,16 +788,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       }
       case 'answer': {
         if (answer?.status !== 'structurally_valid') return null
-        const stated = answer.claims.filter(c => c.support_type === 'source_stated').length
-        const lines = [
-          t('{stated} source-stated · {inferred} inferred', { stated, inferred: answer.claims.length - stated }),
-          answer.unanswered_aspects.length ? plural(answer.unanswered_aspects.length, '{n} aspect not answered', '{n} aspects not answered') : '',
-          answer.limitations.length ? plural(answer.limitations.length, '{n} limitation', '{n} limitations') : '',
-        ].filter(Boolean)
-        return <>
-          <p>{lines.join(' · ')}</p>
-          {Math.max(0, ...group.map(s => s.attempt)) > 1 && <p>{t('First output failed validation; repaired once.')}</p>}
-        </>
+        // The claim counts sit in the step's bars; only a repair is written here.
+        return Math.max(0, ...group.map(s => s.attempt)) > 1 ? <p>{t('First output failed validation; repaired once.')}</p> : null
       }
       default:
         return null
@@ -1200,11 +1192,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       if (fastPath?.K) parts.push(row(t('Full-text limit at {depth} depth', { depth: t(effortLabels[fastPath.mode as keyof typeof effortLabels] ?? fastPath.mode ?? '') }), fastPath.K, 'limit'))
     }
     if (key === 'answer' && run.kind === 'answer' && answer) {
-      if (answer.inputs_given) parts.push(row(t('Passages given to the model'), t('{passages} from {sources} sources', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }), 'given'))
-      if (answer.status === 'structurally_valid') parts.push(row(t('Passages cited'), citedPassages, 'cited'))
+      // Tiles and bars lead; the model that wrote it follows as one row.
+      parts.push(<AnswerStepVisual key="visual" answer={answer} cited={citedPassages} />)
       const model = modelRow('Answer model', agents.answer)
       if (model) parts.push(<div key="model">{model}</div>)
-      parts.push(<AnswerFlowNote key="flow" answer={answer} />)
     }
     if (key === 'review' && run.kind === 'answer' && !group.length && answer?.status === 'structurally_valid') {
       parts.push(<div key="anchors">{t('Each cited quote was found in a stored passage that was given to this step.')}</div>)

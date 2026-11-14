@@ -6,6 +6,8 @@ import { flowBoxLabels, flowBucketLabels, runStatusLabels, shownVersion } from '
 import { effortLabels } from '../home/Home'
 import { useToast } from '../components/Toast'
 import { t, uiLocale } from '../lib/i18n'
+import { Bar } from './AnswerBasis'
+import { StatStrip } from './SearchSummary'
 
 // Where every work of an sw research stands (slice 20). Counts only: a work two agreeing runs included is never called
 // confirmed, the override count is never a rate, and the boxes are not added up.
@@ -99,6 +101,50 @@ export function AnswerFlowNote({ answer }: { answer: Answer }) {
       {snapshot.flow.look_again_in_answer > 0 && <p className="is-attention">{t(snapshot.flow.look_again_in_answer === 1 ? '{n} work rests on a decision you made under the earlier criterion.' : '{n} works rest on a decision you made under the earlier criterion.', { n: count(snapshot.flow.look_again_in_answer) })}</p>}
     </> : <p>{t('The flow at the start of this answer was not recorded.')}</p>}
     {given && <p>{t('Given to the model: works {sources}, passages {passages}.', { sources: count(given.sources), passages: count(given.passages) })}</p>}
+  </div>
+}
+
+// The answer step at a glance: tiles for the passages given and cited and the claims, a bar of how the claims are
+// supported, and a bar of where the included-or-not flow stood when the answer started. Every number is stored.
+export function AnswerStepVisual({ answer, cited }: { answer: Answer; cited: number }) {
+  const given = answer.inputs_given
+  const valid = answer.status === 'structurally_valid'
+  const stated = answer.claims.filter(c => c.support_type === 'source_stated').length
+  const five = answer.start_snapshot?.flow.five
+  const snapshot = answer.start_snapshot
+  const gaps = [
+    { n: answer.unanswered_aspects.length, label: t(answer.unanswered_aspects.length === 1 ? 'aspect not answered' : 'aspects not answered') },
+    { n: answer.limitations.length, label: t(answer.limitations.length === 1 ? 'limitation' : 'limitations') },
+  ].filter(item => item.n > 0)
+  // The splits inside two of the flow's counts, as fine print under its bar.
+  const splits = five ? [
+    five.included ? t('Included: {agreed} by two agreeing runs, {confirmed} you confirmed', { agreed: count(five.included_by_agreement), confirmed: count(five.confirmed) }) : '',
+    five.not_read ? t('Full text not read: {reading} in reading, {tried} not tried', { reading: count(five.not_read_in_reading), tried: count(five.not_read_not_tried) }) : '',
+  ].filter(Boolean) : []
+  return <div className="search-summary-visual answer-step-visual" role="group" aria-label={t('Flow at the start of this answer')}>
+    <ul className="search-summary-tiles">
+      {given && <li><span>{t('Passages given to the model')}</span><span><b className="tnum">{count(given.passages)}</b> {t('from {n} sources', { n: count(given.sources) })}</span></li>}
+      {valid && <li><span>{t('Passages cited')}</span><span><b className="tnum">{count(cited)}</b>{given ? ` ${t('of {n} given', { n: count(given.passages) })}` : ''}</span></li>}
+      {valid && <li><span>{t('Claims')}</span><span><b className="tnum">{count(answer.claims.length)}</b> {t('in the answer')}</span></li>}
+    </ul>
+    {valid && <Bar title={t('How the claims are supported')} num={count} parts={[
+      { label: t('Source-stated'), n: stated, tone: 'read' },
+      { label: t('Inferred'), n: answer.claims.length - stated, tone: 'open' },
+    ]} />}
+    {valid && gaps.length > 0 && <StatStrip items={gaps} />}
+    {five ? <>
+      <Bar title={t('When the answer started')} num={count} parts={[
+        { label: t('Included'), n: five.included, tone: 'read' },
+        { label: t('In your queue'), n: five.queued, tone: 'next' },
+        { label: t('Waiting for a PDF'), n: five.waiting_for_pdf, tone: 'open' },
+        { label: t('Full text not read'), n: five.not_read, tone: 'idle' },
+        { label: t('Criterion not met'), n: five.not_met, tone: 'out' },
+      ]} />
+      {splits.length > 0 && <p className="answer-step-note">{splits.join(' · ')}</p>}
+    </> : <p className="answer-step-note">{t('The flow at the start of this answer was not recorded.')}</p>}
+    {snapshot && snapshot.included_without_answer_text > 0 && <p className="answer-step-note">{t(snapshot.included_without_answer_text === 1 ? '{n} included work gave the answer no text: its only text is your file, not read yet.' : '{n} included works gave the answer no text: their only text is your file, not read yet.', { n: count(snapshot.included_without_answer_text) })}</p>}
+    {snapshot?.included_state_changed && <p className="answer-step-note is-attention">{t('The state of the included sources changed while the answer ran.')}</p>}
+    {snapshot && snapshot.flow.look_again_in_answer > 0 && <p className="answer-step-note is-attention">{t(snapshot.flow.look_again_in_answer === 1 ? '{n} work rests on a decision you made under the earlier criterion.' : '{n} works rest on a decision you made under the earlier criterion.', { n: count(snapshot.flow.look_again_in_answer) })}</p>}
   </div>
 }
 

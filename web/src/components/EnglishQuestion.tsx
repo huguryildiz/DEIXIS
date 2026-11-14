@@ -4,7 +4,7 @@ import { api, type ResearchView } from '../lib/api'
 import { Notice } from './Notice'
 import { t } from '../lib/i18n'
 
-// The English sentence used by search and reranking for a non-English question.
+// The English sentence later planning and ranking read for a non-English question.
 export function EnglishQuestion({ researchId, view, busy, onSaved }: {
   researchId: string; view: ResearchView; busy: boolean; onSaved: (next: ResearchView) => void
 }) {
@@ -19,7 +19,7 @@ export function EnglishQuestion({ researchId, view, busy, onSaved }: {
     api.saveEnglishQuestion(researchId, body).then(onSaved).catch((e: Error) => setError(e.message)).finally(() => setSaving(false))
   }
   return <div className="english-question">
-    <Notice tone="attention">{t('Add an English sentence for searching and reranking this question.')}</Notice>
+    <Notice tone="attention">{t('Add an English sentence for planning and ranking this question.')}</Notice>
     <form onSubmit={e => { e.preventDefault(); if (text.trim()) save({ text: text.trim(), expected_version: view.research.version }) }}>
       <label className="sr-only" htmlFor="english-question-text">{t('English sentence')}</label>
       <input id="english-question-text" value={text} maxLength={500} onChange={e => setText(e.target.value)} placeholder={t('One English sentence')} disabled={saving || busy} />

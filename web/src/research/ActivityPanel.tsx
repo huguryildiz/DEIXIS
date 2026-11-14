@@ -57,6 +57,6 @@ export function ActivityPanel({ researchId, eventCursor, events }: { researchId:
         {!runs.length && <p className="empty-inline">{t('No run is recorded yet.')}</p>}
         <p className="foot-note">{t('Every step is stored. A paused or interrupted run resumes without repeating model calls that already finished. Took runs from a run’s first start to its end, pauses included.')}</p>
       </>}
-    <ActivityLog events={events} />
+    <ActivityLog events={events} runs={runs} />
   </div>
 }

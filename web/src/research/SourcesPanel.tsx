@@ -21,7 +21,7 @@ import type { OcrContext } from './shared'
 // ranked list from their own route, in that list's order, and its count is that route's total; its notice queues
 // "Screen N more", which never includes a source by itself.
 type SourceSort = 'relevant' | 'found' | 'cited' | 'newest' | 'oldest' | 'title'
-const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', found: 'Order found', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
+const sourceSorts: Record<SourceSort, string> = { relevant: 'Screening, then rank', found: 'Order found', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
 // Search position is not comparable across queries: the screening verdict decides, then the best search position.
 const verdictOrder: Record<string, number> = { include: 0, passed: 1, uncertain: 2, none: 3, exclude: 4 }
 const verdictRank = (s: Source) => verdictOrder[proposalOf(s)?.tone ?? 'none'] ?? 3
@@ -150,7 +150,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
         <SelectTrigger className={`ghost source-sort${sort !== 'relevant' && !notRead ? ' tint' : ''}`} aria-label={t('Sort sources')} title={notRead ? t('The never-screened works keep the ranked list’s stored order; sorting does not apply to them.') : undefined}><SelectValue>{(value: string) => <><ArrowUpDown size={14} aria-hidden />{notRead ? t('Ranked list order') : t(sourceSorts[value as SourceSort])}</>}</SelectValue></SelectTrigger>
         <SelectContent className="source-menu" align="start" alignItemWithTrigger={false}>
           <SelectGroup><SelectLabel>{t('Sort')}</SelectLabel>
-            {(Object.keys(sourceSorts) as SourceSort[]).map(k => <SelectItem key={k} value={k}>{k === 'relevant' ? <span className="sort-option">{t(sourceSorts[k])}<small>{t('Screening result first, then similarity to the question, then search position')}</small></span> : t(sourceSorts[k])}</SelectItem>)}
+            {(Object.keys(sourceSorts) as SourceSort[]).map(k => <SelectItem key={k} value={k}>{k === 'relevant' ? <span className="sort-option">{t(sourceSorts[k])}<small>{t('Screening result first, then the stored ranking')}</small></span> : t(sourceSorts[k])}</SelectItem>)}
           </SelectGroup>
         </SelectContent>
       </Select>
@@ -252,7 +252,7 @@ function NotReadNotice({ unscreened, effort, limits, busy, active, screening, on
     <span>{papers !== undefined
       ? t('These works were found but never screened: {depth} depth screens the top {n} of the ranked list. {total} works sit below that line, listed here in its order; {screenable} of them have an abstract to read.', { depth: t(effortLabels[effort]), n: number(papers), total: number(page.total), screenable: number(page.screenable) })
       : t('These works were found but never screened. {total} works sit below the part of the ranked list that was screened, listed here in its order; {screenable} of them have an abstract to read.', { total: number(page.total), screenable: number(page.screenable) })}
-      {' '}{t('Rank and similarity are the signals the list was ordered by, not relevance.')}</span>
+      {' '}{t('The stored rank is a priority signal, not a relevance judgment.')}</span>
     {next > 0 && <div className="acts"><button type="button" className="ghost source-screen-more" disabled={busy || active || screening} aria-busy={screening} title={active ? t('Available when the current run ends') : t('Reads the abstracts of the next {n} works twice; it never includes a source by itself.', { n: number(next) })} onClick={onScreenMore}><ListChecks size={14} aria-hidden />{t('Screen {n} more', { n: number(next) })}</button></div>}
   </div></div>
 }

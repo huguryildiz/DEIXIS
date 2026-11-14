@@ -319,7 +319,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (current.kind === 'watch_check') return
     if (!previous || (previous.id === current.id && previous.status === current.status)) return
     const label = t(current.kind === 'answer' ? 'Answer generation' : runKindLabels[current.kind])
-    const reason = pauseReasonText(current.pause_reason, current.error)
+    const uniformSearch = (current.budget as unknown as { fast_path?: { uniform_search?: { rule?: string } } }).fast_path?.uniform_search?.rule === 'uniform_search_v1'
+    const reason = pauseReasonText(current.pause_reason, current.error, uniformSearch)
     // A new run still under way says it started. One that already ended by the next read stays silent (a background run,
     // such as a title suggestion after a saved revision, must not take the toast slot), except a recheck the person asked
     // for, which can start and finish between two reads: its end is announced below.
@@ -932,7 +933,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
       {!view.counts.funnel && counts.length > 0 && <div className="research-counts">{counts.map(([key, label, filter, n]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{n}</strong><span>{t(label)}</span></button>)}</div>}
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
-      <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
+      <span title={t('How much the run may screen and read')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
     {/* With a search behind it, the counts read as one list from found down to cited; otherwise the strip above. */}
     <AnswerBasis view={view} answer={answer} onSources={showSources} onAnswer={showAnswer} />

@@ -224,8 +224,12 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   const nextRevision = view.research.next_scope_revision
   const from = loaded.based_on?.scope_revision
   const origin = !plan ? t('No search of this question has frozen a plan yet; it shows here once the first search has planned.')
-    : loaded.origin === 'model' ? t('The fast path wrote this plan from your question and ran it without asking.')
-    : loaded.origin === 'code' ? t('Code built this plan from the question’s words and ran it without asking.')
+    : loaded.origin === 'model' ? t(loaded.based_on?.uniform_search
+      ? 'The model wrote this plan from the first search results; the run did not ask for approval.'
+      : 'The fast path wrote this plan from your question and ran it without asking.')
+    : loaded.origin === 'code' ? t(loaded.based_on?.uniform_search
+      ? 'The keyword query used your key terms; no model wrote it.'
+      : 'Code built this plan from the question’s words and ran it without asking.')
     : t('This plan was saved by you.')
   // A frozen protocol says the plan was fixed for a search, not that its requests were sent or answered: the sentence says
   // frozen, and the plan step's lines say what the search did.
@@ -288,7 +292,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
       <p className="plan-note">{[
         loaded.queries_preview && t('A preview: the query is compiled again from the words when the search starts. A backup word takes the place of a word OpenAlex counts at zero, and is added beside a word that finds no record together with the other part, while the query stays within 8 words.'),
         wordsChanged && t('The queries above are the stored ones; the edited words are compiled into a new query when the search starts.'),
-        !own && t('Saved, the plan is searched with its own words: no model writes a query beside it.'),
+        !own && t('When saved, these words form the keyword query; no model writes another keyword query.'),
       ].filter(Boolean).join(' ')}</p>
       {plan.criterion
         ? <label className="lbl">{t('Inclusion criterion')}<textarea className="field" rows={2} maxLength={600} value={draft.criterion ?? ''} disabled={locked} onChange={e => { const text = e.target.value; changeDraft(current => ({ ...current, criterion: text })) }} />
@@ -304,7 +308,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
             : !provider.in_scope ? t('not among this research’s sources')
             : !provider.configured ? t('not set up · needs a key in Settings')
             : provider.provider_id === 'semantic_scholar' ? t('abstracts and conditional search completion')
-            : provider.provider_id === 'scopus' ? t('abstracts, once its full view is confirmed')
+            : provider.provider_id === 'scopus' ? t('conditional second-index search; abstracts when its full view is available')
             : t('abstracts')
           return <label key={provider.provider_id}><input type="checkbox" checked={checked} disabled={disabled} onChange={e => toggleProvider(provider.provider_id, e.target.checked)} />
             <span>{providerName(provider.provider_id)}</span> <small>{note}</small></label>

@@ -2106,7 +2106,7 @@ export const libraryImportsApi = {
 // frozen depth ('deep' is Detailed); `report_version` the report an answer run saved.
 export type ActivityRun = {
   id: string; kind: RunKind; status: RunStatus; scope_revision: number; created_at: string
-  started_at: string | null; finished_at: string | null; model_calls: number; mode: string | null; report_version: number | null; report_revision?: number | null
+  started_at: string | null; finished_at: string | null; model_calls: number; mode: string | null; uniform_search: boolean; report_version: number | null; report_revision?: number | null
 }
 export type ActivityRuns = { research_id: string; runs: ActivityRun[] }
 
@@ -2358,7 +2358,7 @@ export type SearchPlanView = {
   research_id: string; expected_version: number; scope_revision: number
   editable: boolean  // false for a research over attached files only
   origin: 'user' | 'model' | 'code' | null  // null: no run of this question has frozen a plan yet
-  based_on: { scope_revision: number; protocol_revision: number } | null
+  based_on: { scope_revision: number; protocol_revision: number; uniform_search: boolean } | null
   plan: UserSearchPlan | null
   issues: { code: string; path: string; message: string }[]  // rules the shown plan breaks (a code term may be long)
   queries: { label: string; origin: 'user' | 'model' | 'code'; query_text: string; compiled_from: 'plan_words' | 'protocol' }[]

@@ -625,7 +625,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
             </DropdownMenu>
           : <button type="button" className="models-summary" disabled title={connections ? notReadyReasons(connections) : ''}><Cpu size={15} aria-hidden /><span className="models-summary-label">{t('Models')}</span><span className="sr-only">: {connections ? t('no connection ready') : t('checking…')}</span></button>}
         <Select value={effort} onValueChange={value => { if (value) { effortPicked.current = true; setEffort(value as Effort) } }}>
-          <SelectTrigger className="composer-depth" aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} aria-hidden />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
+          <SelectTrigger className="composer-depth" aria-label={t('Research depth')} title={t('How much the run may screen and read')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} aria-hidden />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
           <SelectContent className="home-menu" align="start" sideOffset={6} alignItemWithTrigger={false} collisionPadding={8} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
             <div className="home-menu-heading" aria-hidden="true">{t('Depth')}</div>
             {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d} className="home-menu-item"><MenuRow icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits, LOCAL_CONNECTIONS.has(models.find(m => m.id === model)?.connection ?? ''))} /></SelectItem>)}
@@ -634,7 +634,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || tooLong || !model || !literature || (needsSource && !files.length && !zotero) || noGuide} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
       </div>
       {guideRows && <div className="guide" role="group" aria-labelledby="guide-lead">
-        <span id="guide-lead">{t('PDFs guiding the search · their titles, abstracts and references shape the query.')}</span>
+        <span id="guide-lead">{t('PDFs guiding the search · readable passages can inform the plan; matched works can seed citation chaining.')}</span>
         {files.map(file => {
           const checked = !unguided.has(file.name)
           return <label key={file.name} title={file.name}>

@@ -33,10 +33,10 @@ export function RevisionForm({ question, keyTerms, englishQuestion = null, nextR
     </div>}
     <label>{t('Question')}<textarea id="revise-question" ref={questionField} rows={4} value={text} dir="auto" onChange={e => setText(e.target.value)} /></label>
     <label>{t('English key terms (optional)')}<input id="revise-key-terms" ref={termsField} value={terms} onChange={e => setTerms(e.target.value)} maxLength={500} dir="auto" aria-describedby="revise-key-terms-hint" /></label>
-    {englishQuestion !== null && <label>{t('English sentence used for search (optional)')}<input id="revise-english-question" value={english} onChange={e => setEnglish(e.target.value)} maxLength={500} dir="auto" aria-describedby="revise-english-question-hint" /></label>}
+    {englishQuestion !== null && <label>{t('English sentence for planning and ranking (optional)')}<input id="revise-english-question" value={english} onChange={e => setEnglish(e.target.value)} maxLength={500} dir="auto" aria-describedby="revise-english-question-hint" /></label>}
     {englishQuestion !== null && <small id="revise-english-question-hint">{terms.trim()
-      ? t('Search words come from the key terms above, not from this sentence.')
-      : t('Search words are taken from this sentence. Leave it empty to have the model translate the question again.')}</small>}
+      ? t('Question words for ranking and screening come from the key terms above.')
+      : t('Question words for ranking and screening come from this sentence. Leave it empty to have the model translate the question again.')}</small>}
     <p className="revise-effect">{t('Saving makes this revision {n} of the research question and names the research after it. No search starts. A work read under the current question is not used by an answer until a search under the new question reads it again. While nothing has been searched, answered or read under it, you can undo it.', { n: nextRevision })}</p>
     <small id="revise-key-terms-hint">{t('Blocks are separated by “;”, synonyms of one block by “,”; a group written “claim:” is the assertion under test and one written “not:” keeps records out.')}</small>
     <div className="chat-question-buttons">

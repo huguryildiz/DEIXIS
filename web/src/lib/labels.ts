@@ -417,7 +417,7 @@ const pauseReasons: Record<string, string> = {
   ocr_pages_changed: 'The PDF’s pages without text changed while OCR was running. Nothing was stored; start OCR again.',
   asset_removed: 'The PDF was removed from the source before OCR finished. Nothing was stored.',
   extraction_failed: 'The PDF could not be opened to find its pages without text.',
-  // The sw workflow's own stops: the run has searched nothing yet.
+  // Older pre-search stop messages remain for runs frozen before the shared search.
   key_terms_needed: 'The question is not in English and could not be translated into English, so nothing was searched. Resume to try the translation again, revise the question in English, or give the English key terms above.',
   vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question above, for example with other words for the topic or with key terms, and search again.',
   vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question above with a narrower topic or with key terms, and search again.',
@@ -438,8 +438,25 @@ const firstPageOutcome: Record<string, string> = {
   entitlement_missing: 'The scholarly provider does not give this account the records the first search asked for.',
 }
 
-export const pauseReasonText = (reason: string | null, detail?: unknown) => {
+export const pauseReasonText = (reason: string | null, detail?: unknown, uniformSearch?: boolean) => {
   const error = detail && typeof detail === 'object' ? detail as Record<string, unknown> : {}
+  // A shared-search run starts its first OpenAlex request before planning can stop.
+  if (uniformSearch && reason === 'key_terms_needed') return t(typeof error.error === 'string'
+    ? 'The English key terms could not be read. The question’s OpenAlex search may have started. Change the terms above and search again.'
+    : 'The question could not be translated for later steps. The question’s OpenAlex search may have started. Resume to retry the translation, revise the question in English, or give English key terms above.')
+  if (uniformSearch && reason === 'vocabulary_empty') return t('No planned keyword query could be built. The question’s OpenAlex search may have run; the keyword query did not. Revise the question or key terms above and search again.')
+  if (uniformSearch && reason === 'vocabulary_too_broad') return t('The key terms produced one search block whose terms were all too common to search alone. The question’s OpenAlex search may have run; the keyword query did not. Narrow the key terms and search again.')
+  if (uniformSearch && reason === 'user_plan_unsearchable') return t('One block of your saved plan had no searchable term on OpenAlex, including its backups. The question’s OpenAlex search may have run, but the planned query did not. Edit the plan and search again.')
+  if (uniformSearch && reason === 'search_query_failed') {
+    if (error.reason === 'first_page_no_records') return t('The question’s OpenAlex search returned no works, so the model could not plan the keyword query. Revise the question and search again.')
+    if (error.reason === 'first_page_empty') {
+      const went = firstPageOutcome[String(error.provider_outcome ?? '')]
+      return (went ? t(went) + ' ' : '') + t('The first search returned no usable record, so the model could not plan the keyword query. Resume to retry it, or revise the question.')
+    }
+    return t('The model could not write a usable search plan. The question’s OpenAlex search may have run; the planned keyword query did not. Resume to retry the plan, or revise the question.')
+  }
+  if (uniformSearch === undefined && ['key_terms_needed', 'vocabulary_empty', 'vocabulary_too_broad', 'search_query_failed', 'user_plan_unsearchable'].includes(reason ?? ''))
+    return t('Planning stopped. Check this run’s steps for searches that were sent.')
   if ((reason === 'model_call_failed' || reason === 'model_connection_not_ready' || reason?.startsWith('provider_')) && (error.error_kind || error.service_kind)) {
     const service = typeof error.provider === 'string' ? providerName(error.provider) : error.connection ? connectionName(String(error.connection)) : t('The selected service')
     return serviceErrorText({ kind: error.service_kind || error.error_kind, service }).what
@@ -531,8 +548,8 @@ export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as {
 // ---- the frozen protocol of a discovery run ----
 const approvedByNames: Record<string, string> = {
   unattended: 'The search terms were not reviewed before the search; the run went on without asking.',
-  user: 'You edited and saved this search plan; it was searched as you saved it.',
-  user_edited: 'You edited and saved this search plan; it was searched as you saved it.',
+  user: 'This run used the search plan you saved.',
+  user_edited: 'This run used the search plan you saved.',
 }
 export const approvedByText = (by: string | null) => (by ? t(approvedByNames[by] ?? by) : '')
 
@@ -590,7 +607,7 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'model:report_review') return t('Checking the report (model)')
   if (kind === 'model:search_query') return t('Search query (model)')
   if (kind === 'model:question_translation') return t('Translating the question into English (model)')
-  if (kind === 'model:vocabulary_labels') return t('Grouping search words (model)')
+  if (kind === 'model:vocabulary_labels') return t('Grouping question words (model)')
   if (kind === 'model:criterion_proposal') return t('Inclusion criterion proposal (model)')
   if (kind === 'model:followup_answer') return t('Answer to a follow-up question (model)')
   if (kind === 'table_no_text') return t('Source without stored text')
@@ -644,7 +661,7 @@ const codeStepLabels: Record<string, string> = {
   study_table_columns_accepted: 'Adding the proposed evidence columns (code)',
   study_table_open: 'Opening the evidence table before reading (code)',
   user_search_query: 'Your search query (code)',
-  vocabulary: 'Search words from the question (code)',
+  vocabulary: 'Question words for ranking and screening (code)',
   // No longer written; kept so stored runs that hold the empty step still read in plain words.
   vocabulary_expansion: 'Expanding the search words (code)',
 }

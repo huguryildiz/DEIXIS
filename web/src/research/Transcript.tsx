@@ -790,7 +790,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     review: run.kind === 'review' ? (ownerReview ? { role: 'Review', connection: ownerReview.card.requested_model.connection, model: ownerReview.card.requested_model.model, effort: ownerReview.card.requested_model.reasoning_effort } : undefined) : { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
   }
   // Once the run has searched, the plan line names the sources it actually asked, not every source in scope.
-  const searchedIds = [...new Set(searches.map(s => s.provider))]
+  const providerSearches = searches.filter(s => steps.some(step => step.id === s.step_id && step.kind.startsWith('provider_search:')))
+  const sentSearches = providerSearches.filter(s => steps.some(step => step.id === s.step_id && step.delivery_class !== 'before_send'))
+  const searchedIds = [...new Set(sentSearches.map(s => s.provider))]
   const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format((searchedIds.length ? searchedIds : view.scope.search_providers).map(providerName))
   // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
@@ -855,7 +857,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const flowBuckets = latestDiscovery ? view.counts.flow?.buckets ?? null : null
   const notScreened = flowBuckets?.not_screened ?? null
   const listFormat = (names: string[]) => new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(names)
-  const searchedProviders = listFormat([...new Set([...searches.map(s => s.provider), ...steps.filter(s => s.kind.startsWith('provider_search:')).map(s => s.kind.split(':')[1] ?? '')])].filter(Boolean).map(providerName))
+  // A cancelled conditional arm has a provider_search step but no search reply.
+  const searchedProviders = listFormat(searchedIds.map(providerName))
+  const uniformSearch = (run.budget as unknown as { fast_path?: { uniform_search?: { rule?: string } } }).fast_path?.uniform_search?.rule === 'uniform_search_v1'
   // Each abstract the model read, by how many successful reads it had: the fast path reads every batch twice.
   const abstractReads = new Map<string, number>()
   steps.filter(s => s.kind === 'model:abstract_screening' && s.status === 'succeeded').forEach(s => (s.output?.candidate_ids ?? []).forEach((id: string) => abstractReads.set(id, (abstractReads.get(id) ?? 0) + 1)))
@@ -874,8 +878,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
 
   // What a stopped phase says: where the run stood when it paused, stopped or was cancelled.
   const stopText = (key: PhaseKey) => {
-    if (key === 'plan' && run.pause_reason === 'vocabulary_too_broad') return t('Stopped while planning: the question is too broad')
-    if (key === 'plan' && run.pause_reason === 'vocabulary_empty') return t('Stopped while planning: no search term could be built from the question')
+    if (key === 'plan' && run.pause_reason === 'vocabulary_too_broad') return t(uniformSearch ? 'Stopped while planning: the written search terms were too broad' : 'Stopped while planning: the question is too broad')
+    if (key === 'plan' && run.pause_reason === 'vocabulary_empty') return t(uniformSearch ? 'Stopped while planning: no planned keyword query could be built' : 'Stopped while planning: no search term could be built from the question')
     const doing = t(doingNames[key])
     return run.status === 'cancelled' ? t('Cancelled while {doing}', { doing }) : run.status === 'paused' && run.pause_reason === 'user_requested' ? t('Paused while {doing}', { doing }) : t('Stopped while {doing}', { doing })
   }
@@ -892,12 +896,19 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         if (live) return ongoing(t('Planning the searches'), detail(key, state, group))
         // A person's saved plan is recorded as approved_by 'user' with mode 'user_edited' (user_plan.py); the view passes
         // approved_by, and either value means the plan is the person's, not the question's words.
-        return t(USER_PLAN.has(run.approval?.approved_by ?? '') ? 'Planned the searches from your saved plan' : run.approval?.search_plan ? 'Planned the searches from the first results' : 'Planned the searches from the question’s words')
+        if (uniformSearch && !run.approval) return fallback()
+        return t(uniformSearch && USER_PLAN.has(run.approval?.approved_by ?? '') ? 'Used your saved plan for the keyword search'
+          : USER_PLAN.has(run.approval?.approved_by ?? '') ? 'Planned the searches from your saved plan'
+          : uniformSearch && run.approval?.approved.queries.some(query => query.origin === 'user') ? 'Planned the keyword query from your key terms'
+          : uniformSearch && run.approval?.search_plan ? 'Planned the keyword search from the first results'
+          : run.approval?.search_plan ? 'Planned the searches from the first results' : 'Planned the searches from the question’s words')
       case 'search':
-        if (live) return ongoing(searchedProviders ? t('Searching {providers}', { providers: searchedProviders }) : t('Searching the providers'))
-        if (!searches.length) return fallback()
-        return [t('Searched {providers}', { providers: searchedProviders }), funnel ? plural(funnel.unique, '{n} unique work', '{n} unique works', { n: funnel.unique.toLocaleString(uiLocale()) })
-          : plural(searches.reduce((sum, s) => sum + (s.status === 'completed' ? s.result_count : 0), 0), '{n} record retrieved', '{n} records retrieved')].join(' · ')
+        if (live) return ongoing(uniformSearch ? t('Searching scholarly sources') : searchedProviders ? t('Searching {providers}', { providers: searchedProviders }) : t('Searching the providers'))
+        if (!searchedIds.length) return fallback()
+        return [t('Searched {providers}', { providers: searchedProviders }), uniformSearch
+          ? plural(sentSearches.reduce((sum, s) => sum + (s.status === 'completed' ? s.result_count : 0), 0), '{n} record retrieved', '{n} records retrieved')
+          : funnel ? plural(funnel.unique, '{n} unique work', '{n} unique works', { n: funnel.unique.toLocaleString(uiLocale()) })
+          : plural(providerSearches.reduce((sum, s) => sum + (s.status === 'completed' ? s.result_count : 0), 0), '{n} record retrieved', '{n} records retrieved')].join(' · ')
       case 'chain':
         if (live) return ongoing(t('Following citations from the strongest matches'))
         return [t('Followed one round of citations'), chainNew === undefined ? '' : [plural(chainNew, '{n} work added', '{n} works added'),
@@ -952,12 +963,17 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const seed = /^search:fast:semantic:seed:(\d+)/.exec(key)
       if (seed) return t('semantic, seed {n}', { n: Number(seed[1]) + 1 })
       if (key === 'search:fast:semantic:blocks') return t('semantic, search words')
+      if (key.startsWith('search:fast:semantic:phrase:')) return t('semantic, short phrase')
+      if (key.startsWith('search:fast:plain:phrase:')) return t('plain, short phrase')
       if (key.startsWith('search:fast:semantic')) return t('semantic')
       const keyword = /^search:(\d+)(?::page:\d+)?$/.exec(key)
       const index = keyword ? Number(keyword[1]) : key.startsWith('search:fast:s2_bulk') ? planQueries.findIndex(q => q.provider_id === 'semantic_scholar') : -1
       return index >= 0 ? t('keyword, query {n}', { n: index + 1 }) : t('keyword')
     }
-    return [...searches.reduce((byQuery, s) => byQuery.set(`${s.provider}\n${s.query_text}`, [...(byQuery.get(`${s.provider}\n${s.query_text}`) ?? []), s]), new Map<string, SearchRun[]>()).values()].map(pages => {
+    return [...providerSearches.reduce((byQuery, s) => {
+      const key = `${s.provider}\n${s.query_text}\n${queryKind(s)}`
+      return byQuery.set(key, [...(byQuery.get(key) ?? []), s])
+    }, new Map<string, SearchRun[]>()).values()].map(pages => {
       const s = pages[0]
       const failed = pages.find(p => p.status !== 'completed' && p.status !== 'zero_results')
       const count = pages.reduce((sum, p) => sum + p.result_count, 0)
@@ -995,7 +1011,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       // its step stored, or the person's own. "Edit" opens the revision form; the frozen plan itself never changes.
       const english = group.find(s => s.kind === 'code:vocabulary')?.output?.english_question
       const translator = english?.model
-      if (english) parts.push(<div key="english-search" className="step-row"><span>{t('English sentence for the search')}</span><span className="step-row-text" dir="auto">“{english.text}”
+      if (english) parts.push(<div key="english-search" className="step-row"><span>{t(uniformSearch ? 'English sentence for planning and ranking' : 'English sentence for the search')}</span><span className="step-row-text" dir="auto">“{english.text}”
         {english.origin === 'model' ? translator?.model && <> · <ModelName connection={translator.connection} text={modelText(translator.model, translator.effort ?? null)} /></> : <> · {t('your sentence')}</>}
         {latestDiscovery && onReviseQuestion && <> · <button type="button" className="step-link" onClick={onReviseQuestion}>{t('Edit')}</button></>}</span></div>)
       if (searchPlan) {
@@ -1010,7 +1026,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         </div>)
         if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
         if (searchPlan.phrases.length) parts.push(<div key="phrases" className="step-words"><div className="step-query-head"><span className="step-words-label">{t('Short phrases')}</span><span className="step-query-provider"><ConnectionIcon id="openalex" />{providerName('openalex')}</span></div>
-          <span>{t('Each phrase goes to OpenAlex semantic and plain search')}</span>{searchPlan.phrases.map((phrase, i) => {
+          <span>{t('Each phrase has a planned OpenAlex semantic and plain search')}</span>{searchPlan.phrases.map((phrase, i) => {
             const unusual = ([['Semantic', phrase.semantic], ['Plain', phrase.plain]] as const).filter(([, request]) => request?.state !== 'sent')
             return <div key={i} className="step-plan-phrase"><span className="step-plan-phrase-n" aria-hidden>{i + 1}</span><span className="step-plan-phrase-text">{phrase.text}</span>{unusual.length > 0 && <span className="step-plan-phrase-states">{unusual.map(([kind, request]) => <span key={kind}>{t(kind)}: {stateText(request?.state ?? 'not_sent')}</span>)}</span>}</div>
           })}</div>)
@@ -1257,7 +1273,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {busyEquationPdfs > 0 && <p className="chat-report-line">{t(busyEquationPdfs === 1 ? 'PDF busy; equations of {n} PDF were not read in this run.' : 'PDF busy; equations of {n} PDFs were not read in this run.', { n: busyEquationPdfs })}</p>}
         {(run.kind === 'review' || (latest && active && !collapsed)) && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'review' ? (ownerReview && run.target?.plan?.groups ? plural(run.target.plan.groups.length, 'A model you chose reads a stored copy of the {target} in {n} group. It changes nothing in the {target}.', 'A model you chose reads a stored copy of the {target} in {n} groups. It changes nothing in the {target}.', { target: t(ownerReview.kind === 'candidate' ? 'candidate' : ownerReview.kind === 'answer' ? 'answer' : 'report'), n: run.target.plan.groups.length }) : t('A model you chose reads a stored copy. It changes no target text.')) : run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'review' ? (ownerReview && run.target?.plan?.groups ? plural(run.target.plan.groups.length, 'A model you chose reads a stored copy of the {target} in {n} group. It changes nothing in the {target}.', 'A model you chose reads a stored copy of the {target} in {n} groups. It changes nothing in the {target}.', { target: t(ownerReview.kind === 'candidate' ? 'candidate' : ownerReview.kind === 'answer' ? 'answer' : 'report'), n: run.target.plan.groups.length }) : t('A model you chose reads a stored copy. It changes no target text.')) : run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? uniformSearch ? t('Search OpenAlex and any eligible conditional sources, then screen the candidates.') : t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps steps">{order.map((key, i) => {
           const state = phaseStates[i]
@@ -1326,7 +1342,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       <div className="notice-body">
         {userPaused
           ? <p><b>{t('Paused after the current call.')}</b> {t('Nothing was lost: the finished steps are kept and will not run again.')}</p>
-          : <p><b>{pauseReasonText(run.pause_reason, run.error)}</b></p>}
+          : <p><b>{pauseReasonText(run.pause_reason, run.error, uniformSearch)}</b></p>}
         {selectionStop && <p>{t(run.kind === 'answer' ? 'Resume publishes this answer, marked as written from your earlier selection, then writes a new one from your current selection.'
           : 'Resume picks up where it stopped and keeps your choices.')}</p>}
         {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
@@ -1362,7 +1378,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note notice ${vocabularyEnd ? 'is-warning' : run.status === 'failed' ? 'is-error' : 'is-neutral'}`}>
       <TriangleAlert size={16} aria-hidden />
       <div className="notice-body">
-        <p>{vocabularyEnd ? pauseReasonText(run.pause_reason, run.error) : <b>{pauseReasonText(run.pause_reason, run.error)}</b>}</p>
+        <p>{vocabularyEnd ? pauseReasonText(run.pause_reason, run.error, uniformSearch) : <b>{pauseReasonText(run.pause_reason, run.error, uniformSearch)}</b>}</p>
         {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
         {vocabularyEnd && !olderRevision && onRewrite && <RewriteField question={view.scope.question} keyTerms={view.scope.key_terms ?? null} busy={busy} onRewrite={onRewrite} />}
       </div>
@@ -1387,7 +1403,7 @@ function RewriteField({ question, keyTerms, busy, onRewrite }: {
     <textarea className="notice-field" rows={3} aria-label={t('Rewrite the question')} value={draft} onChange={e => setDraft(e.target.value)} />
     {keyTerms && <label className="notice-label">{t('English key terms (optional)')}
       <input className="notice-field" value={terms} maxLength={500} dir="auto" onChange={e => setTerms(e.target.value)} aria-describedby="rewrite-key-terms-hint" />
-      <span id="rewrite-key-terms-hint" className="notice-hint">{t('The search uses these terms ahead of the question.')}</span>
+      <span id="rewrite-key-terms-hint" className="notice-hint">{t('These terms guide the planned keyword query; the question also has its own search.')}</span>
     </label>}
     <div className="notice-actions">
       <Button size="sm" disabled={busy || !draft.trim() || !changed} onClick={() => void onRewrite(draft.trim(), keyTerms ? terms.trim() : null)}><Search size={14} aria-hidden />{t('Search again')}</Button>

@@ -4,7 +4,7 @@ import { t } from '../lib/i18n'
 
 // The never-screened works of the ranked list (F12) and "Screen N more" (F13), shared by the Sources panel's "Not read"
 // tab (P5, P7) and the Search funnel panel (P41; UI parity S27). The list and its count come from one route: `total`
-// counts the works the pages list, in the frozen list's order. Rank and similarity are the signals it was ordered by.
+// counts the works the pages list, in the frozen list's order. The stored rank is a priority signal.
 
 export const SCREEN_MORE_SIZE = 40  // screen_more.SIZE: the next 40 screenable works of the ranked list
 const PAGE = 50

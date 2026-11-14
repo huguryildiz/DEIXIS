@@ -278,7 +278,9 @@ def view(store: Any, research_id: str) -> dict[str, Any]:
         "research_id": research_id, "expected_version": research["version"], "scope_revision": scope["revision"],
         "editable": scope["source_scope"] != "attached",
         "origin": origin,
-        "based_on": ({"scope_revision": base["scope_revision"], "protocol_revision": base["protocol_revision"]}
+        "based_on": ({"scope_revision": base["scope_revision"], "protocol_revision": base["protocol_revision"],
+                      "uniform_search": (((base["body"].get("budget") or {}).get("fast_path") or {}).get(
+                          "uniform_search") or {}).get("rule") == "uniform_search_v1"}
                      if base else None),
         "plan": plan,
         "issues": [{"code": i.code, "path": i.path, "message": i.message} for i in issues],

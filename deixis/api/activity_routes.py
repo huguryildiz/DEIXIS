@@ -49,7 +49,8 @@ def register_activity_routes(app):
                 "finished_at": (ended.get(run["id"]) or {}).get(event) if event else None,
                 "model_calls": calls.get(run["id"], 0),
                 # The fast path's frozen depth ("deep" is Detailed), and the report version an answer run saved.
-                "mode": mode, "report_version": versions.get(run["id"], (None, None))[0],
+                "mode": mode, "uniform_search": (fast.get("uniform_search") or {}).get("rule") == "uniform_search_v1" if isinstance(fast, dict) else False,
+                "report_version": versions.get(run["id"], (None, None))[0],
                 "report_revision": versions.get(run["id"], (None, None))[1],
             })
         return {"research_id": research_id, "runs": rows}

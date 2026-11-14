@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react'
 import { Activity, Ban, BookOpenText, CircleCheck, CircleDot, CircleX, FilePlus2, Hand, Info, ListChecks, ListMinus, ListPlus, Replace, RotateCcw, ScanText, Sigma, MessageSquareQuote, Pause, PencilLine, Play, RotateCw, ShieldCheck, Table2, Trash2, UserPen, type LucideIcon } from 'lucide-react'
-import { type ActivityEvent, type RunKind } from '../lib/api'
+import { type ActivityEvent, type ActivityRun, type RunKind } from '../lib/api'
 import { serviceErrorText, serviceKind, serviceWaitingText, connectionName, fetchReasonText, pauseReasonText, providerName, recoveryDecisionText, recoveryReasonText, runKindLabels, stepLabel } from '../lib/labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_QUEUED, LATE_REVISION_SKIPPED, lateRevisionReasons } from '../lib/labels'
 import { ConnectionIcon } from '../components/connectionIcons'
@@ -12,7 +12,7 @@ function activityDayKey(value: string) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
 }
 
-export function ActivityLog({ events }: { events: ActivityEvent[] }) {
+export function ActivityLog({ events, runs }: { events: ActivityEvent[]; runs: ActivityRun[] | null }) {
   const groups = new Map<string, ActivityEvent[]>()
   events.slice().reverse().forEach(event => {
     const key = activityDayKey(event.created_at)
@@ -23,7 +23,7 @@ export function ActivityLog({ events }: { events: ActivityEvent[] }) {
     {[...groups.values()].map(group => <section className="activity-day" key={activityDayKey(group[0].created_at)}>
       <h3>{new Date(group[0].created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</h3>
       <ol className="activity-list">{group.map(event => {
-        const { icon, text, chips } = describeEvent(event)
+        const { icon, text, chips } = describeEvent(event, runs?.find(run => run.id === event.run_id)?.uniform_search)
         return <li key={event.id}>
           <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })}</time>
           <span className="activity-event"><span className="activity-icon">{icon}</span><span className="activity-copy">{text}</span>{chips.map((chip, i) => <span key={i} className={`activity-chip is-${chip.tone}`}>{chip.label}</span>)}</span>
@@ -48,12 +48,12 @@ const statusTones: Record<string, ChipTone> = {
 const statusChip = (status: unknown): EventChip => ({ label: t(String(status).replaceAll('_', ' ')), tone: statusTones[String(status)] ?? 'neutral' })
 const selectionTones: Record<string, ChipTone> = { included: 'ok', excluded: 'bad', pending: 'warn' }
 
-function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; chips: EventChip[] } {
+function describeEvent(event: ActivityEvent, uniformSearch?: boolean): { icon: ReactNode; text: string; chips: EventChip[] } {
   const p = event.payload as Record<string, string | number | null>
   const lucide = (Icon: LucideIcon, text: string, chips: EventChip[] = []) => ({ icon: <Icon size={15} aria-hidden />, text, chips })
   const brand = (id: string, text: string, chips: EventChip[] = []) => ({ icon: <ConnectionIcon id={id} />, text, chips })
   const errorProvider = p.provider ?? (typeof p.kind === 'string' && p.kind.startsWith('provider_search:') ? p.kind.split(':')[1] : null)
-  const reason = p.pause_reason ? [{ label: pauseReasonText(String(p.pause_reason), p.error_json), tone: 'neutral' as const }] : []
+  const reason = p.pause_reason ? [{ label: pauseReasonText(String(p.pause_reason), p.error_json, uniformSearch), tone: 'neutral' as const }] : []
   // Only events that carry a service classification get the service sentence; other and older codes keep their chip.
   const errorChip: EventChip[] = !p.error_code ? [] : !p.service_kind ? [{ label: String(p.error_code), tone: 'neutral' }] : [{ label: serviceErrorText({ kind: serviceKind(p.service_kind, typeof p.http_status === 'number' ? p.http_status : null),
     service: errorProvider ? providerName(String(errorProvider)) : p.connection ? connectionName(String(p.connection)) : t('The selected service') }).what, tone: 'neutral' }]

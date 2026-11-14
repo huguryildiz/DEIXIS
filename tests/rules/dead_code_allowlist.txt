@@ -1,0 +1,38 @@
+# Names vulture reports as unused but that are reached in a way it cannot see.
+# One "path name" per line, then the reason. tests/rules/test_dead_code.py reads this file.
+# A name leaves this list when its code is deleted; a new entry needs a reason a reviewer can check.
+
+# Resolved by name from the pdf_child dispatch table.
+deixis/documents/arxiv_source.py _stamp_key
+deixis/documents/equation_regions.py _render_crop
+deixis/documents/figures.py _find_figures
+deixis/documents/figures.py _find_algorithms
+deixis/documents/figures.py _render_figure
+
+# Called through getattr by the frozen query baseline.
+deixis/providers/query_rules.py boolean_part
+deixis/providers/query_rules.py syntax_issues
+
+# Connector contract value sets that tests read.
+deixis/providers/contract.py DELIVERY_CLASSES
+deixis/providers/contract.py ERROR_KINDS
+deixis/providers/contract.py PAGING_MODES
+deixis/providers/contract.py TOTAL_SEMANTICS
+deixis/providers/contract.py LOOKUP_STATUSES
+
+# Stored keys, versions, states and reason codes that older records may carry.
+deixis/documents/math_reader.py MATH_VERSION
+deixis/workflow/answer/followup.py MORE_SEMANTIC_KEY
+deixis/workflow/features/lineage/lineage_candidates.py NOT_SENT_REASONS
+deixis/workflow/features/lineage/lineage_store.py REVISION_KINDS
+deixis/workflow/features/lineage/lineage_store.py REJECTION_CODES
+deixis/workflow/read/equations.py NO_MATH
+deixis/workflow/read/recovery.py DECISION_CODES
+deixis/workflow/run/intent.py INTENTS
+deixis/workflow/run/store.py DISCOVERY_RUN_KINDS
+deixis/workflow/search/completion.py OPENALEX_OUTCOMES
+deixis/workflow/search/completion.py NOT_FROZEN
+deixis/workflow/search/search_plan.py LEFT_OUT
+
+# The unreachable yield makes __await__ a generator, as the await protocol needs.
+deixis/workflow/search/phrase_search.py return

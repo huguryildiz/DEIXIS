@@ -83,6 +83,9 @@ npm    @base-ui/react 1.8.0  MIT
 npm    @base-ui/utils 0.4.0  MIT
 npm    @dotenvx/dotenvx 1.75.1  BSD-3-Clause
 npm    @dotenvx/primitives 0.8.0  BSD-3-Clause
+npm    @emnapi/core 1.11.2  MIT
+npm    @emnapi/runtime 1.11.2  MIT
+npm    @emnapi/wasi-threads 1.2.2  MIT
 npm    @floating-ui/core 1.8.0  MIT
 npm    @floating-ui/dom 1.8.0  MIT
 npm    @floating-ui/react-dom 2.1.9  MIT
@@ -108,6 +111,7 @@ npm    @napi-rs/canvas-linux-x64-gnu 1.0.9  MIT
 npm    @napi-rs/canvas-linux-x64-musl 1.0.9  MIT
 npm    @napi-rs/canvas-win32-arm64-msvc 1.0.9  MIT
 npm    @napi-rs/canvas-win32-x64-msvc 1.0.9  MIT
+npm    @napi-rs/wasm-runtime 1.2.7  MIT
 npm    @nodelib/fs.scandir 2.1.5  MIT
 npm    @nodelib/fs.stat 2.0.5  MIT
 npm    @nodelib/fs.walk 1.2.8  MIT
@@ -146,6 +150,7 @@ npm    @tailwindcss/oxide-win32-arm64-msvc 4.3.3  MIT
 npm    @tailwindcss/oxide-win32-x64-msvc 4.3.3  MIT
 npm    @tailwindcss/vite 4.3.3  MIT
 npm    @ts-morph/common 0.27.0  MIT
+npm    @tybys/wasm-util 0.10.4  MIT
 npm    @types/node 24.13.4  MIT
 npm    @types/react 19.3.0  MIT
 npm    @types/validate-npm-package-name 4.0.2  MIT
@@ -465,6 +470,7 @@ npm    which 4.0.0  ISC
 npm    wrappy 1.0.2  ISC
 npm    wsl-utils 1.0.0  MIT
 npm    yallist 3.1.1  ISC
+npm    yaml 2.9.1  ISC
 npm    yocto-spinner 1.2.2  MIT
 npm    yoctocolors 2.2.0  MIT
 npm    zod 3.25.76  MIT
@@ -3492,6 +3498,84 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+@emnapi/core 1.11.2 (npm) - MIT
+----------------------------------------
+[LICENSE]
+MIT License
+
+Copyright (c) 2021-present Toyobayashi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+@emnapi/runtime 1.11.2 (npm) - MIT
+----------------------------------------
+[LICENSE]
+MIT License
+
+Copyright (c) 2021-present Toyobayashi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+@emnapi/wasi-threads 1.2.2 (npm) - MIT
+----------------------------------------
+[LICENSE]
+MIT License
+
+Copyright (c) 2021-present Toyobayashi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
 @floating-ui/core 1.8.0 (npm) - MIT
 ----------------------------------------
 [LICENSE]
@@ -4030,6 +4114,10 @@ Note: optional build for another platform, not installed here; licence from the 
 ----------------------------------------
 Note: optional build for another platform, not installed here; licence from the lock file, text not read
 
+@napi-rs/wasm-runtime 1.2.7 (npm) - MIT
+----------------------------------------
+The package ships no licence file; the licence above is from its metadata.
+
 @nodelib/fs.scandir 2.1.5 (npm) - MIT
 ----------------------------------------
 [LICENSE]
@@ -4415,6 +4503,32 @@ SOFTWARE.
 The MIT License (MIT)
 
 Copyright (c) 2017 David Sherret
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+@tybys/wasm-util 0.10.4 (npm) - MIT
+----------------------------------------
+[LICENSE]
+MIT License
+
+Copyright (c) 2022-present Toyobayashi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -16736,6 +16850,24 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
 IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 
+yaml 2.9.1 (npm) - ISC
+----------------------------------------
+[LICENSE]
+Copyright Eemeli Aro <eemeli@gmail.com>
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+
 yocto-spinner 1.2.2 (npm) - MIT
 ----------------------------------------
 [license]
@@ -16823,10 +16955,9 @@ MuPDF (inside PyMuPDF)
   commercial licence. DEIXIS uses the AGPL-3.0 option and is itself AGPL-3.0-or-later. https://mupdf.com/
 
 Tesseract OCR and its language data
-  Tesseract OCR engine: Apache-2.0, with a NOTICE file that goes with any distribution that includes one.
-  Tessdata language files (tessdata_fast and tessdata_best): Apache-2.0.
-  The libraries a bundled Tesseract build links (for example Leptonica) carry their own permissive licences, listed from
-  the build's actual contents. https://github.com/tesseract-ocr/tesseract
+  The OCR engine is the Tesseract copy built into MuPDF (above); the package holds no separate Tesseract program or
+  library. The package carries two language files from tessdata_fast 4.1.0, eng.traineddata and tur.traineddata:
+  Apache-2.0, whose text ships next to them as tessdata/LICENSE. https://github.com/tesseract-ocr/tessdata_fast
 
 Tauri and the system web view (desktop shell)
   Tauri: MIT or Apache-2.0, as are most of the Rust crates it builds on; the crate list is generated from the shell's

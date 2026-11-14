@@ -49,6 +49,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run knip  # unused files, exports and dependencies (knip.json)
       - run: npm run build
       - run: uv sync --frozen  # the specs start the fixture server with the repo's .venv python
         working-directory: .

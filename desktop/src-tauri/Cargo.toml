@@ -1,6 +1,6 @@
 [package]
 name = "deixis-desktop"
-version = "0.1.5"
+version = "0.1.4"
 description = "The DEIXIS desktop shell: window, tray item and the backend's lifetime (P10 M2 macOS, W4 Windows, L4 Linux)"
 edition = "2021"
 publish = false

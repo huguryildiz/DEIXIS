@@ -221,7 +221,7 @@ footer .grow { flex: 1; }
   <div class="hero-band">
   <div class="hero-bg" aria-hidden="true"><video id="heroVideo" autoplay muted loop playsinline preload="auto" poster="media/hero-poster.jpg"><source src="media/hero.mp4" type="video/mp4"></video></div>
   <div class="wrap hero">
-    <span class="badge"><i></i><span>Open source · <b>v0.1.3</b> for Mac, Windows and Linux</span></span>
+    <span class="badge"><i></i><span>Open source · <b>v0.1.4</b> for Mac, Windows and Linux</span></span>
     <h1>Answers you can trace to the page.</h1>
     <p class="lede">Ask a research question. DEIXIS searches the literature, reads the full texts and writes an answer in which every citation opens the exact passage it came from.</p>
     <div class="cta">
@@ -238,10 +238,10 @@ footer .grow { flex: 1; }
       <button class="also" id="alsoBtn" aria-expanded="false" aria-controls="dlMenu"><span id="alsoText">Also for Windows · Linux</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       <div class="dl-menu" id="dlMenu" hidden>
-        <a class="dl-item" data-os="mac" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.3/DEIXIS_0.1.3_aarch64.dmg"><span class="dl-os">macOS</span><span class="dl-note">Apple Silicon · macOS 13 or later · 64 MB</span><span class="dl-state ok">Download</span></a>
-        <a class="dl-item" data-os="windows" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.3/DEIXIS_0.1.3_x64-setup.exe"><span class="dl-os">Windows <small class="dl-pre">Preview</small></span><span class="dl-note">64-bit installer · 47 MB</span><span class="dl-state ok">Download</span></a>
-        <a class="dl-item" data-os="linux" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.3/DEIXIS_0.1.3_amd64.AppImage"><span class="dl-os">Linux <small class="dl-pre">Preview</small></span><span class="dl-note">AppImage · x86-64 · 160 MB</span><span class="dl-state ok">Download</span></a>
-        <a class="dl-item" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.3/DEIXIS_0.1.3_amd64.deb"><span class="dl-os">Linux <small class="dl-pre">Preview</small></span><span class="dl-note">.deb for Ubuntu 22.04+ · 89 MB</span><span class="dl-state ok">Download</span></a>
+        <a class="dl-item" data-os="mac" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.4/DEIXIS_0.1.4_aarch64.dmg"><span class="dl-os">macOS</span><span class="dl-note">Apple Silicon · macOS 13 or later · 64 MB</span><span class="dl-state ok">Download</span></a>
+        <a class="dl-item" data-os="windows" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.4/DEIXIS_0.1.4_x64-setup.exe"><span class="dl-os">Windows <small class="dl-pre">Preview</small></span><span class="dl-note">64-bit installer · 47 MB</span><span class="dl-state ok">Download</span></a>
+        <a class="dl-item" data-os="linux" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.4/DEIXIS_0.1.4_amd64.AppImage"><span class="dl-os">Linux <small class="dl-pre">Preview</small></span><span class="dl-note">AppImage · x86-64 · 160 MB</span><span class="dl-state ok">Download</span></a>
+        <a class="dl-item" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.4/DEIXIS_0.1.4_amd64.deb"><span class="dl-os">Linux <small class="dl-pre">Preview</small></span><span class="dl-note">.deb for Ubuntu 22.04+ · 89 MB</span><span class="dl-state ok">Download</span></a>
       </div>
     </div>
   </div>
@@ -450,7 +450,7 @@ footer .grow { flex: 1; }
   const os = /win/.test(ua) ? "windows" : /linux|x11|cros/.test(ua) && !/android/.test(ua) ? "linux" : "mac";
   const OS_NAME = { mac: "Mac", windows: "Windows", linux: "Linux" };
   const ready = { mac: true, windows: true, linux: true };
-  const URL_FOR = { mac: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.3/DEIXIS_0.1.3_aarch64.dmg", windows: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.3/DEIXIS_0.1.3_x64-setup.exe", linux: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.3/DEIXIS_0.1.3_amd64.AppImage" };
+  const URL_FOR = { mac: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.4/DEIXIS_0.1.4_aarch64.dmg", windows: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.4/DEIXIS_0.1.4_x64-setup.exe", linux: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.4/DEIXIS_0.1.4_amd64.AppImage" };
   document.querySelectorAll(".dl-main").forEach(a => {
     a.querySelector(".dl-label").textContent = ready[os] ? `Download for ${OS_NAME[os]}` : `${OS_NAME[os]} version coming soon`;
     if (ready[os]) a.href = URL_FOR[os];

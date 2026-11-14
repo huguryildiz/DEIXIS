@@ -84,17 +84,19 @@ function captureText(row: SignalCapture) {
 }
 
 function Captures({ rows }: { rows: SignalCapture[] }) {
-  return <ul className="chat-arm-list">{rows.map(row => <li key={row.signal}>
+  return <ul className="chat-arm-list">{rows.filter(row => row.top_100 || row.top_200 || row.tied_100 || row.tied_200).map(row => <li key={row.signal}>
     <span className="chat-arm-source">{t(signalLabels[row.signal] ?? row.signal)}</span><span>{captureText(row)}</span>
   </li>)}</ul>
 }
 
 // The signal table of one keyword ranking step: descriptive counts with their denominator, never a verdict (SW7.6).
 export function SignalReport({ table, probes }: { table: SignalTable; probes: Probes | null | undefined }) {
-  const ran = table.signals.filter(s => s.ran)
+  const ran = table.signals.filter(s => s.ran && s.available !== 0)
   const off = table.signals.filter(s => !s.ran)
   const min = probes?.judge_min ?? 30
   const person = table.person
+  const hasDecisions = !!probes && (probes.verified > 0 || probes.negatives.criterion_not_met > 0
+    || probes.negatives.not_recorded > 0 || probes.look_again > 0)
   const decisions = probes ? [
     plural(probes.verified, '{n} work you confirmed', '{n} works you confirmed'),
     t('{n} not meeting the criterion', { n: probes.negatives.criterion_not_met }),
@@ -103,21 +105,20 @@ export function SignalReport({ table, probes }: { table: SignalTable; probes: Pr
     probes.look_again ? plural(probes.look_again, '{n} to look at again', '{n} to look at again') : '',
   ].filter(Boolean).join(' · ') : ''
   return <div className="chat-arms">
-    {probes && <p className="chat-arm-note">{probes.read
-      ? t('Your decisions in this question revision: {list}. {agreed} included by two agreeing runs, not confirmed by you.', { list: decisions, agreed: probes.included_by_agreement })
-      : t('Your decisions in this question revision: {list}.', { list: decisions })}</p>}
-    <p className="chat-arm-head">{t('Ranking signals')}</p>
+    {hasDecisions && <p className="chat-arm-note">{t('Your decisions in this question revision: {list}.', { list: decisions })}</p>}
+    {probes?.read && probes.included_by_agreement > 0 && <p className="chat-arm-note">{t('{n} included by two agreeing runs, not confirmed by you.', { n: probes.included_by_agreement })}</p>}
+    {(ran.length > 0 || off.length > 0) && <><p className="chat-arm-head">{t('Ranking signals')}</p>
     <ul className="chat-arm-list">
       {ran.map(s => <li key={s.signal}><span className="chat-arm-source">{t(signalLabels[s.signal] ?? s.signal)}</span>
         <span>{s.available === null ? t('ran') : plural(s.available, 'scored {n} record', 'scored {n} records')}</span></li>)}
       {off.map(s => <li key={s.signal}><span className="chat-arm-source">{t(signalLabels[s.signal] ?? s.signal)}</span>
         <span>{t('not run: {reason}', { reason: signalReasonText(s.reason) })}</span></li>)}
-    </ul>
-    <p className="chat-arm-head">{plural(person.denominator, 'Your confirmed works in this ranking: {n}', 'Your confirmed works in this ranking: {n}')}</p>
+    </ul></>}
+    {person.denominator > 0 && <><p className="chat-arm-head">{plural(person.denominator, 'Your confirmed works in this ranking: {n}', 'Your confirmed works in this ranking: {n}')}</p>
     <p className="chat-arm-note">{person.status === 'too_few'
       ? t('Too few to judge a signal by (fewer than {min}).', { min })
       : t('Counts only; a comparison needs an outside reference set.')}</p>
-    {person.denominator > 0 && <Captures rows={person.rows} />}
+    <Captures rows={person.rows} /></>}
     {table.agreement.denominator > 0 && <>
       <p className="chat-arm-head">{plural(table.agreement.denominator, 'Included by two agreeing runs, in this ranking: {n}', 'Included by two agreeing runs, in this ranking: {n}')}</p>
       <p className="chat-arm-note">{t('These were read because they were near the top of this order; their places are not a signal’s success.')}</p>

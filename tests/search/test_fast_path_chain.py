@@ -14,7 +14,7 @@ from deixis.providers.common import SearchOutcome
 from deixis.storage.db import transaction
 from deixis.storage import db
 from deixis.workflow.search import fast_chain, lookups, search_plan, small_batch
-from deixis.workflow.run import fast_path
+from deixis.workflow.run import fast_path, views
 from deixis.workflow.run.flow import ResearchFlow
 from deixis.workflow.run.store import Store
 from test_fast_path_clock import library, app_for, FakeClock
@@ -136,6 +136,28 @@ def test_integrated_chain_path(tmp_path, monkeypatch):
         assert 'lookups' not in intervals
         plans = [store.step_output(s['id']) for s in steps if s['operation_key'].startswith('lookup_plan:')]
         assert all('outside_shortlist' in p for p in plans if p.get('skipped') != 'out_of_scope')
+
+
+def test_research_view_counts_chain_pages_that_needed_no_request(library):
+    lib = library
+    run_id = lib.run['id']
+    plan = lib.store.step(run_id, 'fast_chain:plan', 'code:fast_chain_plan')
+    lib.store.finish_step(plan['id'], 'succeeded', output={'requests': [
+        {'key': 'chain:fast:2', 'after': 'chain:fast:1'},
+        {'key': 'chain:fast:4', 'after': 'chain:fast:3'}]})
+    for key, status, output in (
+        ('chain:fast:1', 'succeeded', {'next_cursor': None}),
+        ('chain:fast:2', 'cancelled', {'unsent': 'no_cursor'}),
+        ('chain:fast:3', 'failed', {}),
+        ('chain:fast:4', 'cancelled', {'unsent': 'no_cursor'}),
+    ):
+        step = lib.store.step(run_id, key, 'provider_chain:openalex')
+        lib.store.finish_step(step['id'], status, output=output)
+    rows = lib.store.run_steps(run_id)
+    assert next(row for row in rows if row['operation_key'] == 'fast_chain:plan')['output'] is None
+    run = next(run for run in views.research_view(lib.store, lib.rid)['runs'] if run['id'] == run_id)
+    assert run['chain_requests']['pages_not_needed'] == 1
+    assert run['chain_requests']['not_sent'] == 2
 
 
 def test_quota_response_blocks_waiting_sends_and_survives_restart(library, tmp_path, monkeypatch):

@@ -195,7 +195,7 @@ def test_no_selection_becomes_included_and_the_run_opens_no_screening_step(tmp_p
     assert run["status"] == "completed"
     # Five records: the four of the pool and the one the question's own request brought, which the plan was
     # written from. Every candidate was passed after a model read its abstract: none on its title alone.
-    assert (funnel["abstracts_read"], funnel["candidates"], funnel["candidates_by_title"]) == (5, 5, 0)
+    assert (funnel["abstracts_read"], funnel["candidates"], funnel["candidates_by_reading"], funnel["candidates_by_title"]) == (5, 5, 5, 0)
     assert set(selections.values()) == {("pending", "code_rule")}
     assert not [state for state, _ in selections.values() if state == "included"]
     assert "model:screening" not in kinds and "model:abstract_screening" in kinds
@@ -393,6 +393,8 @@ def test_the_stage_writes_the_same_rows_when_its_reads_are_batched(tmp_path, mon
         svids = records_of(store, rid)
         # W1 and W5 pass on their title alone; the funnel tells them apart from the works a model read.
         assert view["counts"]["funnel"]["candidates_by_title"] == 2
+        assert (view["counts"]["funnel"]["candidates_by_reading"]
+                + view["counts"]["funnel"]["candidates_by_title"] == view["counts"]["funnel"]["candidates"])
         # A second version of one work, so the stage reads a work with more than one record.
         store.open_lookup_version(rid, svids["W2"], "acceptedVersion", None)
         # The artifact is this paper's data, by a link nobody undid.

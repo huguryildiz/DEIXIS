@@ -238,8 +238,8 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     the keyword searches brought `unique - chained` works and every later stage is a subset of `unique`. None of the
     counts is "found" or "relevant". `abstracts_read` counts works a model read, not the ones queued. `candidates` are
     works with a current, not stale abstract-stage decision `candidate`, whatever a person or the full text did with them
-    afterwards; `candidates_by_title` are the ones code passed on their title holding the search blocks, with no model
-    reading their abstract. `included` is the works whose head record's selection is included, the same count the lists show.
+    afterwards; `candidates_by_reading` have a model-read candidate decision, while `candidates_by_title` passed on
+    search blocks in their title without one. `included` is the works whose head record's selection is included.
 
     Follow-up searches are not this search: `unique` and `candidates` leave out the works only a follow-up
     search brought (`followup_only` in the boxes), and `unique_in_research` is every work of the revision. `included`
@@ -250,6 +250,8 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     pool = [work_id for work_id in heads if work_id not in followup_only]
     candidates = sum(1 for work_id in pool if passed_abstract(ctx, work_id))
     from deixis.workflow.screen.abstract_stage import MODEL_CODES, SINGLE_READ_CODES
+    by_reading = sum(1 for work_id in pool if any(
+        passed_abstract(ctx, work_id, reason=code) for code in MODEL_CODES))
     by_title = sum(1 for work_id in pool if passed_abstract(ctx, work_id, reason="blocks_in_title")
                    and not any(passed_abstract(ctx, work_id, reason=code) for code in MODEL_CODES))
     # The works whose current abstract decision rests on one model read, and those of them it kept a candidate.
@@ -261,7 +263,8 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     included = sum(1 for work_id, head in heads.items() if (ctx.selections.get(head) or {}).get("state") == "included")
     return {"retrieved": box["rows_returned"], "chained": len(ctx.chained & set(heads)),
             "unique": box["works"] - len(followup_only & set(heads)),
-            "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "candidates_by_title": by_title,
+            "abstracts_read": box["abstract_read_by_model"], "candidates": candidates,
+            "candidates_by_reading": by_reading, "candidates_by_title": by_title,
             "included": included, "abstracts_read_once": len(read_once), "candidates_read_once": candidates_once,
             "unique_in_research": box["works"]}
 

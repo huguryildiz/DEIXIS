@@ -210,3 +210,16 @@ def request_outcomes(steps: Iterable[dict[str, Any]]) -> dict[str, int]:
             else:
                 counts["unknown" if step["status"] == "outcome_unknown" else "failed"] += 1
     return counts
+
+
+def pages_not_needed(steps: Iterable[dict[str, Any]], plans: Iterable[dict[str, Any]]) -> int:
+    """Count planned continuation pages omitted after a successful page left no cursor."""
+    by_key = {step["operation_key"]: step for step in steps}
+    specs = [spec for plan in plans for spec in (plan.get("output") or {}).get("requests", [])]
+    return sum(1 for spec in specs if spec.get("after")
+               and (current := by_key.get(spec["key"])) is not None
+               and current["status"] == "cancelled"
+               and (current.get("output") or {}).get("unsent") == "no_cursor"
+               and (previous := by_key.get(spec["after"])) is not None
+               and previous["status"] == "succeeded"
+               and not (previous.get("output") or {}).get("next_cursor"))

@@ -249,8 +249,8 @@ export type Run = {
   // counted false: the run was searched before these were kept, which is not the same as zero.
   source_counts?: SourceCounts | null
   // What became of the fast chain's requests in this discovery run (`chaining.request_outcomes`): sent = answered + late
-  // + failed + unknown; not_sent was never sent; unproven has an unknown outcome and no record that it was sent.
-  chain_requests?: { sent: number; answered: number; late: number; failed: number; unknown: number; not_sent: number; unproven: number } | null
+  // + failed + unknown; not_sent was never sent; unproven has no recorded send; pages_not_needed is a subset of not_sent.
+  chain_requests?: { sent: number; answered: number; late: number; failed: number; unknown: number; not_sent: number; unproven: number; pages_not_needed?: number } | null
   // Where the person's confirmed works stood in this discovery run's keyword ranking, descriptively (slice 19); null
   // for another run kind, or a run that ranked nothing.
   signals?: SignalTable | null
@@ -768,7 +768,7 @@ export type Counts = {
   // The search step's funnel for the current revision. A candidate passed the abstract stage; nothing here is
   // "relevant".
   // `unique` and `candidates` leave out works only a follow-up search brought; `unique_in_research` is every work.
-  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; candidates_by_title?: number; included: number; unique_in_research?: number
+  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; candidates_by_reading?: number; candidates_by_title?: number; included: number; unique_in_research?: number
     // Works whose current abstract decision rests on one model read, and those of them kept a candidate.
     abstracts_read_once?: number; candidates_read_once?: number } | null
 }

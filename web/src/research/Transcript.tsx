@@ -159,6 +159,16 @@ const embeddingServices: Record<string, string> = { gemini: 'Google', openai: 'O
 const USER_PLAN = new Set(['user', 'user_edited'])
 const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unknown'
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
+// The stored decision reasons identify how each work passed; an unclassified remainder stays visible as such.
+const candidateBreakdown = (funnel: NonNullable<ResearchView['counts']['funnel']>) => {
+  const reading = funnel.candidates_by_reading
+  const title = funnel.candidates_by_title
+  if (reading === undefined || title === undefined || reading + title > funnel.candidates) return ''
+  const other = funnel.candidates - reading - title
+  return [reading > 0 && t('{n} by reading', { n: reading.toLocaleString(uiLocale()) }),
+    title > 0 && t('{n} by title', { n: title.toLocaleString(uiLocale()) }),
+    other > 0 && t('{n} by another route', { n: other.toLocaleString(uiLocale()) })].filter(Boolean).join(' · ')
+}
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 // A field source's share of the question's records, as the routing record read it.
 const sharePercent = (share: number) => new Intl.NumberFormat(uiLocale(), { style: 'percent', maximumFractionDigits: 0 }).format(share)
@@ -382,14 +392,17 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // method section uses): sent requests answered in time, after the cutoff (works not kept), failed or with an unknown
   // outcome; requests never sent; and unknown outcomes with no record that they were sent.
   const requests = run.chain_requests
+  const pagesNotNeeded = requests?.pages_not_needed ?? 0
+  const otherNotSent = Math.max(0, (requests?.not_sent ?? 0) - pagesNotNeeded)
   const chainLine = [
-    plural(chainSeeds, '{n} seed paper chosen', '{n} seed papers chosen'),
+    plural(chainSeeds, '{n} seed work chosen', '{n} seed works chosen'),
     requests ? plural(requests.sent, '{n} request sent', '{n} requests sent') : '',
     requests?.answered ? plural(requests.answered, '{n} request answered', '{n} requests answered') : '',
     requests?.late ? plural(requests.late, '{n} answered after the cutoff, its works not kept', '{n} answered after the cutoff, their works not kept') : '',
     requests?.failed ? plural(requests.failed, '{n} request failed', '{n} requests failed') : '',
     requests?.unknown ? plural(requests.unknown, '{n} request with an unknown outcome', '{n} requests with an unknown outcome') : '',
-    requests?.not_sent ? plural(requests.not_sent, '{n} request not sent', '{n} requests not sent') : '',
+    pagesNotNeeded ? plural(pagesNotNeeded, '{n} page not needed', '{n} pages not needed') : '',
+    otherNotSent ? plural(otherNotSent, '{n} request not sent', '{n} requests not sent') : '',
     requests?.unproven ? plural(requests.unproven, '{n} request with an unknown outcome, not known to be sent', '{n} requests with an unknown outcome, not known to be sent') : '',
     chainNew === undefined ? '' : plural(chainNew, '{n} new work', '{n} new works'),
   ].filter(Boolean).join(' · ')
@@ -924,10 +937,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         // works code let through without a read.
         const outOfScope = flowBuckets ? flowBuckets.out_of_scope_model + (flowBuckets.out_of_scope_one_read ?? 0) + flowBuckets.out_of_scope_code : null
         const passed = funnel.candidates.toLocaleString(uiLocale())
-        const byTitle = funnel.candidates_by_title ?? 0
         return [screenedText, outOfScope === null ? t('{n} passed the abstract stage', { n: passed })
           : t('{passed} passed the abstract stage, {out} out of scope', { passed, out: outOfScope.toLocaleString(uiLocale()) }),
-          byTitle > 0 && t('{n} of them on their title alone', { n: byTitle.toLocaleString(uiLocale()) })].filter(Boolean).join(' · ')
+          candidateBreakdown(funnel)].filter(Boolean).join(' · ')
       }
       case 'pdf': {
         if (!group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) return fallback()
@@ -1068,7 +1080,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       if (poolLinks) parts.push(row(t('Citations inside the first page of results'),
         plural(poolLinks.links ?? 0, '{n} link seen without a request', '{n} links seen without a request'), 'pool'))
       if (asks) {
-        parts.push(row(t('Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record kept', '{n} records kept'), 'backward'))
+        parts.push(row(t(chainSeeds === 1 ? 'Reference list of {n} seed work' : 'Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record kept', '{n} records kept'), 'backward'))
         parts.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record kept', '{n} records kept'), 'forward'))
       } else {
         parts.push(<div key="no-request">{t('This depth opens no citation request of its own.')}</div>)
@@ -1104,7 +1116,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         const top = t(similarityScored ? 'Ranked by similarity, top {n} read' : 'Top {n} of the ranking read', { n: funnel.abstracts_read.toLocaleString(uiLocale()) })
         const notReadText = notScreened === null ? '' : t('{n} not read', { n: notScreened.toLocaleString(uiLocale()) })
         parts.push(row(top, notScreened && onOpenFunnel ? <button type="button" className="step-link" onClick={onOpenFunnel}>{notReadText}</button> : notReadText, 'top'))
-        parts.push(row(t('Passed the abstract stage'), funnel.candidates.toLocaleString(uiLocale()), 'passed'))
+        parts.push(row(t('Passed the abstract stage'), [funnel.candidates.toLocaleString(uiLocale()), candidateBreakdown(funnel)].filter(Boolean).join(' · '), 'passed'))
       }
       // The two readings per work as stored (model_proposals), and the decision that followed; only the works whose two
       // readings did not agree are listed.

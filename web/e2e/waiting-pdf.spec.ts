@@ -234,7 +234,7 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     await shot(page, 'L-your-files-included-1440')
   })
 
-  test('L: the search phase counts the included works beside their source, and the signals are too few to judge', async ({ browser }) => {
+  test('L: the search phase counts the included works beside their source, and hides the empty confirmed-works block', async ({ browser }) => {
     // Slice 19: the included count on the screen is the one the view derives; no work was confirmed by a person.
     const api = await apiRequest.newContext({ baseURL: URL, extraHTTPHeaders: { origin: URL } })
     const view = await (await api.get(`/api/researches/${rid}`)).json()
@@ -260,9 +260,9 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
         await expect(arms.locator('li', { hasText: 'Keywords' })).toContainText(`${included} included,`)
         await expect(arms).not.toContainText('Full text not read yet')
         await turn.locator('.chat-step-line', { hasText: /^Screened / }).click()
-        await expect(turn).toContainText('Your confirmed works in this ranking: 0')
-        await expect(turn).toContainText('Too few to judge a signal by (fewer than 30).')
         await expect(turn).toContainText('their places are not a signal’s success')
+        // With no work confirmed by the person, the empty confirmed-works block is not shown.
+        await expect(turn).not.toContainText('Your confirmed works in this ranking')
         const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
         expect(overflow).toBeLessThanOrEqual(1)
         await shot(tab, `L-arms-signals-${width}`)

@@ -21,7 +21,7 @@ from deixis.workflow.screen import overrides as override_rules
 from deixis.workflow.search import probes as probe_rules
 from deixis.workflow.answer import answer as answer_input, source_mentions
 from deixis.workflow.screen import screen_more
-from deixis.workflow.search.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
+from deixis.workflow.search.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes, pages_not_needed
 from deixis.workflow.search import date_scope
 from deixis.workflow.search import search as fast_search
 from deixis.workflow.search import vocabulary as vocabulary_rules
@@ -991,8 +991,14 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["broad_index"] = broad_index_view(store, run, frozen) if run["kind"] == "discovery" else None
         # The years this run searched in, where its question or a measurement bounded them.
         run["date_scope"] = date_scope_view(store, run, frozen) if run["kind"] == "discovery" else None
-        # What became of the fast chain's requests, by the one rule the report's method section uses too.
-        run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
+        # The view omits plan requests, so read their stored links before counting pages that needed no request.
+        if run["kind"] == "discovery":
+            chain_plans = [plan for key in ("fast_chain:plan", "fast_chain:plan_fallback")
+                           if (plan := store.existing_step(run["id"], key)) is not None]
+            run["chain_requests"] = request_outcomes(run["steps"]) | {
+                "pages_not_needed": pages_not_needed(run["steps"], chain_plans)}
+        else:
+            run["chain_requests"] = None
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).
         run["signals"] = probe_rules.signal_table(store, run["id"], probe) if run["kind"] == "discovery" else None
         # What the two abstract passes said, and why a work that passed was not read in full (null where not asked).

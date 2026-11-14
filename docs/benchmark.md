@@ -28,7 +28,7 @@ D isolates a change in ranking on the stored papers. It cannot measure later sea
 
 ## Settings
 
-The runs used Standard depth and Claude Sonnet 5.5 at medium effort to write queries. DEIXIS used Voyage `voyage-4-lite` for semantic similarity and Voyage `rerank-3-lite` for reranking. C scored the first 200 papers in the combined order. D used a 400-paper reranker window that starts with those 200 papers and fills the rest from other ranking signals. The tables report the first 10, 20, 50, 100 and 200 results.
+The runs used Standard depth and Claude Sonnet 5.5 at medium effort to write queries. DEIXIS used Voyage `voyage-4-lite` for semantic similarity and Voyage `rerank-3-lite` for reranking. C scored the first 200 papers in the combined order. D used a 400-paper reranker window that starts with those 200 papers. A few places are kept for papers that only one search route found, and the rest go to papers ranked high in the individual query lists. The tables report the first 10, 20, 50, 100 and 200 results.
 
 ## Score and uncertainty
 

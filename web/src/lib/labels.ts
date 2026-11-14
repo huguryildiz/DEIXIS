@@ -530,7 +530,7 @@ export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as {
 
 // ---- the frozen protocol of a discovery run ----
 const approvedByNames: Record<string, string> = {
-  unattended: 'Nobody reviewed the search vocabulary; the fast path went on without asking.',
+  unattended: 'The search terms were not reviewed before the search; the run went on without asking.',
   user: 'You edited and saved this search plan; it was searched as you saved it.',
   user_edited: 'You edited and saved this search plan; it was searched as you saved it.',
 }
@@ -898,6 +898,12 @@ export const queueAnsweredText: Record<QueueAnswer, string> = {
 // Slice 19: the arm kinds of a discovery run, in run order, and the origin of a query.
 export const armKindLabels: Record<string, string> = { keyword: 'Keywords', chain: 'Citation chaining' }
 export const queryOriginLabels: Record<string, string> = { model: 'the model’s query', code: 'the code’s query', user: 'your plan’s query' }
+// The provider name is shown separately beside these conditional search roles.
+export const conditionalSearchArmLabels: Record<string, string> = {
+  s2_relevance: 'completion', s2_bulk: 'completion', s2_snippet: 'concept search',
+  broad_index: 'second index', subtopic: 'focused search', focused_keyword: 'focused keyword search',
+  field: 'field search', seed_semantic: 'seed PDF semantic search', block_semantic: 'search term semantic search',
+}
 // The ranking signals and the two stored orders the signal table reads beside them.
 export const signalLabels: Record<string, string> = {
   bm25: 'BM25', blocks: 'Concept blocks', tfidf: 'TF-IDF', graph: 'Citation graph', joint: 'Terms named together',

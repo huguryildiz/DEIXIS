@@ -18,6 +18,7 @@ from deixis.domain import contracts
 from deixis.domain.rules import LITERATURE_TASKS, schema_repairs
 from deixis.domain.skill import RUNTIME_FILES
 from deixis.workflow.run import fast_path
+from deixis.workflow.run import views
 from deixis.workflow.search import fast_chain, search_plan
 from fakes import FakeAdapter, valid_response
 from test_hit_rank import library, record, search
@@ -192,8 +193,24 @@ def test_a_run_writes_one_plan_call_from_the_pages_records(tmp_path, monkeypatch
     # The labelling step says why it asked nothing, and the chain starts from the work the plan named.
     assert step_output(client, run_id, "vocabulary")["vocabulary"]["labelling"]["skipped"] == "search_plan"
     assert step_output(client, run_id, "fast_chain:seeds")["plan_seeds"] == ["W9"]
+    # The panel reads the frozen requests and the chain's stored seed, not every compiled provider query.
+    shown = views.approval_view(client.app.state.store, run_id)["search_plan"]
+    assert shown["semantic"]["key"] == "search:fast:semantic" and shown["semantic"]["limit"] == 50
+    assert shown["keywords"][0]["key"] == "search:0"
+    assert all(q["provider_id"] == "openalex" for q in shown["keywords"])
+    assert len(shown["phrases"]) == 6
+    assert all(phrase["semantic"]["key"] == f"search:fast:semantic:phrase:{i}" and
+               phrase["plain"]["key"] == f"search:fast:plain:phrase:{i}"
+               for i, phrase in enumerate(shown["phrases"]))
+    assert [seed["title"] for seed in shown["chain"]["starts"]] == [sent[0]["sources"][0]["title"]]
+    assert not any(query["provider_id"] in ("semantic_scholar", "arxiv", "scopus") for query in shown["keywords"])
+    assert all("query_text" not in source for source in shown["conditional"])
+    body = protocol_body(client, rid)
+    older = body | {"fast_path_search": {key: value for key, value in body["fast_path_search"].items()
+                                         if key != "phrase_search"}}
+    assert views._shared_search_plan_view(client.app.state.store, client.app.state.store.run(run_id), older) is None
     # The protocol names the prompt the call really carried, read from the answer's own schema version.
-    frozen = protocol_body(client, rid)["search_query"]
+    frozen = body["search_query"]
     assert frozen["prompt"] == {"files": ["SKILL.md", "references/search-plan.md"],
                                 "schema_version": "deixis.search_plan.v2",
                                 "skill_package_hash": sent[0]["skill_package_hash"]}

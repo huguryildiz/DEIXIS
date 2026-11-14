@@ -60,7 +60,8 @@ def _approval_side(vocabulary: dict[str, Any], criterion: dict[str, Any] | None,
     def searched(term: dict[str, Any]) -> dict[str, Any]:
         word = carried.get((term["block"], queried_form(term)))
         return {"searched": word["searched"] if word else None, "left_out": word["left_out"] if word else None,
-                **({"semantic": word["semantic"]} if word and "semantic" in word else {})}
+                **({"semantic": word["semantic"]} if word and "semantic" in word else {}),
+                "backup": bool((vocabulary.get("search_query") or {}).get("meta", {}).get(term["phrase"], {}).get("backup_for"))}
 
     side = {
         "terms": [{field: term[field] for field in vocabulary_rules.TERM_FIELDS}
@@ -68,11 +69,89 @@ def _approval_side(vocabulary: dict[str, Any], criterion: dict[str, Any] | None,
         **{field: vocabulary[field] for field in APPROVAL_VOCABULARY_FIELDS},
         "criterion": criterion,
     }
-    # The compiled text of every query this run sends, by provider and, beside a model-written query, by which
-    # vocabulary wrote it.
+    # The compiled query list is kept for runs frozen before the shared request plan.
     side["queries"] = [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                         **({"origin": q["origin"]} if q.get("origin") else {})} for q in queries]
     return side
+
+
+def _plan_request_state(store: Store, run_id: str, key: str, *, search_closed: bool = False) -> str:
+    """The stored outcome of a planned request, without treating an unstarted step as sent."""
+    step = store.existing_step(run_id, key)
+    if step is None:
+        return "not_sent" if search_closed else "planned"
+    if step["status"] in ("pending", "running"):
+        return "planned"
+    if step["status"] == "cancelled":
+        return "not_needed" if step.get("error_code") in ("openalex_answered", "gap_already_met") else "cancelled"
+    if step["status"] == "succeeded":
+        return "sent"
+    return "failed" if step["status"] == "failed" else "unknown"
+
+
+def _shared_search_plan_view(store: Store, run: dict[str, Any], frozen: dict[str, Any]) -> dict[str, Any] | None:
+    """Requests the shared rule froze, with outcomes read from this run's steps."""
+    plan = frozen.get("fast_path_search") or {}
+    shared = (run["budget"].get("fast_path") or {}).get("uniform_search") or {}
+    if (shared.get("rule") != fast_path.UNIFORM_SEARCH_RULE or not plan.get("semantic")
+            or "phrase_search" not in plan or "words" not in plan):
+        return None
+    requests = fast_search.sent_plan(frozen)
+    binding = run["budget"]["fast_path"]
+    ledger_id = binding.get("ledger_run_id", run["id"])
+    search_stage = store.conn.execute(
+        "SELECT status FROM fast_path_stages WHERE ledger_run_id = ? AND stage = 'search'",
+        (ledger_id,),
+    ).fetchone()
+    search_open = store.conn.execute(
+        "SELECT 1 FROM fast_path_intervals WHERE run_id = ? AND stage = 'search' AND closed_at IS NULL",
+        (run["id"],),
+    ).fetchone()
+    search_closed = run["status"] in ENDED_RUN_STATUSES or bool(
+        search_stage and search_stage["status"] == "done" and not search_open
+    )
+    def shown(spec: dict[str, Any]) -> dict[str, Any]:
+        return {"provider_id": spec["provider_id"], "query_text": spec.get("query_text"),
+                "key": spec["key"], "state": _plan_request_state(store, run["id"], spec["key"])}
+
+    phrase = plan.get("phrase_search") or {}
+    semantic_phrases = {int(spec["key"].split(":")[-1]): spec for spec in requests
+                        if spec["arm"] == "phrase_semantic"}
+    plain_phrases = {int(spec["key"].split(":")[-1]): spec for spec in requests if spec["arm"] == "phrase_plain"}
+    phrases = [{"text": item["text"],
+                "semantic": shown(semantic_phrases[index]) if index in semantic_phrases else None,
+                "plain": shown(plain_phrases[index]) if index in plain_phrases else None}
+               for index, item in enumerate(phrase.get("phrases") or [])]
+    seed_step = store.existing_step(run["id"], "fast_chain:seeds")
+    starts, seen = [], set()
+    for key in ("fast_chain:seeds", "fast_chain:seeds_fallback"):
+        found = store.existing_step(run["id"], key)
+        for seed in ((found or {}).get("output") or {}).get("seeds") or []:
+            if seed["source_version_id"] in seen:
+                continue
+            seen.add(seed["source_version_id"])
+            source = store.source(seed["source_version_id"])
+            starts.append({"title": source["title"], "origin": seed["origin"]})
+    # Before the chain step, the validated plan's named works are already stored by the query step.
+    if not starts and seed_step is None:
+        query = store.existing_step(run["id"], "search_query")
+        for seed in ((query or {}).get("output") or {}).get("plan_seeds") or []:
+            if seed.get("source_version_id"):
+                starts.append({"title": store.source(seed["source_version_id"])["title"], "origin": "plan"})
+    chain = _card_chaining(store, run)
+    conditional = [{"provider_id": spec["provider_id"], "key": spec["key"],
+                    "state": _plan_request_state(store, run["id"], spec["key"], search_closed=search_closed),
+                    "arm": "focused_keyword" if spec.get("role") == "focused" else spec["arm"]}
+                   for spec in requests if spec["arm"] not in
+                   ("semantic", "phrase_semantic", "phrase_plain", "keyword")
+                   or (spec["arm"] == "keyword" and spec.get("role") == "focused")]
+    return {"semantic": shown(next(spec for spec in requests if spec["arm"] == "semantic"))
+            | {"limit": plan["semantic"].get("limit")},
+            "keywords": [shown(spec) for spec in requests if spec["arm"] == "keyword"
+                         and spec.get("role") != "focused"],
+            "phrases": phrases, "chain": {"starts": starts,
+                "backward_requests": chain["backward_requests"], "forward_requests": chain["forward_requests"]} if chain else None,
+            "conditional": conditional}
 
 
 def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
@@ -85,6 +164,8 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         return None
     output = step["output"]
     approved = output["approved"]
+    run = store.run(run_id)
+    frozen = fast_search.frozen_body(store, run)
     return {
         "approved_by": output["approval"].get("approved_by"),
         "proposal_hash": output["proposal_hash"],
@@ -93,6 +174,7 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         # How this run chains citations: the fast chain's rule and limits, frozen in the run's budget when it was
         # queued. The real seeds are only known after the search, in the run view.
         "chaining": _card_chaining(store, store.run(run_id)),
+        "search_plan": _shared_search_plan_view(store, run, frozen) if frozen else None,
     }
 
 

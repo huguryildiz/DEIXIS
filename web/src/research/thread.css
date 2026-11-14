@@ -255,8 +255,23 @@
 .step-query-provider .connection-icon{display:inline-flex}
 .step-query-provider .connection-icon svg{width:13px;height:13px}
 .step-query-origin{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:var(--selected-surface);color:var(--muted);font-size:11px}
-.chat-step-detail code.step-query-text{display:block;margin:0;padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-2);font-size:11.5px;line-height:1.65;white-space:pre-wrap}
+.chat-step-detail code.step-query-text{display:block;margin:0;padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-2);font-size:11.5px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 .step-query-op{color:var(--muted);font-weight:650}
+.step-query>.step-row-text{color:var(--ink-2);overflow-wrap:anywhere}
+.step-plan-keyword-block{display:grid;gap:5px;min-width:0}
+.step-plan-keyword-block .step-word{max-width:100%;min-width:0;height:auto;min-height:24px;padding-block:3px;overflow-wrap:anywhere}
+.step-query-disclosure{min-width:0}
+.step-query-disclosure summary{width:fit-content}
+.step-query-disclosure .step-query-text{margin-top:7px}
+.step-plan-state{color:var(--muted)}
+.step-plan-state.is-failed{color:var(--error-ink)}
+.step-plan-phrase{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:baseline;min-width:0;padding:4px 0;border-top:1px solid var(--line)}
+span+.step-plan-phrase{border-top:0;padding-top:2px}
+.step-plan-phrase-n{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
+.step-plan-phrase-text{min-width:0;color:var(--ink-2);font-size:13px;overflow-wrap:anywhere}
+.step-plan-phrase-states{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 8px;color:var(--muted);white-space:nowrap}
+.step-plan-conditional>span:first-child{overflow-wrap:anywhere}
+.step-plan-conditional>.step-plan-state{margin-left:auto}
 .step-row{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
 .step-row>span:first-child{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .step-row>.step-row-value{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}

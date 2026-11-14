@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { api, type DateScope, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from '../lib/api'
 import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
-import { broadIndexReasonText, fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
+import { broadIndexReasonText, conditionalSearchArmLabels, fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
 import { ConnectionIcon } from '../components/connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ModelName } from '../components/ModelName'
@@ -889,10 +889,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     const ongoing = (text: string, progress = '') => [`${text}…`, progress].filter(Boolean).join(' · ')
     switch (key) {
       case 'plan':
-        if (live) return ongoing(t('Planning the searches from the question'), detail(key, state, group))
+        if (live) return ongoing(t('Planning the searches'), detail(key, state, group))
         // A person's saved plan is recorded as approved_by 'user' with mode 'user_edited' (user_plan.py); the view passes
         // approved_by, and either value means the plan is the person's, not the question's words.
-        return t(USER_PLAN.has(run.approval?.approved_by ?? '') ? 'Planned the searches from your saved plan' : 'Planned the searches from the question’s words')
+        return t(USER_PLAN.has(run.approval?.approved_by ?? '') ? 'Planned the searches from your saved plan' : run.approval?.search_plan ? 'Planned the searches from the first results' : 'Planned the searches from the question’s words')
       case 'search':
         if (live) return ongoing(searchedProviders ? t('Searching {providers}', { providers: searchedProviders }) : t('Searching the providers'))
         if (!searches.length) return fallback()
@@ -985,8 +985,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     const parts: ReactNode[] = []
     if (key === 'plan' && run.kind === 'discovery') {
       const approved = run.approval?.approved
+      const searchPlan = run.approval?.search_plan
       const terms = approved?.terms.filter(term => !term.dropped) ?? []
-      const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
       // A word the frozen plan records as carried by no sent query is named as not searched, with the stored reason.
       // A word no keyword query carries may still be sent in the block terms' semantic request.
       const semanticOnly = terms.filter(term => term.searched === false && term.semantic === true)
@@ -998,16 +998,39 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       if (english) parts.push(<div key="english-search" className="step-row"><span>{t('English sentence for the search')}</span><span className="step-row-text" dir="auto">“{english.text}”
         {english.origin === 'model' ? translator?.model && <> · <ModelName connection={translator.connection} text={modelText(translator.model, translator.effort ?? null)} /></> : <> · {t('your sentence')}</>}
         {latestDiscovery && onReviseQuestion && <> · <button type="button" className="step-link" onClick={onReviseQuestion}>{t('Edit')}</button></>}</span></div>)
-      if (terms.length) parts.push(<div key="words" className="step-words"><span className="step-words-label">{t('Search words')}</span><span className="step-words-list">{terms.map(term => <span key={term.phrase} className={term.searched === false && term.semantic !== true ? 'step-word word-unsearched' : 'step-word'}>{term.phrase}</span>)}</span></div>)
-      if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
-      if (semanticOnly.length) parts.push(<div key="semantic-only" className="step-row"><span>{t('Not in a keyword query, part of the planned semantic search')}</span><span className="step-row-text">{semanticOnly.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
-      // Each provider gets its own query text; with more than one provider the row names whose query it is.
-      const severalProviders = new Set(queries.map(q => q.provider_id)).size > 1
-      // The query text follows its label on the row, wrapping under it when long (mockup `.row` with a `code`).
-      queries.forEach((query, i) => parts.push(<div key={`query-${i}`} className="step-query"><div className="step-query-head"><span className="step-query-n">{t('Query {n}', { n: i + 1 })}</span>
-        {severalProviders && <span className="step-query-provider"><ConnectionIcon id={query.provider_id} />{providerName(query.provider_id)}</span>}
-        {query.origin && <span className="step-query-origin">{t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}</span>}</div>
-        <code className="step-query-text">{queryParts(query.query_text)}</code></div>))
+      if (searchPlan) {
+        const requestState = (state: string) => t(({ sent: 'Sent', not_needed: 'Not needed', cancelled: 'Cancelled', failed: 'Failed', planned: 'Planned', not_sent: 'Not sent', unknown: 'Outcome unknown' } as Record<string, string>)[state] ?? state)
+        const stateText = (state: string) => <span className={`step-plan-state${state === 'failed' ? ' is-failed' : ''}`}>{requestState(state)}</span>
+        const semantic = searchPlan.semantic
+        parts.push(<div key="question-search" className="step-query"><div className="step-query-head"><span className="step-query-n">{t('Question’s own search')}</span><span className="step-query-provider"><ConnectionIcon id="openalex" />{providerName('openalex')}</span><span>{t('Semantic search · up to {n} records', { n: semantic.limit ?? '?' })} · {stateText(semantic.state)}</span></div>
+          {semantic.query_text && <span className="step-row-text" dir="auto">{semantic.query_text}</span>}</div>)
+        if (terms.length || searchPlan.keywords.length) parts.push(<div key="keyword-query" className="step-words"><div className="step-query-head"><span className="step-query-n">{t('Keyword query')}</span><span className="step-query-provider"><ConnectionIcon id="openalex" />{providerName('openalex')}</span>{searchPlan.keywords.length > 0 && stateText(searchPlan.keywords[0].state)}</div>
+          {(['setting', 'task'] as const).map(block => <div key={block} className="step-plan-keyword-block"><span className="step-words-label">{t(block === 'setting' ? 'Setting' : 'Task')}</span><span className="step-words-list">{terms.filter(term => term.block === block).map(term => <span key={`${block}-${term.phrase}`} className={term.searched === false && term.semantic !== true ? 'step-word word-unsearched' : 'step-word'}>{term.phrase}{term.backup && <> · {t('backup')}</>}</span>)}</span></div>)}
+          {searchPlan.keywords.map((query, i) => query.query_text && <details key={query.key} className="step-how step-query-disclosure"><summary>{t(query.state === 'sent' ? 'Query sent' : 'Query planned')}{searchPlan.keywords.length > 1 ? ` ${i + 1}` : ''}{i > 0 && <> · {stateText(query.state)}</>}</summary><code className="step-query-text">{queryParts(query.query_text)}</code></details>)}
+        </div>)
+        if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
+        if (searchPlan.phrases.length) parts.push(<div key="phrases" className="step-words"><div className="step-query-head"><span className="step-words-label">{t('Short phrases')}</span><span className="step-query-provider"><ConnectionIcon id="openalex" />{providerName('openalex')}</span></div>
+          <span>{t('Each phrase goes to OpenAlex semantic and plain search')}</span>{searchPlan.phrases.map((phrase, i) => {
+            const unusual = ([['Semantic', phrase.semantic], ['Plain', phrase.plain]] as const).filter(([, request]) => request?.state !== 'sent')
+            return <div key={i} className="step-plan-phrase"><span className="step-plan-phrase-n" aria-hidden>{i + 1}</span><span className="step-plan-phrase-text">{phrase.text}</span>{unusual.length > 0 && <span className="step-plan-phrase-states">{unusual.map(([kind, request]) => <span key={kind}>{t(kind)}: {stateText(request?.state ?? 'not_sent')}</span>)}</span>}</div>
+          })}</div>)
+        if (searchPlan.chain) parts.push(<div key="chain-plan" className="step-words"><span className="step-words-label">{t('Citation chain')}</span>
+          {searchPlan.chain.starts.length ? searchPlan.chain.starts.map((start, i) => <div key={i} className="step-row"><span className="step-row-text">{start.title}</span></div>) : <span>{t('No starting work recorded yet')}</span>}
+          <span>{t('{backward} backward and {forward} forward requests allowed', { backward: searchPlan.chain.backward_requests, forward: searchPlan.chain.forward_requests })}</span></div>)
+        if (searchPlan.conditional.length) parts.push(<div key="conditional" className="step-words"><span className="step-words-label">{t('Conditional sources')}</span>
+          {searchPlan.conditional.map(request => <div key={request.key} className="step-row step-plan-conditional"><span><ConnectionIcon id={request.provider_id} />{providerName(request.provider_id)} · {t(conditionalSearchArmLabels[request.arm] ?? 'additional source')}</span>{stateText(request.state)}</div>)}</div>)
+      } else {
+        const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
+        if (terms.length) parts.push(<div key="words" className="step-words"><span className="step-words-label">{t('Search words')}</span><span className="step-words-list">{terms.map(term => <span key={term.phrase} className={term.searched === false && term.semantic !== true ? 'step-word word-unsearched' : 'step-word'}>{term.phrase}</span>)}</span></div>)
+        if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
+        if (semanticOnly.length) parts.push(<div key="semantic-only" className="step-row"><span>{t('Not in a keyword query, part of the planned semantic search')}</span><span className="step-row-text">{semanticOnly.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
+        // Older runs keep their stored query list when no shared request plan was frozen.
+        const severalProviders = new Set(queries.map(q => q.provider_id)).size > 1
+        queries.forEach((query, i) => parts.push(<div key={`query-${i}`} className="step-query"><div className="step-query-head"><span className="step-query-n">{t('Query {n}', { n: i + 1 })}</span>
+          {severalProviders && <span className="step-query-provider"><ConnectionIcon id={query.provider_id} />{providerName(query.provider_id)}</span>}
+          {query.origin && <span className="step-query-origin">{t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}</span>}</div>
+          <code className="step-query-text">{queryParts(query.query_text)}</code></div>))
+      }
       if (approved?.criterion?.criterion) parts.push(<div key="criterion" className="step-row"><span>{t('Inclusion criterion')}</span><span className="step-row-text">{approved.criterion.criterion}</span></div>)
       if (latestDiscovery && view.scope.seeds.length) parts.push(<div key="seeds" className="step-seeds"><span>{t('PDFs guiding the search')}</span>
         {view.scope.seeds.map(seed => row(seed.title, seedUseText(seed.use), seed.source_version_id))}</div>)

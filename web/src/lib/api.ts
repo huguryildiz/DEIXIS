@@ -389,6 +389,7 @@ export type ApprovalTerm = {
   // 'query_limit' (cut from every sent query that held it) or 'not_sent' (only an unsent query held it). Both null
   // where the frozen plan recorded nothing (frozen before the record, or not frozen yet).
   searched?: boolean | null; left_out?: WordLeftOut | null
+  backup?: boolean
   // The frozen plan's block-terms semantic request carries this word; absent on a plan frozen before it.
   semantic?: boolean
 }
@@ -401,15 +402,23 @@ export type ApprovalCriterion = {
   // Whether what the question looks for is named in the criterion; null when it was not checked.
   sought_term_in_criterion?: boolean | null; origin?: string
 }
-// What the run was approved with: the vocabulary it searched and the queries it sent.
+// What the run was approved with: its vocabulary and compiled query list.
 export type ApprovalSide = {
   terms: ApprovalTerm[]
   // Phrases that never enter a provider query; they carry no count of their own.
   claim_words: string[]; exclusion_words: string[]; outcome_terms: string[]
   gate_count: number | null; too_broad: boolean
   criterion: ApprovalCriterion | null
-  // The compiled text of every query the run sends, and which vocabulary wrote each one.
+  // The compiled query list for runs frozen before the shared request plan.
   queries: { provider_id: string; query_text: string; origin?: 'model' | 'code' | 'user' }[]
+}
+export type PlannedRequest = { provider_id: string; query_text: string | null; key: string; state: 'planned' | 'sent' | 'not_needed' | 'cancelled' | 'failed' | 'unknown' }
+export type SharedSearchPlan = {
+  semantic: PlannedRequest & { limit: number | null }
+  keywords: PlannedRequest[]
+  phrases: { text: string; semantic: PlannedRequest | null; plain: PlannedRequest | null }[]
+  chain: { starts: { title: string; origin: string }[]; backward_requests: number; forward_requests: number } | null
+  conditional: (Omit<PlannedRequest, 'query_text'> & { arm: string })[]
 }
 export type RunApproval = {
   // Who let the run search with this protocol: 'unattended' (nobody was asked), or 'user' for a plan the person saved (S23a).
@@ -418,6 +427,7 @@ export type RunApproval = {
   // How the run chains citations (the fast chain), frozen in its budget when it was queued; null for a run that
   // carries no fast-chain policy.
   chaining: CitationChaining | null
+  search_plan?: SharedSearchPlan | null
 }
 // The fast chain's rule and limits as the run froze them (`chaining.policy`). The seeds are known only after the search.
 // request_limit counts logical requests (backward + forward); attempt_limit is every HTTP attempt, retries included.

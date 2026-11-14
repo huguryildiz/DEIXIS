@@ -104,6 +104,7 @@ DEEP_SCREENING_EFFORTS = ("standard", "detailed")
 # The 250 field-source records are a pilot setting, not a measured contribution.
 # The 3 s reranker allowance rounds up the 95th percentile of seven successful Voyage steps over 400 records.
 # Timed-out steps were excluded, so that allowance is a starting value, not a guarantee.
+# The plan allocation follows live Quick runs; search and ranking keep their measured bases.
 UNIFORM_SEARCH = {
     "rule": UNIFORM_SEARCH_RULE, "semantic_top": 50, "seed_semantic_top": 50,
     "phrase_searches": 6, "phrase_records": PHRASE_SEARCH_RECORDS, "phrase_plain_records": PHRASE_PLAIN_RECORDS,
@@ -114,7 +115,7 @@ UNIFORM_SEARCH = {
     "field_sources": 1, "field_records": 250, "field_share": ROUTE_SHARE,
     "broad_index_records": 100, "subtopic_records": 0, "s2_bulk_records": 0,
     "completion_records": 100, "snippet_requests": 1, "provider_wait": 1,
-    "plan_seconds": 8, "search_seconds": 14, "ranking_seconds": 15,
+    "plan_seconds": 35, "search_seconds": 14, "ranking_seconds": 15,
     "evidence_search_ms": EVIDENCE_SEARCH_MS, "rerank_allowance_seconds": 3,
 }
 
@@ -137,14 +138,15 @@ class Mode(NamedTuple):
     fulltext_searches: int  # open-web full-text searches allowed over the same life
 
 
-# Read and answer seconds are pilot settings; whether they meet delivery targets is unmeasured.
+# Quick read and answer allocations follow live runs. Standard read has one live run;
+# Standard answer and both Detailed allocations remain estimates. Targets are not guarantees.
 MODES = {
     # Quick asks for no file; 16 x 25 and 8 x 50 both give a 400-record reranker window.
-    "quick": Mode(read_seconds=14, answer_seconds=25, read_top=25, fulltext_works=10,
+    "quick": Mode(read_seconds=30, answer_seconds=70, read_top=25, fulltext_works=10,
                   rerank_pool=16.0, file_asks=0, fulltext_searches=0),
-    "standard": Mode(read_seconds=33, answer_seconds=50, read_top=50, fulltext_works=20,
+    "standard": Mode(read_seconds=70, answer_seconds=120, read_top=50, fulltext_works=20,
                      rerank_pool=8.0, file_asks=3, fulltext_searches=3),
-    "detailed": Mode(read_seconds=108, answer_seconds=90, read_top=100, fulltext_works=40,
+    "detailed": Mode(read_seconds=150, answer_seconds=180, read_top=100, fulltext_works=40,
                      rerank_pool=8.0, file_asks=5, fulltext_searches=5),
 }
 

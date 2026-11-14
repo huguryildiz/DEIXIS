@@ -192,7 +192,7 @@ The plan, search and ranking times are the same at every depth. Read and answer 
 
 | Parameter | Value | Meaning | How chosen |
 |---|---|---|---|
-| Plan stage | 8 s | Recorded allocation. Nothing is cut | Pilot value |
+| Plan stage | 35 s | Recorded allocation. Nothing is cut | Live Quick plans took 29 to 38 s in six runs; one took 72 s |
 | Search stage | 14 s | Search requests stop at this deadline | 90th percentile of stored search times |
 | Search minimum | 10 s | The search stage never gets less than this from its own start | Measured keyword pages took 1.1 to 1.8 s each |
 | Ranking stage | 15 s | Chaining, embedding, lookups and the reranker work inside it | 90th percentile of stored ranking times |
@@ -209,10 +209,10 @@ The plan, search and ranking times are the same at every depth. Read and answer 
 | Closest works in the answer | 3 | 12 | 8 | Works read in full but not included that the answer may compare against |
 | File asks | 0 | 3 | 5 | Works the research may ask you to supply a file for |
 | Open-web full-text searches | 0 | 3 | 5 | Works the research may send a paid open-web search for |
-| Read stage | 14 s | 33 s | 108 s | Read deadline |
-| Answer stage | 25 s | 50 s | 90 s | Recorded answer allocation. Writing is not cut |
+| Read stage | 30 s | 70 s | 150 s | Read deadline |
+| Answer stage | 70 s | 120 s | 180 s | Recorded answer allocation. Writing is not cut |
 
-N, K, the file asks, the full-text searches and the stage times are pilot values. The passage budgets come from the older effort presets. Standard reads 12 closest works because 5 left out the two works a test question compared. The other depths' closest-work counts are not measured.
+N, K, the file asks and the full-text searches are pilot values. Quick read and answer times follow live runs; Standard read has one live run. Standard answer and both Detailed times are estimates without direct stage measurements. The passage budgets come from the older effort presets. Standard reads 12 closest works because 5 left out the two works a test question compared. The other depths' closest-work counts are not measured.
 
 A Standard or Detailed run can also screen the next 100 works of the list once each (places 51 to 150, or 101 to 200). This deeper screening is off by default.
 
@@ -222,8 +222,8 @@ The run measures time on your clock, from the moment you send the question. The 
 
 | Target | Quick | Standard | Detailed |
 |---|---|---|---|
-| Handover to answer writing (plan + search + ranking + read) | 51 s | 70 s | 145 s |
-| End-to-end target (handover + answer) | 76 s | 120 s | 235 s |
+| Handover to answer writing (plan + search + ranking + read) | 94 s | 134 s | 214 s |
+| End-to-end target (handover + answer) | 164 s | 254 s | 394 s |
 
 Both targets are recorded, and the run shows by how much it missed each one and why. Neither target cuts a stage. Each stage stops at its own deadline, counted from its own start (rule `evidence_minimum_v1`). Time the reranker uses past the ranking cutoff is not taken from the read stage, so the answer comes that much later.
 

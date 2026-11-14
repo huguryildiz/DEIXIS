@@ -29,7 +29,7 @@ from delivery_time import anchors, ledgers, reports, summary  # noqa: E402
 # What the design asks of each depth, in seconds: the end-to-end target for the first sourced answer, and the
 # latest moment the run hands over to writing it. Frozen here so a later change to the stage split cannot drift
 # away from the design without this test saying so.
-TARGETS = {"quick": (76, 51), "standard": (120, 70), "detailed": (235, 145)}
+TARGETS = {"quick": (164, 94), "standard": (254, 134), "detailed": (394, 214)}
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def test_the_handover_moment_itself_is_already_past(lab):
     """The boundary belongs to the answer: at exactly the handover second the run hands over."""
     lib = lab.run_at("standard")
     fast_path.enter_stage(lib.store, lib.run, "read")
-    lib.clock.advance(70)
+    lib.clock.advance(134)
     assert lib.clock.now() == fast_path.handover_deadline(lib.store, lib.run)
     assert fast_path.past_deadline(lib.store, lib.run, "read")
 
@@ -124,7 +124,7 @@ def test_the_answer_stage_is_not_cut_by_the_handover(lab):
     _finish(lib, "search", 0)
     _finish(lib, "ranking", 0)
     _finish(lib, "read", 300)
-    # The run reached the handover 230 seconds late.
+    # The run reached the handover 166 seconds late.
     assert fast_path.handover_deadline(lib.store, lib.run) < lib.clock.now()
     answer = _answer_run(lib, "standard")
     fast_path.enter_stage(lib.store, answer, "answer")
@@ -138,7 +138,7 @@ def test_the_answer_stage_is_not_cut_by_the_handover(lab):
 def test_new_answer_bound_to_old_ledger_keeps_its_debt_allocation(lab):
     # A new answer reads the completed discovery's policy from its ledger.
     lib = lab.run_at("standard", policy_edit=lambda p: p.pop("evidence_minimum"))
-    _finish(lib, "plan", 20)
+    _finish(lib, "plan", 47)
     _finish(lib, "search", 12)
     _finish(lib, "ranking", 10)
     _finish(lib, "read", 5)
@@ -147,7 +147,7 @@ def test_new_answer_bound_to_old_ledger_keeps_its_debt_allocation(lab):
     fast_path.enter_stage(lib.store, answer, "answer")
     row = lib.conn.execute("SELECT balance_before_ms, alloc_ms FROM fast_path_stages"
                            " WHERE ledger_run_id = ? AND stage = 'answer'", (lib.run["id"],)).fetchone()
-    assert tuple(row) == (23000, 73000)
+    assert tuple(row) == (60000, 180000)
 
 
 def test_the_run_view_says_where_it_stood_against_its_target(lab):
@@ -162,8 +162,8 @@ def test_the_run_view_says_where_it_stood_against_its_target(lab):
     lib.clock.advance(3)  # the title call and queuing the answer sit between the two
     fast_path.enter_stage(lib.store, answer, "answer")
     view = fast_path.view(lib.store, lib.store.run(answer["id"]))
-    assert (view["target_ms"], view["handover_ms"]) == (120000, 70000)
-    # Turned to writing at second 68 of the person's clock, inside the 70 the depth allows.
+    assert (view["target_ms"], view["handover_ms"]) == (254000, 134000)
+    # Turned to writing at second 68 of the person's clock, inside the 134 the depth allows.
     assert view["handover_at_ms"] == 68000 and view["handover_on_target"] is True
     # Nothing is published yet and the answer has not ended, so the end-to-end target is undecided.
     assert view["latency_ms"] is None and view["on_target"] is None and view["handover_passed_at"] is None
@@ -268,8 +268,8 @@ def test_the_measurement_reads_the_times_back_and_keeps_local_runs_apart(lab):
         conn.close()
     standard = result["modes"]["standard"]
     assert (standard["runs"], standard["valid_answers"]) == (2, 1)
-    assert (standard["target_ms"], standard["handover_ms"]) == (120000, 70000)
-    # 45 s of stages, then writing: recorded at second 75, inside the 120 the depth allows. The run that never
+    assert (standard["target_ms"], standard["handover_ms"]) == (254000, 134000)
+    # 45 s of stages, then writing: recorded at second 75, inside the 254 the depth allows. The run that never
     # answered is in the denominator, so the rate is one in two.
     assert standard["to_record_median_ms"] == 75000
     assert standard["on_target_to_record"] == {"n": 2, "met": 1, "rate": 0.5}
@@ -314,14 +314,14 @@ def test_the_gap_between_two_stages_cannot_hide_the_moment(lab):
     _finish(lib, "plan", 5)
     _finish(lib, "search", 5)
     _finish(lib, "ranking", 5)
-    _finish(lib, "read", 50)  # read closed at second 65, inside the 70
+    _finish(lib, "read", 114)  # read closed at second 129, inside the 134
     assert lib.conn.execute("SELECT handover_passed_at FROM fast_path_ledgers WHERE ledger_run_id = ?",
                             (lib.run["id"],)).fetchone()[0] is None
     answer = _answer_run(lib, "standard")
     lib.clock.advance(10)  # the title call
     fast_path.enter_stage(lib.store, answer, "answer")
     view = fast_path.view(lib.store, lib.store.run(answer["id"]))
-    assert view["handover_at_ms"] == 75000 and view["handover_on_target"] is False
+    assert view["handover_at_ms"] == 139000 and view["handover_on_target"] is False
     assert view["handover_passed_at"] is not None
 
 

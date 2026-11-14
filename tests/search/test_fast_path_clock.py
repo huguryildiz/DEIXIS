@@ -122,7 +122,7 @@ def app_for(tmp_path, clock=None, adapter=None):
 
 @pytest.mark.parametrize("effort,bases,n,k,cap,seeds,back,forward", [
     # Quick opens no citation request of its own, so its seed and request numbers are zero.
-    ("quick", (8, 14, 15, 14, 25), 25, 10, 1000, 1, 4, 2),
+    ("quick", (35, 14, 15, 30, 70), 25, 10, 1000, 1, 4, 2),
 ])
 def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, n, k, cap, seeds, back, forward):
     clock = FakeClock()
@@ -155,8 +155,8 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
 def test_04_unused_time_carries_forward(library):
     finish(library, "plan", 3)
     fast_path.enter_stage(library.store, library.run, "search")
-    # Quick's plan base is 8 s; finishing in 3 carries 5 s forward to search's own 14.
-    assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (5000, 19000)
+    # Quick's plan base is 35 s; finishing in 3 carries 32 s forward to search's own 14.
+    assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (32000, 46000)
 
 
 def test_07_crash_charges_last_checkpoint_and_excludes_downtime(library, tmp_path):

@@ -634,7 +634,7 @@ class ClockLocal:
 
 
 def allowance_run(tmp_path, monkeypatch, plan_seconds, *, local_model=False):
-    """A Standard discovery run on a fake clock whose plan took `plan_seconds` (its share is 8 s) and whose lookups
+    """A Standard discovery run on a fake clock whose plan took `plan_seconds` (its share is 35 s) and whose lookups
     before the rerank used all that was left of the ranking stage, with a reranker that takes 2 s."""
     from deixis.domain.rules import TEST_EFFORT_BUDGETS
     from deixis.storage import db
@@ -688,7 +688,7 @@ def _rerank_then_read(lab):
 
 
 def test_under_the_evidence_minimum_the_reranker_time_is_not_given_back_twice(tmp_path, monkeypatch):
-    # No stage carries debt under the rule: the plan's 32 s overrun is not charged, ranking keeps its 17 s, and the
+    # No stage carries debt under the rule: the plan's 5 s overrun is not charged, ranking keeps its 17 s, and the
     # 2 s the reranker ran past the ranking cutoff are an overrun of ranking, so read gets its own base and no more.
     lab = allowance_run(tmp_path, monkeypatch, 40)
     try:
@@ -699,7 +699,7 @@ def test_under_the_evidence_minimum_the_reranker_time_is_not_given_back_twice(tm
         lab.conn.close()
     assert step["status"] == "succeeded" and step["output"]["allowance"]["past_cutoff_ms"] == 2000
     assert (ranking["balance_before_ms"], ranking["alloc_ms"]) == (2000, 17000)
-    assert (read["balance_before_ms"], read["alloc_ms"]) == (0, 33000)
+    assert (read["balance_before_ms"], read["alloc_ms"]) == (0, 70000)
 
 
 
@@ -711,7 +711,7 @@ def test_a_local_model_without_allowance_gives_the_reranker_only_what_the_stage_
         lab.conn.close()
     assert lab.local.reranked == [] and step["status"] == "failed" and step["error_code"] == "no_time_left"
     assert "allowance" not in step["output"] and listing["order"] == ["a", "b", "c"]
-    assert read["alloc_ms"] == 33000
+    assert read["alloc_ms"] == 70000
 
 
 class PausingLocal:
@@ -753,7 +753,7 @@ def test_a_paused_rerank_keeps_the_allowance_it_used_and_resume_gets_only_the_re
     assert step["output"]["error"].endswith("within 1 s") and listing["order"] == ["a", "b", "c"]
     assert (step["output"]["allowance"]["earlier_ms"], step["output"]["allowance"]["past_cutoff_ms"]) == (2000, 3000)
     # The ranking overrun does not add debt to read.
-    assert read["alloc_ms"] == 33000
+    assert read["alloc_ms"] == 70000
 
 
 class SpendingLocal:
@@ -793,4 +793,4 @@ def test_a_rerank_resumed_after_its_whole_allowance_was_used_keeps_the_fused_ord
     assert step["output"]["fallback"] == "fused_order" and listing["order"] == ["a", "b", "c"]
     assert (step["output"]["allowance"]["earlier_ms"], step["output"]["allowance"]["past_cutoff_ms"]) == (3000, 3000)
     # The ranking overrun does not add debt to read.
-    assert read["alloc_ms"] == 33000
+    assert read["alloc_ms"] == 70000

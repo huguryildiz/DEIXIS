@@ -31,14 +31,14 @@ def test_shared_search_is_frozen_but_reading_remains_depth_specific(effort):
     assert (policy["phrase_search"]["records"], policy["phrase_search"]["plain_records"]) == (50, 30)
     assert fast_path.search_read(policy, effort, "read_limit_per_query") == 400
     assert fast_path.search_read(policy, effort, "provider_wait") == 1
-    assert [policy["stage_base_ms"][stage] for stage in fast_path.STAGES[:3]] == [8000, 14000, 15000]
+    assert [policy["stage_base_ms"][stage] for stage in fast_path.STAGES[:3]] == [35000, 14000, 15000]
     assert policy["evidence_minimum"]["search_ms"] == 10000
     assert policy["rerank_allowance"]["ms"] == 3000
     assert (policy["N"], policy["K"], policy["stage_base_ms"]["read"],
             policy["stage_base_ms"]["answer"]) == {
-                "quick": (25, 10, 14000, 25000),
-                "standard": (50, 20, 33000, 50000),
-                "detailed": (100, 40, 108000, 90000),
+                "quick": (25, 10, 30000, 70000),
+                "standard": (50, 20, 70000, 120000),
+                "detailed": (100, 40, 150000, 180000),
             }[effort]
 
 

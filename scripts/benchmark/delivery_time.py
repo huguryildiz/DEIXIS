@@ -1,7 +1,7 @@
 """How long a research took to reach its first sourced answer, read from stored rows alone.
 
-The shared search rule gives each depth an end-to-end target for the first sourced answer (76, 120 and 235 seconds)
-and a moment by which the run must turn to writing it (51, 70 and 145 seconds). Both count on the person's own clock,
+The shared search rule gives each depth an end-to-end target for the first sourced answer (164, 254 and 394 seconds)
+and a moment by which the run must turn to writing it (94, 134 and 214 seconds). Both count on the person's own clock,
 from the question's submission, so the queue, the gaps between stages and any pause are inside them.
 
 What this tool measures is the time **to the answer being recorded**, not to it being on the person's screen: the

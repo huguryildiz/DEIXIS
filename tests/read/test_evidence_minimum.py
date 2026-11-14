@@ -349,7 +349,7 @@ def test_the_search_stage_keeps_its_base_and_no_stage_carries_debt(tmp_path, mon
     run = store.run(run["id"])
     # Before the search stage opens, nothing of its minimum has passed, whatever the handover says.
     fast_path.enter_stage(store, run, "plan")
-    clock.advance(40)  # Quick's plan share is 8 s; its handover is 51 s.
+    clock.advance(40)  # The plan exceeds its 35 s share; Quick's handover is 94 s.
     assert fast_path.stage_deadline(store, run, "search") is None
     fast_path.close_stage(store, run["id"], "plan")
     fast_path.enter_stage(store, run, "search")
@@ -389,7 +389,7 @@ def test_past_the_handover_ranking_keeps_its_own_time_and_the_miss_is_split_by_c
     store.update_run(run["id"], status="running")
     run = store.run(run["id"])
     fast_path.enter_stage(store, run, "plan")
-    clock.advance(40)  # the plan has overrun its own 8 s allocation
+    clock.advance(83)  # the plan has overrun its own 35 s allocation
     fast_path.close_stage(store, run["id"], "plan")
     fast_path.enter_stage(store, run, "search")
     clock.advance(10.1)  # still within the shared search's 14 s allocation
@@ -398,11 +398,11 @@ def test_past_the_handover_ranking_keeps_its_own_time_and_the_miss_is_split_by_c
     # Ranking keeps its own 15 s even after the plan has overrun.
     assert fast_path.stage_deadline(store, run, "ranking") == clock.now() + timedelta(seconds=18.9)
     assert not fast_path.past_deadline(store, run, "ranking")
-    clock.advance(8)  # 7.1 s now lies past Quick's 51 s handover
+    clock.advance(8)  # 7.1 s now lies past Quick's 94 s handover
     causes = fast_path.view(store, store.run(run["id"]))["evidence_minimum"]["causes"]
     assert causes == {"ranking_allocation": 7100, "between_stages": 0}
     # The causes add up to the time past the handover.
-    assert sum(causes.values()) == round((40 + 10.1 + 8 - 51) * 1000)
+    assert sum(causes.values()) == round((83 + 10.1 + 8 - 94) * 1000)
     conn.close()
 
 

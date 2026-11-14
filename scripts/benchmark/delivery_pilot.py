@@ -1,6 +1,6 @@
 """Driver of the live delivery-time pilot: one research per question and depth, into a library read afterwards.
 
-Each depth has an end-to-end target for the first sourced answer (1, 2 and 5 minutes) and a moment by which the
+Each depth has an end-to-end target for the first sourced answer (164, 254 and 394 seconds) and a moment by which the
 run must turn to writing it. Whether those targets hold is a live question and nothing offline answers it, so
 this script produces the runs and nothing else: `delivery_time.py` reads what they took, and `check.py` reads one
 answer's elements, which a person judges.
@@ -57,7 +57,7 @@ DEPTHS = ('quick', 'standard', 'detailed')
 # How long to wait for one run of each depth, as a multiple of the depth's own target. A run far past its target
 # has missed it; the wait is long enough that the run's own end, not this script's patience, is what stops it.
 WAIT_FACTOR = 10
-TARGET_SECONDS = {'quick': 76, 'standard': 120, 'detailed': 235}
+TARGET_SECONDS = {'quick': 164, 'standard': 254, 'detailed': 394}
 # After the discovery run ends, the answer run is queued a moment later. Below this many seconds of a finished
 # discovery run with no answer run named, the ledger is read again rather than called done.
 GRACE_SECONDS = 20

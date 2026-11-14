@@ -55,9 +55,9 @@ class FetchResult:
     http_status: int | None = None
     error: str | None = None
     content_disposition: str | None = None  # read by fetch_file only (the arXiv source's file name names its version)
-    # The refusal's own response headers, for a caller that has to read them: a metered service says in them whether
-    # it refused because the day's budget is gone. Set on a refusal alone, and never passed on anywhere else.
+    # A metered reply's headers let the caller record its cost; other fetches keep their refusal headers only.
     headers: dict[str, str] | None = None
+    rate_replies: list[dict[str, str]] | None = None
 
 
 class BlockedUrl(Exception):
@@ -190,7 +190,8 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                  admit: Callable[[httpx.Response, str], FetchResult | None] | None = None,
                  finish: Callable[[httpx.Response, bytes, str], FetchResult], email: str | None = None,
                  extra_headers: dict[str, str] | None = None,
-                 extra_query: dict[str, str] | None = None) -> FetchResult:
+                 extra_query: dict[str, str] | None = None,
+                 rate_replies: list[dict[str, str]] | None = None) -> FetchResult:
     """The protections both fetches share: public addresses only, the checked address pinned, at most MAX_REDIRECTS
     redirects, MAX_BYTES, `host_gate` and one `asyncio.timeout(deadline)` over the whole fetch.
 
@@ -241,6 +242,12 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                                 raise
                             return FetchResult("blocked_url", final_url=current, error=f"not a valid URL: {exc}")
                         async with contextlib.aclosing(response):
+                            if extra_query and _https_origin(current) == origin:
+                                cost = {name: response.headers[name] for name in
+                                        ("x-ratelimit-cost-usd", "x-ratelimit-credits-used")
+                                        if name in response.headers}
+                                if cost and rate_replies is not None:
+                                    rate_replies.append(cost)
                             if response.is_redirect:
                                 location = response.headers.get("location")
                                 if not location:
@@ -325,8 +332,11 @@ async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None, deadline:
             return FetchResult("not_pdf", final_url=current, media_type=_media_type(response), http_status=200)
         return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
 
-    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish, email=email,
-                        extra_headers=headers, extra_query=query)
+    rate_replies: list[dict[str, str]] = []
+    result = await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish, email=email,
+                          extra_headers=headers, extra_query=query, rate_replies=rate_replies if query else None)
+    result.rate_replies = rate_replies
+    return result
 
 
 async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, client: httpx.AsyncClient | None = None,

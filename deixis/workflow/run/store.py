@@ -4412,7 +4412,21 @@ class Store:
 
             def settle(self, row_id: int | None, facts: dict[str, Any]) -> None:
                 store.settle_provider_request(run_id, row_id, facts)
+
+            def reply(self, kind: str, headers: dict[str, str]) -> None:
+                store.record_openalex_reply(run_id, kind, headers)
         return Log()
+
+    def record_openalex_reply(self, run_id: str, kind: str, headers: dict[str, str]) -> None:
+        """Keep one keyed OpenAlex reply's charge on the owning run."""
+        cost = {name: headers[name] for name in ("x-ratelimit-cost-usd", "x-ratelimit-credits-used")
+                if name in headers}
+        if not cost:
+            return
+        with transaction(self.conn):
+            row = self.conn.execute("SELECT research_id FROM runs WHERE id = ?", (run_id,)).fetchone()
+            if row:
+                self._event(row["research_id"], "openalex_request_cost", {"kind": kind, "headers": cost}, run_id)
 
     def provider_request_counts(self, run_id: str) -> dict[str, dict[str, int]] | None:
         """Per host, the attempts this run sent, the refusals among them, and those not known whether sent (cancelled

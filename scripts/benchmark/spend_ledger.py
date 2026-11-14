@@ -1,20 +1,19 @@
-"""One OpenAlex spending cap shared by benchmark runners working at the same time (D163 M1 measurement).
+"""One OpenAlex spending cap shared by benchmark runners working at the same time.
 
 A runner reserves, before each question it starts and under an exclusive file lock, the most that question can cost:
-`question_bound_usd`, every OpenAlex request the frozen limits of its depth allow (counts, keyword pages, semantic
-requests, the chain's attempt limit, lookups), each with its rate-limit and network retries, at the prices the owner
-read from OpenAlex. The reservation stays open until the runner has seen the product run stopped; a run whose state is
+`question_bound_usd`, the OpenAlex requests the frozen limits of its depth allow through first-answer work and
+queued full-text fetches, including rate-limit, network, and redirect attempts where allowed. Its full-text term
+assumes one source version per work; the product has no version-count cap, so it is not an absolute spending ceiling
+for a research with multiple versions of one work. The reservation stays
+open until the runner has seen the product run stopped; a run whose state is
 unknown keeps it for good. Every reading of OpenAlex's balance (daily plus prepaid) adds the drop since the last
 reading to the spend; a rise (the daily allowance reset, or a top-up) hides the spending since that reading, so the
 open reservations are counted as spent then. A reservation is refused once spend so far plus every open reservation
 plus the new one would pass the cap. The product sends a question's requests itself, so a question is the smallest
-unit a runner can reserve for; the bound is what makes that unit safe.
+unit a runner can reserve for. A separate later run needs its own reservation.
 
-`openalex_prices.json`, beside this file, holds prices measured on 7 Nov 2026 from `x-ratelimit-credits-used` and
-`x-ratelimit-cost-usd`: a request carrying any `search.*` parameter costs 10 credits, its cursor continuations as
-much as its first page, and so does a `group_by` beside one; a filter-only listing, `works_by_ids` among them, costs
-1; a record fetched by its id is free. One credit is 0.0001 USD. The `list` class had been priced as a search, ten
-times its cost, which only over-reserved.
+`openalex_prices.json`, beside this file, distinguishes measured reply-header prices from the published content
+download price. One credit is 0.0001 USD.
 """
 from __future__ import annotations
 
@@ -25,33 +24,43 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-PRICE_CLASSES = ('count', 'list', 'search', 'semantic')
+PRICE_CLASSES = ('count', 'list', 'search', 'semantic', 'group_by_search',
+                 'doi_lookup', 'content_lookup', 'content')
 
 
 def question_requests(effort):
-    """The most OpenAlex requests of each price class one discovery run of `effort` can send before its list freezes,
-    read from the limits the run freezes: count probes (the code vocabulary's, and the model query's for each checked
-    attempt), keyword pages for every query the depth allows, semantic requests (the question, the block terms, every
-    seed PDF), and list requests (the chain's attempt limit, routing, seed matches), each with its rate-limit and
-    network retries where they are not already in the limit."""
-    from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT, SW_READ_LIMIT, TEST_EFFORT_BUDGETS
+    """OpenAlex requests a discovery can send through its first answer and queued full-text work.
+
+    K works hold slots at once. Failed fetches release slots, so up to N window works can be tried; an unknown
+    attempt can restart through the background queue up to the work-attempt limit. Each work may have multiple
+    source versions, whose count is not capped by depth; this models one version per work.
+    """
+    from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES
     from deixis.providers.openalex import MAX_RESULTS
+    from deixis.documents.fetch import MAX_REDIRECTS
     from deixis.workflow.run import fast_path
+    from deixis.workflow.read.fulltext import FULLTEXT_WORK_ATTEMPTS
     from deixis.workflow.run.store import MAX_SEEDS
     from deixis.workflow.search import chaining, search_query, vocabulary
 
-    retries = (1 + PROVIDER_WAIT[effort]) * (1 + MAX_TRANSIENT_NETWORK_RETRIES)
     policy = fast_path.freeze_budget({}, effort)
-    pages = -(-SW_READ_LIMIT[effort] // MAX_RESULTS)
+    shared = lambda key: fast_path.search_read(policy, effort, key)
+    retries = (1 + shared('provider_wait')) * (1 + MAX_TRANSIENT_NETWORK_RETRIES)
+    pages = -(-shared('read_limit_per_query') // min(shared('keyword_page_size'), MAX_RESULTS))
+    # Slot refill can traverse N works; foreground and background share each work's capped attempts.
+    works = fast_path.MODES[effort].read_top * FULLTEXT_WORK_ATTEMPTS
     # The model query's counts are read once per checked attempt; the product allows ATTEMPTS of them.
     return {'count': (vocabulary.MAX_PROBES + search_query.MAX_COUNT_REQUESTS * search_query.ATTEMPTS + 1) * retries,
-            'search': TEST_EFFORT_BUDGETS[effort].max_provider_requests * pages * retries,
-            'semantic': (2 + MAX_SEEDS) * retries,
-            'list': chaining.attempt_limit(policy, effort) + (1 + MAX_SEEDS) * retries}
+            'search': (shared('max_provider_requests') * pages + shared('phrase_searches')) * retries,
+            'semantic': (2 + MAX_SEEDS + shared('phrase_searches')) * retries,
+            'group_by_search': retries,
+            'list': chaining.attempt_limit(policy, effort) + MAX_SEEDS * retries,
+            'doi_lookup': works, 'content_lookup': works,
+            'content': works * (MAX_REDIRECTS + 1)}
 
 
 def question_bound_usd(effort, prices):
-    """The most one question can cost at `prices` (USD per request of each class in PRICE_CLASSES)."""
+    """One-version-per-work allowance at `prices` (USD per class in PRICE_CLASSES)."""
     if missing := [c for c in PRICE_CLASSES if c not in prices]:
         raise ValueError(f'no price for {missing}')
     return sum(n * prices[c] for c, n in question_requests(effort).items())

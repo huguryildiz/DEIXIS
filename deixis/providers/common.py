@@ -146,6 +146,7 @@ class SearchOutcome:
     provider_total: int | None = None
     http_status: int | None = None
     rate_limit: dict[str, str] = field(default_factory=dict)
+    rate_limit_replies: list[dict[str, str]] = field(default_factory=list)
     error: str | None = None
     raw_payload: dict[str, Any] | None = None
     retries: int = 0
@@ -236,6 +237,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     run's quota ran out or the run stopped meanwhile.
     """
     retries = 0
+    rate_replies: list[dict[str, str]] = []
     s2 = urlsplit(url).hostname == "api.semanticscholar.org"
     gated = False  # the last attempt was stopped at its start gate and is not counted
     pool_wait = False  # the last attempt timed out waiting for a pooled connection: not sent
@@ -244,6 +246,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     location = redact(f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}{parts.path}", *secrets)
 
     def finish(response, outcome):
+        outcome.rate_limit_replies = rate_replies.copy()
         if outcome.status not in {"completed", "zero_results"}:
             outcome.service_kind = service_error_kind(outcome.error_kind or outcome.http_status or outcome.status,
                 text=(outcome.error or outcome.delivery_class or "") if outcome.http_status is None else "")
@@ -342,6 +345,18 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         except httpx.HTTPError as exc:
             return finish(None, SearchOutcome("failed", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries))
         rate = {h: redact(response.headers[h], *secrets) for h in (*rate_headers, "retry-after") if h in response.headers}
+        if urlsplit(url).hostname == "api.openalex.org":
+            # Keep each keyed reply, including one followed by a retry.
+            cost = {name: response.headers[name] for name in
+                    ("x-ratelimit-cost-usd", "x-ratelimit-credits-used") if name in response.headers}
+            if cost:
+                rate_replies.append(cost)
+                if (log := request_log.get()) is not None and hasattr(log, "reply"):
+                    kind = ("semantic" if "search.semantic" in params else
+                            "group_by_search" if "group_by" in params and any(k.startswith("search") for k in params) else
+                            "count" if params.get("select") == "id" and params.get("per_page") == 1 else
+                            "search" if any(k.startswith("search") for k in params) else "list")
+                    log.reply(kind, cost)
         if "retry-after" in rate and not retry_at(rate["retry-after"]):
             rate.pop("retry-after")
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,

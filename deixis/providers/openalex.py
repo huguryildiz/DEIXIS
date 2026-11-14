@@ -89,7 +89,7 @@ REFERENCE_COUNT_FIELD = "referenced_works_count"
 REFERENCES_FIELD = "referenced_works"
 RATE_LIMIT_HEADERS = (
     "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset",
-    "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd", "x-ratelimit-limit-usd",
+    "x-ratelimit-cost-usd", "x-ratelimit-credits-used", "x-ratelimit-remaining-usd", "x-ratelimit-limit-usd",
 )
 MAX_RESULTS = 100
 # A count needs no record. OpenAlex refuses per_page=0, so the smallest page is asked for and only meta.count read.
@@ -269,7 +269,7 @@ async def search_semantic(client, query, per_page, api_key=None, contact_email=N
                    + (f" filter={works_filter}" if works_filter else "")
                    + f" per_page={params['per_page']} access={access}")
     response, outcome = await _get(client, params, headers, description, access, api_key,
-                                   RATE_LIMIT_HEADERS + ("x-ratelimit-credits-used",),
+                                   RATE_LIMIT_HEADERS,
                                    max_rate_limit_retries=max_rate_limit_retries, start_pacer=SEMANTIC_PACER)
     return _works_page(response, outcome, None)
 

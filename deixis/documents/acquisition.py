@@ -21,7 +21,7 @@ import httpx
 from deixis.documents import fetch, identity, jats, pdf
 from deixis.domain.limits import error_name
 from deixis.providers import core, crossref
-from deixis.providers.common import ProviderRecord, begin_request, normalize_doi, settle_request
+from deixis.providers.common import ProviderRecord, begin_request, normalize_doi, settle_request, request_log
 from deixis.storage import db
 from deixis.workflow.run import fast_path
 from deixis.workflow.run.store import Store
@@ -266,6 +266,10 @@ async def _openalex_request(client: httpx.AsyncClient, doi: str, source_version:
     refused = 400 <= response.status_code < 500 and response.status_code != 404
     settle_request(begun, True, refused, "rejected_not_executed" if refused
                    else "after_send_unknown" if response.status_code >= 500 else None, response.status_code)
+    cost = {name: response.headers[name] for name in ("x-ratelimit-cost-usd", "x-ratelimit-credits-used")
+            if name in response.headers}
+    if cost and (log := request_log.get()) is not None and hasattr(log, "reply"):
+        log.reply("doi_lookup", cost)
     if response.status_code == 404:
         return Lookup("zero_results", [], 404)
     if response.status_code == 429:
@@ -319,6 +323,7 @@ class ContentAnswer:
     http_status: int | None = None
     error_code: str | None = None
     reset_at: str | None = None
+    rate_headers: dict[str, str] | None = None
 
 
 async def openalex_content_lookup(client: httpx.AsyncClient, work_ref: str, api_key: str,
@@ -341,14 +346,16 @@ async def openalex_content_lookup(client: httpx.AsyncClient, work_ref: str, api_
         return ContentAnswer("failed", error_code="timeout")
     except httpx.HTTPError as exc:
         return ContentAnswer("failed", error_code=error_name(exc))
+    cost = {name: response.headers[name] for name in ("x-ratelimit-cost-usd", "x-ratelimit-credits-used")
+            if name in response.headers}
     if response.status_code == 429 and openalex_quota_exhausted(response.headers):
         return ContentAnswer("quota_exhausted", http_status=429, error_code=QUOTA_EXHAUSTED,
-                             reset_at=budget_reset_at(response.headers))
+                             reset_at=budget_reset_at(response.headers), rate_headers=cost)
     if response.status_code == 404:
-        return ContentAnswer("no_content", http_status=404)
+        return ContentAnswer("no_content", http_status=404, rate_headers=cost)
     if response.status_code != 200:
         return ContentAnswer("failed", http_status=response.status_code,
-                             error_code=f"http_{response.status_code}")
+                             error_code=f"http_{response.status_code}", rate_headers=cost)
     try:
         work = response.json()
         work_id = str(work.get("id") or "").rsplit("/", 1)[-1] or None
@@ -365,11 +372,11 @@ async def openalex_content_lookup(client: httpx.AsyncClient, work_ref: str, api_
         other = any(isinstance(url, str) and url for key, url in urls.items() if key != "pdf")
         answered = normalize_doi(work.get("doi"))
         if pdf_url:
-            return ContentAnswer("pdf", work_id, answered, pdf_url, 200)
+            return ContentAnswer("pdf", work_id, answered, pdf_url, 200, rate_headers=cost)
         return ContentAnswer("tei_only" if other or isinstance(has, dict) and any(has.values()) else "no_content",
-                             work_id, answered, None, 200)
+                             work_id, answered, None, 200, rate_headers=cost)
     except (json.JSONDecodeError, TypeError, KeyError) as exc:
-        return ContentAnswer("failed", http_status=200, error_code=type(exc).__name__)
+        return ContentAnswer("failed", http_status=200, error_code=type(exc).__name__, rate_headers=cost)
 
 
 def _head_pages(extraction: Any) -> list[str]:
@@ -474,6 +481,8 @@ async def _openalex_content(store: Store, research_id: str, source_version_id: s
                                                             reset_at=budget.reset_at)), workflow_run_id)
                 return wrote("quota_exhausted", work_id, QUOTA_EXHAUSTED)
         answer = await openalex_content_lookup(client, work_ref, api_key, contact_email)
+        if workflow_run_id:
+            store.record_openalex_reply(workflow_run_id, "content_lookup", answer.rate_headers or {})
         work_id = answer.work_id or work_id
         if answer.outcome == "quota_exhausted":
             if budget is not None:
@@ -509,6 +518,9 @@ async def _openalex_content(store: Store, research_id: str, source_version_id: s
             # is then taken for the file that arrives, so a refusal here is not the last word.
             return wrote("not_attached", work_id, "refused_before", 200)
         result = await fetch.fetch_pdf(answer.pdf_url, email=contact_email, query={"api_key": api_key})
+        if workflow_run_id:
+            for headers in result.rate_replies or ([result.headers] if result.headers else []):
+                store.record_openalex_reply(workflow_run_id, "content", headers)
         if row is not None:
             store.record_pdf_attempt(row["id"], result)
         if result.status != "ok":

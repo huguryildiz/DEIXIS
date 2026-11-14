@@ -1,9 +1,13 @@
 {
-  "_measured": "2026-11-07, keyed requests, x-ratelimit-credits-used and x-ratelimit-cost-usd read off the reply",
-  "_credits": {"count": 10, "list": 1, "search": 10, "semantic": 10, "single_record_by_id": 0},
-  "_note": "A request carrying any search.* parameter costs 10 credits, first page and cursor continuation alike, and so does a group_by beside one. A filter-only listing, works_by_ids among them, costs 1. One record fetched by its id is free. One credit is 0.0001 USD.",
+  "_measured": "2026-11-07 keyed reply headers: count 10, list 1, search 10, semantic 10, search group_by 10, single entity 0 credits",
+  "_credits": {"count": 10, "list": 1, "search": 10, "semantic": 10, "group_by_search": 10, "single_record_by_id": 0},
+  "_note": "The keyed reply headers measured on 7 Nov set count, list, search, semantic and single-record prices; search group_by was also measured at 10 credits. The published OpenAlex example-costs table sets a cached content PDF at 0.01 USD, search and semantic at 0.001 USD, list/filter and list group_by at 0.0001 USD, search group_by at 0.001 USD, and a single entity at zero. The DOI and content metadata lookups are single-entity requests; their observed headers must be checked in the next live run.",
   "count": 0.001,
   "list": 0.0001,
   "search": 0.001,
-  "semantic": 0.001
+  "semantic": 0.001,
+  "group_by_search": 0.001,
+  "doi_lookup": 0.0,
+  "content_lookup": 0.0,
+  "content": 0.01
 }

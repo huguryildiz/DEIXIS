@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2] / "scripts" / "benchmark
 import m1_score  # noqa: E402
 import replay_answers  # noqa: E402
 import spend_ledger  # noqa: E402
+import openalex_costs  # noqa: E402
 
 
 async def no_sleep(seconds):
@@ -128,10 +129,38 @@ def test_the_spend_cap_counts_open_reservations_and_the_spend_hidden_by_a_daily_
 
 
 def test_question_bound_counts_every_frozen_request_limit():
-    prices = {"count": 0.001, "list": 0.001, "search": 0.001, "semantic": 0.01}
+    prices = json.loads((Path(__file__).resolve().parents[2] / "scripts/benchmark/openalex_prices.json").read_text())
     bound = spend_ledger.question_bound_usd("standard", prices)
     assert bound > 0
     assert spend_ledger.question_bound_usd("standard", prices | {"semantic": 0.02}) > bound
+    assert spend_ledger.question_requests("standard")["content"] >= 20
+    assert spend_ledger.question_bound_usd("standard", prices | {"content": 0.02}) - bound == pytest.approx(
+        spend_ledger.question_requests("standard")["content"] * 0.01)
+
+
+def test_observed_openalex_costs_sum_each_kind_in_a_fixture_library(tmp_path):
+    from deixis.storage import db
+    from deixis.workflow.run.store import Store
+
+    data = tmp_path / "data"
+    data.mkdir()
+    conn = db.connect(data / "library.sqlite")
+    db.migrate(conn)
+    store = Store(conn)
+    rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex"], "fake", "m", "en")
+    run_id = store.create_run(rid, "discovery", {}, None)["id"]
+    for kind, cost in (("search", "0.001"), ("search", "0.002"), ("semantic", "0.001"),
+                       ("list", "0.0001"), ("count", "0.001"), ("doi_lookup", "0"),
+                       ("content_lookup", "0"), ("content", "0.01")):
+        store.record_openalex_reply(run_id, kind, {"x-ratelimit-cost-usd": cost,
+                                                   "x-ratelimit-credits-used": "10"})
+    conn.close()
+    prices = json.loads(openalex_costs.PRICES.read_text())
+    result = openalex_costs.summarize(data, run_id, prices)
+    assert result["observed_usd"] == openalex_costs.Decimal("0.0151")
+    assert result["by_kind"]["search"] == {"replies": 2, "cost_usd": openalex_costs.Decimal("0.003")}
+    assert result["estimated_bound_usd"] == openalex_costs.Decimal(str(
+        spend_ledger.question_bound_usd("standard", prices)))
 
 
 def test_a_missing_question_makes_a_paired_gate_inconclusive_and_a_failed_one_scores_zero():

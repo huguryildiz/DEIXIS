@@ -675,6 +675,62 @@ def test_the_content_copy_waits_for_the_person_and_the_key_is_in_no_stored_addre
     connection.close()
 
 
+def test_content_download_cost_header_is_stored_on_its_run(tmp_path, monkeypatch):
+    connection, store, rid, svid = _content_library(tmp_path)
+    run_id = store.create_run(rid, "discovery", {}, None)["id"]
+
+    async def fetched(url, client=None, deadline=None, *, email=None, headers=None, query=None):
+        return FetchResult("ok", data=make_pdf([f"https://doi.org/{CONTENT_DOI}\nSYNTHETIC full text"]),
+                           final_url=url, http_status=200,
+                           headers={"x-ratelimit-cost-usd": "0.01", "x-ratelimit-credits-used": "100"})
+
+    monkeypatch.setattr(acquisition.fetch, "fetch_pdf", fetched)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                _content_handler(lambda r: httpx.Response(200, json=_content_json(),
+                                                          headers={"x-ratelimit-cost-usd": "0"})))) as client:
+            return await acquisition.acquire_for_source(
+                store, rid, svid, client, tmp_path / "papers", "synthetic@example.org", None,
+                web_search=False, openalex_key="SYNTHETIC-KEY", workflow_run_id=run_id)
+
+    run(check())
+    costs = [json.loads(row[0]) for row in store.conn.execute(
+        "SELECT payload_json FROM events WHERE run_id = ? AND type = 'openalex_request_cost'", (run_id,))]
+    assert {row["kind"]: row["headers"]["x-ratelimit-cost-usd"] for row in costs} == {
+        "content_lookup": "0", "content": "0.01"}
+    connection.close()
+
+
+def test_keyed_pdf_fetch_keeps_the_charge_from_its_reply(monkeypatch):
+    resolving_to(monkeypatch, "93.184.216.34")
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, content=b"%PDF-synthetic",
+                                               headers={"x-ratelimit-cost-usd": "0.01",
+                                                        "x-ratelimit-credits-used": "100"}))) as client:
+            return await fetch.fetch_pdf(CONTENT_URL, client, query={"api_key": "SYNTHETIC-KEY"})
+
+    result = run(check())
+    assert result.rate_replies == [{"x-ratelimit-cost-usd": "0.01", "x-ratelimit-credits-used": "100"}]
+
+
+def test_keyed_pdf_fetch_keeps_each_redirect_charge(monkeypatch):
+    resolving_to(monkeypatch, "93.184.216.34")
+
+    def reply(request):
+        if request.url.path.endswith("W7.pdf"):
+            return httpx.Response(302, headers={"location": "/works/W8.pdf", "x-ratelimit-cost-usd": "0.01"})
+        return httpx.Response(200, content=b"%PDF-synthetic", headers={"x-ratelimit-cost-usd": "0.01"})
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(reply)) as client:
+            return await fetch.fetch_pdf(CONTENT_URL, client, query={"api_key": "SYNTHETIC-KEY"})
+
+    assert [row["x-ratelimit-cost-usd"] for row in run(check()).rate_replies] == ["0.01", "0.01"]
+
+
 def test_the_days_budget_refusing_the_metered_download_is_stored_as_the_keys(tmp_path, monkeypatch):
     """The content download spends the same daily budget as the lookups, so its refusal is the key's: it is stored
     under the key's lock, with the time the budget returns, before any other request can read the budget."""

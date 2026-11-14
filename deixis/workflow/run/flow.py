@@ -2322,6 +2322,7 @@ class ResearchFlow:
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(admitted), provider_total=outcome.provider_total, page_limit=per_page,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit,
+                              "rate_limit_replies": outcome.rate_limit_replies,
                               "returned": returned_count, "passed_filter": len(passed), "rescued": len(fresh)}
                              | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
@@ -2734,7 +2735,8 @@ class ResearchFlow:
             query_text=query["query_text"], request_description=outcome.request_description,
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(outcome.records), provider_total=outcome.provider_total, page_limit=limit,
-            error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit}
+            error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit,
+                              "rate_limit_replies": outcome.rate_limit_replies}
                              | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})
                              | {"service_kind": outcome.service_kind or service_error_kind(outcome.error_kind or outcome.http_status or outcome.status),
                                 "reset_at": retry_at(outcome.rate_limit.get("retry-after")), "retries": outcome.retries}

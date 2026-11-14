@@ -25,6 +25,7 @@ class Log:
 
     def __init__(self):
         self.rows = []
+        self.charges = []
 
     def begin(self, host, url):
         self.rows.append({"host": host, "url": url, "sends": 0, "refusals": 0, "unknown": 1, "delivery_class": None,
@@ -33,6 +34,9 @@ class Log:
 
     def settle(self, row, facts):
         self.rows[row] |= facts | {"settled": True}
+
+    def reply(self, kind, headers):
+        self.charges.append((kind, headers))
 
 
 def logged(run, log=None):
@@ -68,6 +72,22 @@ def test_each_rate_limit_retry_is_a_sent_request_the_provider_refused():
     rows, _ = send(lambda request: next(answers))
     assert [counts(row) for row in rows] == [("api.openalex.org", 1, 1, 0, "rejected_not_executed", True)] * 2 + [
         ("api.openalex.org", 1, 0, 0, None, True)]
+
+
+def test_each_openalex_reply_records_its_own_cost_after_a_retry():
+    answers = iter([httpx.Response(429, headers={"x-ratelimit-cost-usd": "0", "retry-after": "0"}),
+                    httpx.Response(200, json={"meta": {"count": 0}, "results": []},
+                                   headers={"x-ratelimit-cost-usd": "0.001", "x-ratelimit-credits-used": "10"})])
+    log = Log()
+
+    async def search():
+        async with client(lambda request: next(answers)) as http:
+            return await common.send(http, URL, {"search": "synthetic"}, {}, "GET works", "api_key",
+                                     unstated_wait=0, max_rate_limit_retries=1)
+
+    logged(search, log)
+    assert log.charges == [("search", {"x-ratelimit-cost-usd": "0"}),
+                           ("search", {"x-ratelimit-cost-usd": "0.001", "x-ratelimit-credits-used": "10"})]
 
 
 def test_a_timeout_after_sending_is_a_send_with_an_unknown_outcome():

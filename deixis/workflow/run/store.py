@@ -644,6 +644,9 @@ class Store:
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (source_id,))
+                # The arXiv version check of a file names that file, so it goes first.
+                self.conn.execute("DELETE FROM asset_arxiv_versions WHERE asset_id IN"
+                                  " (SELECT id FROM source_assets WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM source_versions WHERE id = ?", (source_id,))
                 self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)", (source["work_id"], source["work_id"]))
@@ -3854,6 +3857,9 @@ class Store:
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (svid,))
+                # The arXiv version check of a file names that file, so it goes first.
+                self.conn.execute("DELETE FROM asset_arxiv_versions WHERE asset_id IN"
+                                  " (SELECT id FROM source_assets WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM source_versions WHERE id = ?", (svid,))
                 self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)",

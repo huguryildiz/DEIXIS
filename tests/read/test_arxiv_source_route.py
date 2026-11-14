@@ -144,3 +144,17 @@ except sqlite3.OperationalError as exc:
 # ---- the answer run, the views and the passage payload -------------------------------------------------------------------
 
 
+
+
+# ---- permanent deletion ----------------------------------------------------------------------------------------------
+def test_purging_a_research_removes_the_arxiv_check_of_its_file(tmp_path):
+    store, svid, aid, papers = library(tmp_path)
+    # Read the PDF through the arXiv route so the file carries its version check.
+    assert read(service(store, papers, tmp_path), aid)["state"] == "read"
+    rid = store.create_research("SYNTHETIC arXiv question?", "attached", "quick", [], "fake", "fake", None)
+    store.add_to_corpus(rid, svid, "user_upload")
+    store.trash_research(rid)
+    # The check row named the file being deleted, which failed the foreign key before.
+    store.purge_research(rid)
+    assert store.conn.execute("SELECT COUNT(*) FROM asset_arxiv_versions").fetchone()[0] == 0
+    assert store.conn.execute("SELECT COUNT(*) FROM source_assets WHERE id = ?", (aid,)).fetchone()[0] == 0

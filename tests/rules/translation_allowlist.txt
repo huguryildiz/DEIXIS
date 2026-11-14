@@ -1,0 +1,3 @@
+# Translation keys that tests/rules/test_unused_translations.py cannot find written in the source, because the key is
+# built at run time. One key per line, exactly as in web/src/lib/locales/tr.ts, then " # " and how it is built.
+PDF input not verified: The stored PDF changed before its text was read; upload it again to repair it. # deixis/api/app.py:903,2754 concatenates the note; web/src/research/ResearchView.tsx:549 and WaitingForPdf.tsx:166 render t(n.note)

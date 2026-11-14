@@ -3343,7 +3343,10 @@ class Store:
 
         When a published record joins a work whose preprint was screened or chosen, the head has no decision of its own
         yet; it takes the other record's user choice, else its model proposal. A head with its own decision keeps it.
+        A research in the trash is left as it is: a join or split made by another research's search must not fail on it.
         """
+        if self.conn.execute("SELECT 1 FROM researches WHERE id = ? AND trashed_at IS NULL", (research_id,)).fetchone() is None:
+            return
         head = self.work_heads(research_id).get(work_id)
         if head is None:
             return

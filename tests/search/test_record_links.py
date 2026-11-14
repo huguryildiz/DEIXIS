@@ -130,3 +130,15 @@ def test_an_undone_merge_is_not_made_again_by_the_same_search(store):
 
 
 # ---- permanent deletion ----------------------------------------------------------------------
+
+
+def test_a_join_does_not_fail_on_a_research_in_the_trash_that_holds_the_work(store):
+    # Another research found the published record and was then trashed; its runs had ended.
+    trashed, trashed_run = research(store)
+    search(store, trashed, trashed_run, 0, "openalex", [record("W1")])
+    store.conn.execute("UPDATE runs SET status = 'completed' WHERE id = ?", (trashed_run,))
+    store.trash_research(trashed)
+    # A new search finds the preprint that names the published DOI: the join settles heads only where it may.
+    rid, run_id = research(store)
+    published, pre = joined_preprint(store, rid, run_id)
+    assert store.source(published)["work_id"] == store.source(pre)["work_id"]

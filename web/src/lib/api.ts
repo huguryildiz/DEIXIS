@@ -602,6 +602,8 @@ export type Source = {
   // An author–year–title key such as "nakano2013molecular", one per work across the library; null only before it is
   // given.
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
+  record_links: { id: string; link_kind: string; rule: string; created_at: string; closed_reason: string | null
+    records: { source_version_id: string; title: string; version_label: string | null; publication_type: string | null; doi: string | null }[] }[]
   volume: string | null; issue: string | null; pages: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   cited_by_count: number | null; cited_by_count_at: string | null
@@ -1532,6 +1534,8 @@ export const api = {
   addLibrarySource: (researchId: string, workId: string) =>
     request<LibraryAddition>(`/api/researches/${researchId}/library-sources`, json('POST', { work_id: workId })),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
+  undoRecordLink: (id: string, linkId: string, note: string) =>
+    request<{ id: string; closed_reason: string }>(`/api/researches/${id}/record-links/${linkId}/undo`, json('POST', { note: note.trim() || null })),
   renameResearch: (id: string, title: string, expectedVersion: number) =>
     request<ResearchView>(`/api/researches/${id}/title`, json('POST', { title, expected_version: expectedVersion })),
   create: (body: {

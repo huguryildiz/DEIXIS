@@ -1136,6 +1136,32 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             a["report_title"] = first["report_title"]
     answered_in_queue = queue_answers(store, research_id)
     sources = []
+    # A link belongs to the library. Show each current work member its merged pairs, even when the linked
+    # versions were found elsewhere. Closed human decisions remain visible after the works split.
+    work_links: dict[str, list[dict[str, Any]]] = {}
+    for link in conn.execute(
+        "SELECT l.id, l.source_version_id, l.other_source_version_id, l.link_kind, l.rule, l.created_at,"
+        " l.closed_reason, a.title AS a_title, a.version_label AS a_version_label,"
+        " a.publication_type AS a_publication_type, a.doi AS a_doi, a.work_id AS a_work_id,"
+        " b.title AS b_title, b.version_label AS b_version_label,"
+        " b.publication_type AS b_publication_type, b.doi AS b_doi, b.work_id AS b_work_id"
+        " FROM record_links l JOIN source_versions a ON a.id = l.source_version_id"
+        " JOIN source_versions b ON b.id = l.other_source_version_id"
+        " WHERE l.merged = 1 AND (l.closed_at IS NULL OR l.closed_reason = 'undone')"
+        " AND EXISTS (SELECT 1 FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+        " WHERE m.research_id = ? AND m.removed_at IS NULL AND v.work_id IN (a.work_id, b.work_id))"
+        " ORDER BY l.created_at, l.id", (research_id,),
+    ):
+        item = {"id": link["id"], "link_kind": link["link_kind"], "rule": link["rule"],
+                "created_at": link["created_at"], "closed_reason": link["closed_reason"],
+                "records": [{"source_version_id": link["source_version_id"], "title": link["a_title"],
+                             "version_label": link["a_version_label"], "publication_type": link["a_publication_type"],
+                             "doi": link["a_doi"]},
+                            {"source_version_id": link["other_source_version_id"], "title": link["b_title"],
+                             "version_label": link["b_version_label"], "publication_type": link["b_publication_type"],
+                             "doi": link["b_doi"]}]}
+        for work_id in {link["a_work_id"], link["b_work_id"]}:
+            work_links.setdefault(work_id, []).append(item)
     work_flags = store.research_works_retracted(research_id)
     # The open-web recovery search's own row, where one was reserved for a record. It is the one route whose state no
     # candidate and no download attempt can state: a search the depth or the missing key ruled out sends no request,
@@ -1207,6 +1233,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         content_route = dict(content_row) if content_row else None
         sources.append({
             "source_version_id": svid, "work_id": row["work_id"], "source_key": row["source_key"], "title": row["title"],
+            "record_links": work_links.get(row["work_id"], []),
             "authors": json.loads(row["authors_json"]),
             "year": row["year"], "venue": row["venue"], "volume": row["volume"], "issue": row["issue"],
             "pages": row["pages"], "doi": row["doi"], "landing_url": row["landing_url"],

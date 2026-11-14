@@ -397,7 +397,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
 
     {queue.decided.length > 0 && <Decided entries={queue.decided} busy={busy} onUndo={entry => { if (entry.undo_token) void undo(entry.source_version_id, entry.undo_token) }} onOpen={(svid, opener) => openSource(svid, opener)} />}
 
-    {sheet && <PassageSheet researchId={researchId} dark={dark} sources={view.sources}
+    {sheet && <PassageSheet researchId={researchId} dark={dark} sources={view.sources} onChanged={onChanged}
       passageId={'source' in sheet ? null : sheet.passageId} assetId={'source' in sheet ? null : sheet.assetId}
       sourceVersionId={'source' in sheet ? sheet.source : null} initialView={'source' in sheet ? 'text' : sheet.view}
       initialPage={'source' in sheet ? 1 : sheet.page} highlightTexts={'source' in sheet || !sheet.anchor ? [] : [sheet.anchor]}

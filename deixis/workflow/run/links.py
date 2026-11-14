@@ -156,8 +156,9 @@ def _split_work(store: Store, undo: dict[str, Any]) -> None:
         store._assign_source_key(dropped["id"])
     for work_id in (keep, dropped["id"]):
         for (research_id,) in conn.execute(
+            # A research in the trash is left as it is.
             "SELECT DISTINCT m.research_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
-            " WHERE v.work_id = ?", (work_id,)
+            " JOIN researches r ON r.id = m.research_id AND r.trashed_at IS NULL WHERE v.work_id = ?", (work_id,)
         ).fetchall():
             store._settle_work_head(research_id, work_id)
 

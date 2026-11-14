@@ -13,6 +13,7 @@ import { SourceKey } from '../components/SourceKey'
 import { PdfTextDocument, type CitationLabels, type CiteNav } from './PdfTextDocument'
 import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 import { Notice } from '../components/Notice'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { OccurrenceNotice, StoredPdfNotice } from './occurrence'
 import { StackPanel } from '../research/SplitPanel'
 import { usePanels } from '../research/usePanelStack'
@@ -71,6 +72,12 @@ export type SourceActions = {
 }
 
 type Tab = 'abs' | 'text' | 'pdf'
+const mergeRuleText: Record<string, string> = {
+  preprint_names_published_doi: 'Preprint names the published DOI',
+  external_link_names_published_doi: 'An external link names the published DOI',
+  title_authors_abstract: 'Title, authors and abstract match',
+  identical_title_authors: 'Title and authors match',
+}
 // The services the open-copy lookup asks first, in its order (documents/acquisition.py); Europe PMC and Web Search are
 // asked only when these give no file, so they are named only once their answers are recorded.
 // A lookup DEIXIS recorded without sending a request (P15): the service needed a key or contact setting that is not
@@ -121,7 +128,7 @@ function markGroups(root: HTMLElement | null) {
 // The server's limit on one selection (`followup_attachments.MAX_TEXT_CHARS`).
 const ADD_TO_CHAT_LIMIT = 800
 
-export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false, latestAnswer = null, actions, findOnOpen = false, abstractPassageId = null, passageOnly = false, onAddToChat }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean; abstractPassageId?: string | null; passageOnly?: boolean; onAddToChat?: (pick: FollowupAsk) => void }) {
+export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, onChanged, asPanel = false, latestAnswer = null, actions, findOnOpen = false, abstractPassageId = null, passageOnly = false, onAddToChat }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; onChanged?: () => Promise<void>; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean; abstractPassageId?: string | null; passageOnly?: boolean; onAddToChat?: (pick: FollowupAsk) => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   // The whole extracted text of the PDF a cited passage comes from: undefined while it loads, null when the passage opens alone.
@@ -140,6 +147,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const [comparisonError, setComparisonError] = useState('')
   const comparisonRequest = useRef(0)
   const [error, setError] = useState('')
+  const [separating, setSeparating] = useState<Source['record_links'][number] | null>(null)
+  const [separateNote, setSeparateNote] = useState('')
+  const [separateBusy, setSeparateBusy] = useState(false)
   // The PDF view reads at full workspace width; the text view starts as a side sheet.
   const [full, setFull] = useState(initialView === 'pdf')
   const [allAuthors, setAllAuthors] = useState(false)
@@ -225,6 +235,18 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     finally { if (requestId === comparisonRequest.current) setLoadingCurrent(false) }
   }
   const row = source ? sources?.find(s => s.source_version_id === source.id) : undefined
+  const separate = async () => {
+    if (!separating) return
+    setSeparateBusy(true)
+    try {
+      await api.undoRecordLink(researchId, separating.id, separateNote)
+      setSeparating(null); setSeparateNote('')
+      await onChanged?.()
+      toast('success', t('Records separated.'))
+    } catch (cause) {
+      toast('error', cause instanceof Error ? cause.message : String(cause))
+    } finally { setSeparateBusy(false) }
+  }
   // The work's citation fields as the research's source list holds them, so a record lookup shows without reopening.
   const head = source && row ? { ...source, title: row.title, authors: row.authors, year: row.year, venue: row.venue, doi: row.doi, landing_url: row.landing_url, source_key: row.source_key, cited_by_count: row.cited_by_count } : source
   const removed = pdfRemoved || status === 'pdf_removed'
@@ -530,6 +552,25 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          {row && row.record_links.length > 0 && <section className="source-record-links" aria-label={t('Record links')}>
+            <h3 className="source-section">{t('Record links')}</h3>
+            {row.record_links.map(link => <div className="source-record-link" key={link.id}>
+              <p>{link.closed_reason === 'undone' ? t('You separated these records.') : t('These records were joined as one work.')}</p>
+              {link.records.map(record => <p key={record.source_version_id}>
+                <strong>{record.title}</strong> · {record.version_label ? versionText(record.version_label) : record.publication_type ? t(record.publication_type) : t('Version not stated')}
+                {record.doi && <> · DOI: {record.doi}</>}
+              </p>)}
+              <p className="source-record-link-meta">{t('Link type: {kind} · Rule: {rule} · Joined: {date}', {
+                kind: t(link.link_kind === 'same_work' ? 'Same work' : link.link_kind),
+                rule: t(mergeRuleText[link.rule] ?? link.rule),
+                date: new Date(link.created_at).toLocaleString(uiLocale()) })}</p>
+              {link.closed_reason === null && <button type="button" className="source-record-link-action"
+                disabled={separateBusy || !onChanged}
+                aria-label={!onChanged ? `${t('Not the same work')}. ${t('Open this record from the research page to separate it.')}` : separateBusy ? `${t('Not the same work')}. ${t('Separation in progress')}` : undefined}
+                title={!onChanged ? t('Open this record from the research page to separate it.') : separateBusy ? t('Separation in progress') : undefined}
+                onClick={() => { setSeparateNote(''); setSeparating(link) }}>{t('Not the same work')}</button>}
+            </div>)}
+          </section>}
           {findBlock}
           {passage?.removed_from_research && <p className="source-notice is-removed"><ListMinus size={15} aria-hidden /><span>{t('This source was removed from this research. Its passages still open where this research cites them; it is not listed or given to new answers and cells.')}
             {onRestoreSource && <> <button type="button" className="source-notice-action" onClick={() => onRestoreSource(passage.source.id)}><RotateCcw size={13} aria-hidden />{t('Restore to this research')}</button></>}</span></p>}
@@ -602,14 +643,24 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   </>
   // On the research page the source opens as a side panel (mockup `detail`, P1): the panel's Full width replaces the
   // sheet's expand button, and the PDF view widens the panel as it widened the sheet.
-  if (asPanel) return <SourcePanel open={isOpen} full={full} onFull={setFull} dark={dark} description={description} onClose={onClose}>{content}</SourcePanel>
-  return <Sheet open={isOpen} onOpenChange={open => { if (!open) onClose() }}>
+  const confirm = <ConfirmDialog open={separating !== null} dark={dark} neutral
+    title={t('Separate these records?')}
+    description={t('The two records become separate works again. The next search will not join this pair. Existing answers and selections stay as they are.')}
+    context={separating?.records.map(record => record.title).join(' · ')}
+    confirmLabel={t('Separate records')} cancelLabel={t('Cancel')} busy={separateBusy}
+    onConfirm={() => { void separate() }} onOpenChange={open => { if (!open) setSeparating(null) }}>
+    <label className="source-record-link-note">{t('Note (optional)')}
+      <textarea maxLength={300} value={separateNote} onChange={event => setSeparateNote(event.target.value)} rows={3} />
+    </label>
+  </ConfirmDialog>
+  if (asPanel) return <><SourcePanel open={isOpen} full={full} onFull={setFull} dark={dark} description={description} onClose={onClose}>{content}</SourcePanel>{confirm}</>
+  return <><Sheet open={isOpen} onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
       <SheetHeader><SheetTitle><FileText aria-hidden />{t('Source details')}</SheetTitle>
         <Button variant="ghost" size="icon-sm" className="sheet-expand" aria-label={t(full ? 'Collapse panel' : 'Expand to full page')} title={t(full ? 'Collapse panel' : 'Expand to full page')} onClick={() => setFull(v => !v)}>{full ? <Minimize2 /> : <Maximize2 />}</Button><SheetDescription className="sr-only">{description}</SheetDescription></SheetHeader>
       {content}
     </SheetContent>
-  </Sheet>
+  </Sheet>{confirm}</>
 }
 
 function SourcePanel({ open, full, onFull, dark, description, onClose, children }: { open: boolean; full: boolean; onFull: (full: boolean) => void; dark: boolean; description: string; onClose: () => void; children: ReactNode }) {

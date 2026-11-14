@@ -138,6 +138,7 @@ function describeEvent(event: ActivityEvent, uniformSearch?: boolean): { icon: R
 // Events with no detail of their own: one plain sentence each, so the log never shows a raw event code.
 const plainEventTexts: Record<string, string> = {
   report_created: 'Report created',
+  record_link_undone: 'You separated two records that a search had joined as one work',
   report_plan_saved: 'Report outline saved',
   report_section_created: 'Report section added',
   report_section_saved: 'Report section saved',

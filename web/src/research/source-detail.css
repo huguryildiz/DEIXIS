@@ -37,6 +37,19 @@
 .source-sheet .source-detail .dpill.is-text:not(.dpill-outline){border:1px solid var(--line);background:transparent;color:var(--ink-2)}
 
 /* Actions */
+.source-sheet .source-record-links{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+.source-sheet .source-record-links .source-section{margin:0 0 8px}
+.source-sheet .source-record-link{padding:8px 0;border-top:1px solid var(--line)}
+.source-sheet .source-record-link:first-of-type{border-top:0}
+.source-sheet .source-record-link p{margin:0 0 5px;color:var(--ink-2);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+.source-sheet .source-record-link p:first-child{color:var(--ink);font-weight:600}
+.source-sheet .source-record-link strong{font-weight:600;color:var(--ink)}
+.source-sheet .source-record-link .source-record-link-meta{color:var(--muted)}
+.source-sheet .source-record-link-action{margin-top:4px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-2);font-size:12px}
+.source-sheet .source-record-link-action:hover:not(:disabled){background:var(--hover-surface)}
+.source-sheet .source-record-link-action:disabled{opacity:.6;cursor:default}
+.source-record-link-note{display:grid;gap:5px;margin-top:12px;color:var(--ink);font-size:13px}
+.source-record-link-note textarea{width:100%;min-height:68px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);resize:vertical}
 .source-sheet .source-detail .dacts{flex-wrap:wrap;gap:8px;margin-top:4px}
 .source-sheet .source-detail .dacts .btn-pri{height:36px;margin:0;padding:0 14px;border-radius:8px;background:var(--accent-deep);font-size:13.5px;font-weight:600;box-shadow:0 1px 2px color-mix(in srgb,var(--ink),transparent 88%)}
 .source-sheet .source-detail .dacts .btn-pri svg{width:15px;height:15px}

@@ -46,6 +46,7 @@ from deixis.domain import proxy, skill, statement
 from deixis.imports import bibtex_ris
 from deixis.workflow.screen import abstract_stage
 from deixis.workflow.run import source_keys
+from deixis.workflow.run import links as record_links
 from deixis.workflow.run import fast_path, intent
 from deixis.workflow.search import date_scope, small_batch
 from deixis.workflow.answer import statement_check
@@ -463,6 +464,10 @@ class SelectionChange(BaseModel):
         if value == COPIED_SELECTION_REASON:
             raise ValueError("this reason is reserved for a selection copied to a new head")
         return value
+
+
+class RecordLinkUndo(BaseModel):
+    note: str | None = Field(default=None, max_length=300)
 
 
 class QueueDecision(BaseModel):
@@ -2249,6 +2254,42 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         return store.set_user_selection(research_id, source_version_id, body.state, body.expected_version, body.reason)
+
+    @app.post("/api/researches/{research_id}/record-links/{link_id}/undo")
+    async def undo_record_link(research_id: str, link_id: str, request: Request,
+                               body: RecordLinkUndo | None = None) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        with db.transaction(store.conn):
+            link = store.conn.execute("SELECT * FROM record_links WHERE id = ?", (link_id,)).fetchone()
+            if link is None or not store.conn.execute(
+                "SELECT 1 FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+                " WHERE m.research_id = ? AND m.removed_at IS NULL"
+                " AND v.work_id IN (SELECT work_id FROM source_versions WHERE id IN (?, ?)) LIMIT 1",
+                (research_id, link["source_version_id"], link["other_source_version_id"]),
+            ).fetchone():
+                raise NotFound(link_id)
+            if link["closed_at"] is not None:
+                raise HTTPException(409, f"This record link was already closed as {link['closed_reason']}.")
+            if not link["merged"]:
+                raise HTTPException(422, "This link did not merge two works.")
+            affected = [row[0] for row in store.conn.execute(
+                "SELECT DISTINCT m.research_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+                " JOIN researches r ON r.id = m.research_id AND r.trashed_at IS NULL"
+                " WHERE m.removed_at IS NULL AND v.work_id IN"
+                " (SELECT work_id FROM source_versions WHERE id IN (?, ?))",
+                (link["source_version_id"], link["other_source_version_id"]),
+            )]
+            note = body.note.strip() or None if body and body.note else None
+            result = record_links.undo_link(store, link_id, note)
+            if store.source(link["source_version_id"])["work_id"] == store.source(link["other_source_version_id"])["work_id"]:
+                raise HTTPException(409, "Another link still keeps these records in one work; this pair could not be separated.")
+            # Every research showing either version receives a refresh event for this library-wide change.
+            for affected_id in affected:
+                store._event(affected_id, "record_link_undone", {"link_id": link_id,
+                    "source_version_ids": [link["source_version_id"], link["other_source_version_id"]],
+                    "note": result["closed_note"]})
+        return {"id": link_id, "closed_reason": result["closed_reason"]}
 
     # ---- the human queue of an sw research (slice 16) ----------------------------------------
     @app.get("/api/researches/{research_id}/queue")

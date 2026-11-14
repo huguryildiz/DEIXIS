@@ -1192,6 +1192,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       actions={passageTarget?.reportCitation ? undefined : { busy, finding: pdfFinding, onFind: discoverPdf, onAttach: chooseSourcePdf, onReplace: chooseReplacement,
         onRemove: source => { void askRemoval([source.source_version_id]) }, onReextract: (source, assetId) => { void reextract(source, assetId) }, onRereadEquations: (source, assetId) => { void rereadEquations(source, assetId) }, onLookUpRecord: source => { void lookUpRecord(source) },
         ocr: { tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } } }} passageOnly={Boolean(passageTarget?.statement)} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.statement ? statementSheetLabels() : passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : passageTarget?.ledger ? ledgerLabels(passageTarget.highlightText !== null) : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
+      onChanged={async () => { await load(); onChanged() }}
       onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
   </section></PanelStackContext.Provider>
 }

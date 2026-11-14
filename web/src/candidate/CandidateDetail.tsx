@@ -7,6 +7,7 @@ import { ModelName } from '../components/ModelName'
 import { providerName } from '../lib/labels'
 import type { ModelText } from '../lib/modelText'
 import { t } from '../lib/i18n'
+import { useToast } from '../components/Toast'
 import { CandidateEditor } from './CandidateEditor'
 import { useReviewSurface } from '../review/useReviewSurface'
 import { CandidateReviewEntry, CandidateReviewHost } from './CandidateReviewSheet'
@@ -37,7 +38,7 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
   const [matrixError, setMatrixError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editor, setEditor] = useState(false)
-  const [saved, setSaved] = useState('')
+  const toast = useToast()
   const [planOpen, setPlanOpen] = useState(false)
   const [plan, setPlan] = useState<CandidatePlan | null>(null)
   const [planError, setPlanError] = useState('')
@@ -162,7 +163,7 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
   const openEditor = (opener: HTMLElement) => { sheetFocus.rememberFocus(opener, () => editorControl.current); setEditor(true) }
   const savedCard = (fresh: CandidateCard, request: number) => {
     applyMutation(fresh, request); setMatrix(null); setSelectedSearch(null); planGeneration.current++; setPlanOpen(false)
-    setSaved(t('Saved as version {n}. The searches of earlier versions stay with those versions.', { n: fresh.current_version }))
+    toast('success', t('Saved as version {n}. The searches of earlier versions stay with those versions.', { n: fresh.current_version }))
   }
   const searchedThis = card.searches.some(s => s.candidate_version_id === card.current_version_id)
   const searches = [...card.searches].sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -179,7 +180,6 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
     {card.origin === 'report_gap' && <details className="mk-more"><summary><ChevronRight size={14} aria-hidden />{t('What it was opened from')}</summary>{(['basis_cell_ids', 'basis_passage_ids', 'basis_claim_keys'] as const).map(key => <section key={key}><h5>{t({ basis_cell_ids: 'Cell values', basis_passage_ids: 'Passage texts', basis_claim_keys: 'Claim texts' }[key])}</h5>{card.origin_basis_view[key]?.length ? <ul>{card.origin_basis_view[key]!.map(item => <li key={item.id}>{'missing' in item ? t('no longer available') : <span data-stored-text>{item.text}</span>}</li>)}</ul> : <p>{t('None.')}</p>}</section>)}</details>}
     {card.trashed_at ? <p className="foot-note">{t('In the Trash')}</p> : <>
       {error && <Failure text={error} retry={() => void load().catch(() => {})} />}
-      {saved && <p role="status" className="foot-note">{saved}</p>}
       <h4 className="sub">{t('Candidate card')}</h4>
       {!version ? <>
         {breaking ? <p className="foot-note"><span className="spin" aria-hidden /> <span className="shimmer-text">{t('Breaking the claim into testable parts…')}</span></p>

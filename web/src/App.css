@@ -168,7 +168,6 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .app .recent-row:is(:hover,:has(.recent-more:focus-visible),:has(.recent-more[data-popup-open])) .recent-time{display:none}
 .app .recent-row .recent-more:hover{background:var(--line);color:var(--ink)}
 @media(hover:none){.app .recent-row .recent-more{display:grid}}
-.sidebar-action-message{padding:6px 16px;color:var(--muted);font-size:11.5px;line-height:1.4}
 .spin{display:inline-block;width:13px;height:13px;flex:none;border:1.6px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:spin-turn .8s linear infinite}
 @keyframes spin-turn{to{transform:rotate(360deg)}}
 /* In-progress text: an accent highlight sweeps left to right across muted letters. */
@@ -241,16 +240,17 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .detail-sheet :where([data-slot=sheet-close]){top:8px;right:8px;width:30px;height:30px;border-radius:7px;color:var(--muted)}
 .detail-sheet :where([data-slot=sheet-close]):hover{background:var(--hover-surface);color:var(--ink)}
 
-/* Toast (mockup): one at a time, bottom-centre, on the ink ground for every tone. `.toast.is-*` stays for the tone; a
-   warning or an error carries its icon and an error is an alert. Undo is a link-style action. */
-.toast{position:fixed;bottom:20px;left:50%;z-index:90;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 32px);padding:8px 8px 8px 14px;border-radius:8px;background:var(--ink);color:var(--paper);box-shadow:var(--shadow-float);font-family:var(--font-sans);font-size:13px;line-height:1.5;transform:translateX(-50%)}
+/* Toast: one at a time, bottom-centre. Each tone sits on its own tinted ground with a matching hairline and ink
+   (green success, amber warning, red error) and carries its icon; an error is an alert. Undo is a link-style action. */
+.toast{position:fixed;bottom:20px;left:50%;z-index:90;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 32px);padding:8px 8px 8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow-float);font-family:var(--font-sans);font-size:13px;line-height:1.5;transform:translateX(-50%)}
+.toast.is-success{border-color:var(--ok-line);background:var(--ok-surface);color:var(--ok-ink)}
+.toast.is-warning{border-color:var(--warn-line);background:var(--warn-surface);color:var(--warn-ink)}
+.toast.is-error{border-color:var(--error-line);background:var(--error-surface);color:var(--error-ink)}
 .toast-icon{flex:none}
-.toast.is-warning .toast-icon{color:color-mix(in srgb,var(--tone-uncertain),var(--paper) 35%)}
-.toast.is-error .toast-icon{color:color-mix(in srgb,var(--tone-exclude),var(--paper) 35%)}
 .toast-text{min-width:0}
 .toast button{display:inline-flex;flex:none;padding:2px;border:0;border-radius:4px;background:none;color:inherit;cursor:pointer}
 .toast button:focus-visible{outline:2px solid currentColor;outline-offset:1px}
-.toast .toast-action{margin-left:4px;padding:0 2px;border-radius:0;color:var(--accent-line);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.toast .toast-action{margin-left:4px;padding:0 2px;border-radius:0;color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .toast .toast-close{opacity:.7}
 .toast .toast-close:hover{opacity:1}
 @media (prefers-reduced-motion:no-preference){.toast{animation:toast-in .18s ease-out}}

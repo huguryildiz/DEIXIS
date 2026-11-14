@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { CircleX, TriangleAlert, X } from 'lucide-react'
+import { CircleCheck, CircleX, TriangleAlert, X } from 'lucide-react'
 import { t } from '../lib/i18n'
 
 export type ToastTone = 'success' | 'warning' | 'error'
@@ -8,8 +8,8 @@ export type ToastTone = 'success' | 'warning' | 'error'
 export type ToastAction = { label: string; run: () => void }
 type Toast = { tone: ToastTone; text: string; action?: ToastAction; id: number }
 
-// Every tone sits on the same ink ground (mockup); a warning or an error also carries its icon, and an error is an alert.
-const icons = { success: null, warning: TriangleAlert, error: CircleX }
+// Each tone has its own tinted ground and icon, so the state is never colour alone; an error is an alert.
+const icons = { success: CircleCheck, warning: TriangleAlert, error: CircleX }
 const ToastContext = createContext<(tone: ToastTone, text: string, action?: ToastAction) => void>(() => {})
 
 export const useToast = () => useContext(ToastContext)

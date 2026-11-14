@@ -128,7 +128,6 @@ export default function App() {
   const [route, setRoute] = useState<Route>(parseHash)
   const [researches, setResearches] = useState<ResearchSummary[]>([])
   const [listError, setListError] = useState('')
-  const [actionMessage, setActionMessage] = useState('')
   const [actionBusy, setActionBusy] = useState<string | null>(null)
   // Renaming a recent research from the sidebar; the field is opened by a double click or by the row's Rename action.
   const [renameId, setRenameId] = useState<string | null>(null)
@@ -247,7 +246,6 @@ export default function App() {
     setRenameId(null)
     if (!next || next === research.title) return
     setActionBusy(research.id)
-    setActionMessage('')
     try {
       const renamed = await api.renameResearch(research.id, next, research.version)
       setResearches(items => items.map(item => (item.id === research.id ? { ...item, title: renamed.research.title } : item)))
@@ -255,7 +253,7 @@ export default function App() {
       toast('success', t('Research title saved.'))
     } catch (error) {
       // 409 means the research changed since this list was read (a scope revision renames it); the list is reloaded below.
-      setActionMessage(t('Could not save the title: {message}', { message: (error as Error).message }))
+      toast('error', t('Could not save the title: {message}', { message: (error as Error).message }))
       if (error instanceof ApiError && error.status === 409) refreshList()
     }
     finally { setActionBusy(null) }
@@ -285,7 +283,6 @@ export default function App() {
 
   async function moveToTrash(research: ResearchSummary) {
     setActionBusy(research.id)
-    setActionMessage('')
     try {
       await api.moveToTrash(research.id)
       setResearches(items => items.filter(item => item.id !== research.id))
@@ -293,7 +290,7 @@ export default function App() {
       else refreshList()
       // Undo calls the Trash page's restore.
       toast('success', t('Moved to Trash.'), { label: t('Undo'), run: () => { api.restore(research.id).then(() => { refreshList(); toast('success', t('Research restored.')) }, (error: Error) => toast('error', t('Could not restore research: {message}', { message: error.message }))) } })
-    } catch (error) { setActionMessage(t('Could not move to Trash: {message}', { message: (error as Error).message })) }
+    } catch (error) { toast('error', t('Could not move to Trash: {message}', { message: (error as Error).message })) }
     finally { setActionBusy(null) }
   }
 
@@ -595,7 +592,6 @@ export default function App() {
               <DropdownMenuContent align="start" sideOffset={6}><DropdownMenuItem onClick={() => beginRename(r)}><PencilLine size={15} />{t('Rename')}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
         })}
       </div>
-      {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
       <div className="sidebar-foot">
         {!phone && !collapsed && <div ref={setRunSlot} className="sidebar-run-slot">
           <SidebarRuns researches={researches} openId={route.view === 'research' ? route.id : null} onOpen={(id, tab) => go({ view: 'research', id, tab })} />

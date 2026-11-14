@@ -33,8 +33,8 @@ The app and your library stay on your computer. Searches go to the scholarly sou
 
 ## What it does
 
-1. **Plans the search.** Code picks the search words from your question, a model sorts them into concept blocks and writes the query, and the plan is frozen before any request goes out.
-2. **Searches and ranks.** OpenAlex keyword and semantic requests, one round of citation chaining and embeddings run together (Semantic Scholar joins at Detailed depth). Up to six signals are fused into one ranked list, and a reranker can reorder the top of it. Nothing is removed at this step.
+1. **Plans the search.** Your question goes to OpenAlex semantic search first, as you wrote it. A model reads those results, picks the query terms from them and sorts them into two concept blocks; code checks that every term really appears in a record and counts what each term finds. The plan is frozen before the keyword search goes out.
+2. **Searches and ranks.** Every depth runs the same search: OpenAlex semantic, plain and keyword requests, six short phrases a model writes, one round of citation chaining, and one field source such as arXiv or PubMed when the question's records lean that way. The signals are fused into one ranked list, and a reranker reads up to 400 works from it and reorders them. Nothing is removed at this step. Depth decides only how many works are screened and read.
 3. **Screens and reads.** The model screens the abstracts of the top works, twice each. Inclusion needs a full-text read: two model reads, with every quote checked by code against the text.
 4. **Answers with located citations.** Each citation has to point to an exact span in a passage the model was given. If one cannot be located, the answer stays an unverified draft.
 5. **Keeps reading in the background.** Full texts that were not ready in time keep downloading and can lead to one revision of the answer; the earlier answer is kept.
@@ -72,7 +72,7 @@ Found, screened, read in full, given to the model and cited are kept as separate
 
 Use a subscription you already pay for, an API key, or a model on your own computer: Claude Code, Codex, Gemini CLI, GitHub Copilot, the Anthropic, OpenAI or Gemini API, Ollama or a local model server. The command-line tools are installed separately; keys go to the system keychain. DEIXIS records which model wrote each step and never switches to another one after a failure without saying so.
 
-Search goes to OpenAlex, plus Semantic Scholar at Detailed depth. Crossref, Semantic Scholar and Scopus fill in missing abstracts; open full texts come through Unpaywall, Europe PMC, arXiv and the public pages of the papers. Scanned PDFs are read with built-in OCR in English and Turkish.
+Search goes to OpenAlex and, when the question's field calls for it, one of arXiv, bioRxiv, PubMed or IEEE Xplore. Scopus is searched as a second index when no field source is and a Scopus key is set, and Semantic Scholar steps in when an OpenAlex search fails or a part of the question is missing. Crossref, Semantic Scholar and Scopus fill in missing abstracts; open full texts come through Unpaywall, Europe PMC, arXiv and the public pages of the papers. Scanned PDFs are read with built-in OCR in English and Turkish.
 
 The app is open source under AGPL-3.0. You pay only for the model you connect.
 

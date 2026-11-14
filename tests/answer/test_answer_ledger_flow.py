@@ -474,8 +474,8 @@ def test_the_coverage_call_is_sent_at_most_once_whatever_the_stop(tmp_path, stop
         store.conn.close()
 
 
-def test_source_names_in_claims_come_from_records_and_typed_names_are_refused(tmp_path):
-    """A `{{source}}` mention is filled from the source record when the answer is saved; a typed name is refused."""
+def test_source_names_in_claims_come_from_records_and_title_words_need_same_source_handle(tmp_path):
+    """A named source can be described in title words without changing the claim."""
     def named(si):
         out = draft(si, [("c1", "source_stated", [0]), ("c2", "source_stated", [0])])
         sid = si["sources"][0]["source_id"]
@@ -499,6 +499,51 @@ def test_source_names_in_claims_come_from_records_and_typed_names_are_refused(tm
     finally:
         store.conn.close()
 
+    title = "Scheduling to Minimize Age of Incorrect Information with Imperfect Channel State Information"
+
+    def title_words_answer(si):
+        out = draft(si, [("c1", "source_stated", [2])])
+        out["claims"][0]["text"] = (
+            "{{srv_S0000003}} supplies a classical, rather than entanglement-network, analogue: multi-user "
+            "scheduling minimizes age of incorrect information with imperfect channel-state information and a "
+            "generic time-penalty function, using an MDP and index policies."
+        )
+        return out
+
+    (tmp_path / "title").mkdir()
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path / "title", [title_words_answer])
+    try:
+        first = store.conn.execute("SELECT id FROM source_versions ORDER BY rowid LIMIT 1").fetchone()[0]
+        store.conn.execute("UPDATE source_versions SET title = ? WHERE id = ?", (title, first))
+        answer = answer_of(store, rid, flow, run_id)
+        assert answer["status"] == "structurally_valid" and len(sent) == 1
+        step_input = store.step_input_payload(answer["step_input_id"])
+        model_text = title_words_answer(step_input)["claims"][0]["text"]
+        result = contracts.validate_model_output(step_input, title_words_answer(step_input))
+        assert result.ok and result.result["claims"][0]["text"] == model_text
+        assert result.normalised == []
+        assert [(w.code, w.message) for w in result.warnings if w.code == "source_title_words_described"] == [
+            ("source_title_words_described", first)]
+        assert json.loads(answer["draft_json"])["mention_texts"]["c1"] == model_text.replace("{{srv_S0000003}}", "{{" + first + "}}")
+        validation = sessions(store)[0]
+        assert validation["ok"] is True
+        assert {"code": "source_title_words_described", "path": "/claims/0/text", "message": first} in validation["warnings"]
+        assert not any(item["path"] == "/claims/0/text" for item in validation["normalised"])
+        raw = title_words_answer(step_input)
+        raw["claims"][0]["text"] = model_text.replace("{{srv_S0000003}}", "{{" + first + "}}")
+        assert contracts.validate_model_output(step_input, raw).result["claims"][0]["text"] == raw["claims"][0]["text"]
+
+        without_handle = title_words_answer(step_input)
+        without_handle["claims"][0]["text"] = model_text.replace("{{srv_S0000003}} ", "")
+        refused = contracts.validate_model_output(step_input, without_handle)
+        assert "source_name_in_claim_text" in refused.codes()
+        assert refused.result["claims"][0]["text"] == without_handle["claims"][0]["text"]
+        other_handle = title_words_answer(step_input)
+        other_handle["claims"][0]["text"] = model_text.replace("{{srv_S0000003}}", "{{srv_S0000001}}")
+        assert "source_name_in_claim_text" in contracts.validate_model_output(step_input, other_handle).codes()
+    finally:
+        store.conn.close()
+
     def typed(si):
         out = draft(si, SHAPES["one"])
         out["claims"][0]["text"] = "Lovelace et al. schedule releases."
@@ -509,5 +554,21 @@ def test_source_names_in_claims_come_from_records_and_typed_names_are_refused(tm
         answer = answer_of(store, rid, flow, run_id)
         assert answer["status"] == "unverified_draft"
         assert {i["code"] for i in json.loads(answer["validation_json"])["issues"]} == {"source_name_in_claim_text"}
+    finally:
+        store.conn.close()
+
+    (tmp_path / "shared").mkdir()
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path / "shared", [title_words_answer])
+    try:
+        store.conn.execute("UPDATE source_versions SET title = ? WHERE id IN "
+                           "(SELECT id FROM source_versions ORDER BY rowid LIMIT 2)", (title,))
+        answer = answer_of(store, rid, flow, run_id)
+        assert answer["status"] == "unverified_draft"
+        assert {i["code"] for i in json.loads(answer["validation_json"])["issues"]} == {"source_name_in_claim_text"}
+        step_input = store.step_input_payload(answer["step_input_id"])
+        shared = title_words_answer(step_input)
+        result = contracts.validate_model_output(step_input, shared)
+        assert result.result["claims"][0]["text"] == shared["claims"][0]["text"]
+        assert not any(w.code == "source_title_words_described" for w in result.warnings)
     finally:
         store.conn.close()

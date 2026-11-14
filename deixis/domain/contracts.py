@@ -1937,19 +1937,30 @@ def typed_title(text: str, titles: list[str]) -> str | None:
 
 def _check_source_mentions(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
                            report: ValidationReport) -> None:
-    titles = [s["title"] for s in step_input.get("sources", []) if s.get("title")]
+    sources = [s for s in step_input.get("sources", []) if s.get("title")]
+    titles = [s["title"] for s in sources]
+    owners_by_title: dict[str, set[str]] = {}
+    for source in sources:
+        owners_by_title.setdefault(source["title"], set()).add(source["source_id"])
+    source_by_handle = {handle: sid for sid, handle in citation_handles(step_input).items()}
     for i, claim in enumerate(draft["claims"]):
-        for sid in SOURCE_MENTION.findall(claim["text"]):
-            if sid not in allow["source_ids"]:
-                report.issues.append(Issue("unknown_source_mention", f"/claims/{i}/text", sid))
         if match := AUTHOR_IN_TEXT.search(SOURCE_MENTION.sub(" ", claim["text"])):
             report.issues.append(Issue("source_name_in_claim_text", f"/claims/{i}/text",
                                        f"remove {match.group(0)!r}; name a source only by its handle in double "
                                        "braces, and the application writes its authors, year and title"))
         elif title := typed_title(claim["text"], titles):
-            report.issues.append(Issue("source_name_in_claim_text", f"/claims/{i}/text",
-                                       f"the text repeats the title {title!r}; name the source only by its handle "
-                                       "in double braces, and the application writes its title"))
+            owners = owners_by_title[title]
+            named = {source_by_handle.get(sid, sid) for sid in SOURCE_MENTION.findall(claim["text"])}
+            if len(owners) == 1 and owners <= named:
+                report.warnings.append(Issue("source_title_words_described", f"/claims/{i}/text",
+                                             next(iter(owners))))
+            else:
+                report.issues.append(Issue("source_name_in_claim_text", f"/claims/{i}/text",
+                                           f"the text repeats the title {title!r}; name the source only by its handle "
+                                           "in double braces, and the application writes its title"))
+        for sid in SOURCE_MENTION.findall(claim["text"]):
+            if source_by_handle.get(sid, sid) not in allow["source_ids"]:
+                report.issues.append(Issue("unknown_source_mention", f"/claims/{i}/text", sid))
 
 ANCHOR_MIN_RATIO = 0.9  # provisional
 
@@ -3184,8 +3195,8 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
         # word limit at all: a long one is reported and the cited answer stands.
         report.warnings.append(Issue("answer_title_long", "/title",
                                      f"expected at most {ANSWER_TITLE_WORDS} words, got {title_words}"))
-    _check_cited_claims(step_input, allow, draft, report)
     _check_source_mentions(step_input, allow, draft, report)
+    _check_cited_claims(step_input, allow, draft, report)
     for i, limitation in enumerate(draft["limitations"]):
         for j, sid in enumerate(limitation["source_ids"]):
             if sid not in allow["source_ids"]:
@@ -3199,6 +3210,7 @@ def _check_followup(allow: dict[str, set[str]], step_input: dict[str, Any], draf
     An answer (whole or in part) carries at least one claim; anything short of a whole answer names what the given
     passages leave open. A `not_answered` outcome may still report, with anchors, what the closest passages state.
     """
+    _check_source_mentions(step_input, allow, draft, report)
     _check_cited_claims(step_input, allow, draft, report)
     classified = _check_work_classifications(step_input, allow, draft, report)
     if draft["outcome"] != "not_answered" and not draft["claims"] and not classified:

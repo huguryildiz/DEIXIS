@@ -43,7 +43,7 @@ def report(name):
 
 def replay():
     """The ranking replay's stored scores and paired differences."""
-    path = ROOT / "notes/2026-11-13-benchmark-rerank-replay/out/results.json"
+    path = ROOT / "notes/rerank-replay-results/results.json"
     return json.loads(path.read_text())
 
 

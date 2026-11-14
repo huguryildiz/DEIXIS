@@ -14,7 +14,7 @@
 /* "How this answer was built" (research/AnswerBasis.tsx): one ruled list from found down to cited; indents show subsets. */
 .answer-basis{margin:6px 0 4px;padding:14px 16px 8px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface)}
 .answer-basis h3{margin:0;color:var(--ink);font-size:13.5px;font-weight:600}
-.answer-basis-lead{margin:3px 0 10px;color:var(--ink-2);font-size:13px;line-height:1.5}
+.answer-basis-lead{margin:3px 0 12px;color:var(--ink-2);font-size:13px;line-height:1.5}
 .answer-basis-rows{margin:0;padding:0;list-style:none}
 .answer-basis-rows li{border-top:1px solid var(--line)}
 .answer-basis-rows li>:is(button,div){display:grid;grid-template-columns:minmax(0,190px) 64px minmax(0,1fr);align-items:baseline;gap:2px 12px;width:100%;padding:7px 4px;background:none;color:var(--ink-2);font-size:12.5px;line-height:1.45;text-align:left}
@@ -28,6 +28,26 @@
 .answer-basis-rows .is-level-0 .answer-basis-label{color:var(--ink);font-weight:500}
 .answer-basis-rows .is-strong .answer-basis-label{font-weight:600}
 .answer-basis-note{color:var(--muted)}
+.answer-basis-toggle{display:inline-flex;align-items:center;gap:6px;margin:0 0 0 -4px;padding:2px 4px;border:0;border-radius:5px;background:none;color:inherit;font:inherit;cursor:pointer}
+.answer-basis-toggle:hover{background:var(--hover-surface)}
+.answer-basis-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+.answer-basis-chevron{flex:none;color:var(--muted);transition:transform 150ms ease}
+.answer-basis-toggle[aria-expanded=true] .answer-basis-chevron{transform:rotate(90deg)}
+@media (prefers-reduced-motion:reduce){.answer-basis-chevron{transition:none}}
+/* The two stacked bars: where the found works went, then where the full-text candidates went. */
+.answer-basis-bar{display:grid;gap:5px;margin:0 0 12px}
+.answer-basis-bar-title{color:var(--ink-2);font-size:12.5px;font-weight:500}
+.answer-basis-bar-track{display:flex;gap:2px;height:10px;overflow:hidden;border-radius:999px}
+.answer-basis-bar-track>span{min-width:3px;flex-basis:0}
+.answer-basis-legend{display:flex;flex-wrap:wrap;gap:2px 14px;margin:0;padding:0;list-style:none;color:var(--muted);font-size:12px}
+.answer-basis-legend li{display:inline-flex;align-items:center;gap:5px}
+.answer-basis-legend b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.answer-basis-dot{width:8px;height:8px;border-radius:999px}
+:is(.answer-basis-bar-track>span,.answer-basis-dot).is-idle{background:var(--strong-line)}
+:is(.answer-basis-bar-track>span,.answer-basis-dot).is-open{background:var(--tone-uncertain)}
+:is(.answer-basis-bar-track>span,.answer-basis-dot).is-out{background:var(--tone-exclude)}
+:is(.answer-basis-bar-track>span,.answer-basis-dot).is-next{background:var(--accent)}
+:is(.answer-basis-bar-track>span,.answer-basis-dot).is-read{background:var(--tone-include)}
 @media (max-width:560px){.answer-basis-rows li>:is(button,div){grid-template-columns:minmax(0,1fr) auto}.answer-basis-note{grid-column:1/-1}.answer-basis-rows .is-level-1 .answer-basis-note{padding-left:16px}.answer-basis-rows .is-level-2 .answer-basis-note{padding-left:32px}}
 .research-counts{order:2;flex-basis:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--line);overflow:hidden}
 .research-counts button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:10px 14px;border:0;background:var(--sidebar-surface);text-align:left}
@@ -389,8 +409,9 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .step-ranking-more summary{font-size:12px}
 .step-ranking-more>.chat-arms{margin-top:8px}
 .chat-provider-totals{display:flex;flex-wrap:wrap;gap:3px 16px}
-.chat-provider-totals span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
-.chat-provider-totals .connection-icon{display:inline-flex}
+/* Each entry wraps inside the column instead of running past it; short entries still sit side by side. */
+.chat-provider-totals>span{display:block;min-width:0;max-width:100%;overflow-wrap:anywhere}
+.chat-provider-totals .connection-icon{display:inline-flex;margin-right:6px;vertical-align:-2px}
 .chat-provider-totals .connection-icon svg{width:13px;height:13px}
 /* Slice 19: an sw run's arm rows, the works no search found and the signal table; lines wrap at any width. */
 .chat-arms+.chat-arms,.chat-report-line+.chat-arms,.chat-arms+.chat-report-line{margin-top:8px}
@@ -686,3 +707,39 @@ button.step-table-link{cursor:pointer}
 .step-actions [data-slot=button]{height:28px;gap:6px;padding-inline:10px;border-radius:6px;font-size:12.5px}
 .step-how summary{color:var(--accent);cursor:pointer}
 .step-how p{margin:6px 0 0}
+/* The search phase at a glance (research/SearchSummary.tsx): route bars, field-source cards and arm tiles. */
+.search-summary-visual{display:grid;gap:8px;margin:4px 0 6px;font-size:12.5px}
+.search-summary-head{margin:6px 0 0;color:var(--muted);font-size:12px}
+.search-summary-routes,.search-summary-cards,.search-summary-tiles{margin:0;padding:0;list-style:none}
+.search-summary-routes{display:grid;gap:7px}
+.search-summary-routes li{display:grid;grid-template-columns:minmax(0,120px) minmax(0,1fr) auto;align-items:center;gap:10px}
+.search-summary-route{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--ink);overflow-wrap:anywhere}
+.search-summary-route .connection-icon svg{width:13px;height:13px}
+.search-summary-track{display:flex;gap:1px;height:8px;overflow:hidden;border-radius:999px;background:var(--line)}
+.search-summary-track>span{min-width:0}
+.search-summary-track>span:not([style*="width: 0%"]){min-width:2px}
+.search-summary-track .is-only,.search-summary-legend .is-only{background:var(--accent)}
+.search-summary-track .is-shared,.search-summary-legend .is-shared{background:var(--accent-line)}
+.search-summary-count{color:var(--muted);white-space:nowrap}
+.search-summary-count b{color:var(--ink);font-weight:600}
+.search-summary-legend{display:flex;flex-wrap:wrap;gap:2px 14px;margin:0;color:var(--muted);font-size:12px}
+.search-summary-legend span{display:inline-flex;align-items:center;gap:5px}
+.search-summary-legend i{width:8px;height:8px;border-radius:999px}
+.search-summary-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.search-summary-cards li{display:grid;gap:5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.search-summary-cards li.is-searched{border-color:var(--ok-line);background:var(--ok-surface)}
+.search-summary-card-head{display:flex;justify-content:space-between;gap:8px;color:var(--ink)}
+.search-summary-card-head>span:first-child{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.search-summary-card-head .connection-icon svg{width:13px;height:13px}
+.search-summary-cards li.is-searched .search-summary-card-head,.search-summary-cards li.is-searched .search-summary-card-text{color:var(--ok-ink)}
+.search-summary-share{height:3px;overflow:hidden;border-radius:999px;background:var(--line)}
+.search-summary-share>span{display:block;height:100%;background:var(--muted)}
+.search-summary-cards li.is-searched .search-summary-share>span{background:var(--tone-include)}
+.search-summary-card-text{color:var(--muted);font-size:12px;line-height:1.4}
+.search-summary-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.search-summary-tiles li{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:var(--hover-surface)}
+.search-summary-tiles li>span:first-child{color:var(--muted);font-size:12px}
+.search-summary-tiles li>span:last-child{color:var(--muted)}
+.search-summary-tiles b{color:var(--ink);font-size:16px;font-weight:600}
+.search-summary-more{margin-top:2px}
+@media (max-width:560px){.search-summary-routes li{grid-template-columns:minmax(0,1fr) auto}.search-summary-track{grid-column:1/-1;grid-row:2}}

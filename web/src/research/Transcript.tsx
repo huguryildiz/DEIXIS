@@ -5,6 +5,7 @@ import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
 import { broadIndexReasonText, conditionalSearchArmLabels, fieldSourceReasonText, serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
 import { ConnectionIcon } from '../components/connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
+import { SearchSummary } from './SearchSummary'
 import { ModelName } from '../components/ModelName'
 import { effortLabels, modelRoles } from '../home/Home'
 import { AnswerFlowNote } from './FlowReport'
@@ -703,6 +704,11 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
             : ''}
         </span></p>
         if (!totals && !perSource && !arms && !notFound && !fields && !broad && !scope) return null
+        // With counted works the route bars and source cards lead; the full text lines open under Details.
+        if (counts?.counted && counts.sources.length > 0) return <>{scope}
+          <SearchSummary counts={counts} unique={view.counts.funnel?.unique ?? null} fields={run.field_search?.rows ?? []} broad={run.broad_index} />
+          <details className="step-how search-summary-more"><summary>{t('Details')}</summary>{totals}{perSource}{fields}{broad}{arms}</details>
+          {notFound}</>
         return <>{scope}{totals}{perSource}{fields}{broad}{arms}{notFound}</>
       }
       case 'screen': {

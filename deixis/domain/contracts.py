@@ -3134,11 +3134,16 @@ def _check_report_review(step_input: dict[str, Any], draft: dict[str, Any],
             report.issues.append(Issue("review_claim_unknown", f"/findings/{i}/claim_key", key))
 
 
+ANSWER_TITLE_WORDS = 15  # what the answer card lays out
+
+
 def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
     title_words = _title_words(draft["title"])
-    if title_words > 15:
-        report.issues.append(Issue("answer_title_too_long", "/title",
-                                   f"expected at most 15 words, got {title_words}"))
+    if title_words > ANSWER_TITLE_WORDS:
+        # The title is the application's own label for the answer, not evidence, and a person's own title has no
+        # word limit at all: a long one is reported and the cited answer stands.
+        report.warnings.append(Issue("answer_title_long", "/title",
+                                     f"expected at most {ANSWER_TITLE_WORDS} words, got {title_words}"))
     _check_cited_claims(step_input, allow, draft, report)
     _check_source_mentions(step_input, allow, draft, report)
     for i, limitation in enumerate(draft["limitations"]):

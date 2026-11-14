@@ -135,6 +135,20 @@ def test_quote_not_found_in_the_cited_passage_rejects_the_draft_and_the_link_has
     assert (link["anchor_text"], link["anchor_match"]) == (None, None)
 
 
+def test_long_answer_title_is_a_warning_and_keeps_the_cited_answer():
+    """The title is the application's own label: an over-long one is reported, never a reason to drop the answer."""
+    step_input = STEP_INPUTS["A_answer"]
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    long_title = " ".join(f"word{i}" for i in range(contracts.ANSWER_TITLE_WORDS + 1))
+    draft["title"] = long_title
+    report = contracts.validate_model_output(step_input, draft)
+    assert report.ok and report.codes() == []
+    assert [w.code for w in report.warnings if w.code == "answer_title_long"] == ["answer_title_long"]
+    assert f"got {contracts.ANSWER_TITLE_WORDS + 1}" in next(w.message for w in report.warnings
+                                                             if w.code == "answer_title_long")
+    assert report.result["title"] == long_title  # reported, not rewritten
+
+
 def test_missing_citation_anchor_rejects_the_draft():
     step_input = STEP_INPUTS["A_answer"]
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))

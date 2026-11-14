@@ -16,7 +16,7 @@ from typing import Any, Literal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.runtime.config import (ARXIV_SOURCE_SETTING, CANDIDATE_EMBEDDING_SETTING, DEEP_SCREENING_SETTING,
+from deixis.runtime.config import (ARXIV_SOURCE_SETTING, DEEP_SCREENING_SETTING,
                                    DEFAULT_EFFORT_SETTING, FULLTEXT_FETCH_SETTING, MODEL_CONCURRENCY_MAX,
                                    MODEL_CONCURRENCY_SETTING)
 from deixis.workflow.run import fast_path
@@ -36,7 +36,6 @@ class Preferences(BaseModel):
     fulltext_fetch: Literal["auto", "off"] | None = None
     arxiv_source: Literal["auto", "off"] | None = None
     deep_screening: Literal["on", "off"] | None = None
-    candidate_embedding: Literal["on", "off"] | None = None
     model_concurrency: int | None = Field(default=None, ge=1, le=MODEL_CONCURRENCY_MAX)
     language: Literal["en", "tr"] | None = None
     theme: Literal["system", "light", "dark"] | None = None
@@ -58,8 +57,6 @@ def register_preference_routes(app) -> None:
             # Read when a discovery is queued; the windows are the policy's own constant, by depth.
             "deep_screening": settings.effective_deep_screening(),
             "deep_screening_windows": {effort: fast_path.screened_once(effort) for effort in fast_path.DEEP_SCREENING_EFFORTS},
-            # Read when a discovery is queued; off for the pilot, so the ranking has no embedding signal.
-            "candidate_embedding": settings.effective_candidate_embedding(),
             "model_concurrency": settings.effective_model_concurrency(),
             "model_concurrency_max": MODEL_CONCURRENCY_MAX,
             "language": language if (language := store.setting(UI_LANGUAGE_SETTING)) in LANGUAGES else None,
@@ -83,7 +80,7 @@ def register_preference_routes(app) -> None:
                 store.set_setting_if_unset({"language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING}[name], value)
             return view(request)
         keys = {"default_effort": DEFAULT_EFFORT_SETTING, "fulltext_fetch": FULLTEXT_FETCH_SETTING,
-                "deep_screening": DEEP_SCREENING_SETTING, "candidate_embedding": CANDIDATE_EMBEDDING_SETTING,
+                "deep_screening": DEEP_SCREENING_SETTING,
                 "arxiv_source": ARXIV_SOURCE_SETTING, "model_concurrency": MODEL_CONCURRENCY_SETTING,
                 "language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING, "update_check": update_check.SETTING}
         for name, value in changes.items():

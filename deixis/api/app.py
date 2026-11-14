@@ -32,7 +32,7 @@ from deixis.tools import local_tools
 from deixis.runtime.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
-from deixis.documents import embeddings, rerankers
+from deixis.documents import rerankers
 from deixis.documents import figures
 from deixis.documents.identity import MATCH_TEXT_CHARS
 from deixis.documents import builtin_catalog, local_embedding
@@ -1031,7 +1031,6 @@ def create_app(
         embedder = local_embedder if local_embedder is not None else local_embedding.LocalModels(builtin_paths)
         builtin = LocalModelService(builtin_paths, embedder, http)
         await builtin.start()  # recovers an install a closed DEIXIS left running; the files' last checks are on disk
-        local_embedding.register(embedder)
         from deixis.workflow.read.background_fetch import FetchSlots
         limiter = ModelCallLimiter(settings.effective_model_concurrency())
         app.state.limiter = limiter  # Settings → Research changes its ceiling while DEIXIS runs
@@ -1932,45 +1931,6 @@ def create_app(
     async def cancel_local_tool_install(tool_id: str, request: Request) -> dict[str, Any]:
         return {"job": request.app.state.local_tools.cancel(tool_id)}
 
-    async def semantic_search_view(request: Request, refresh: bool = False) -> dict[str, Any]:
-        saved = store_of(request).setting("semantic_search")
-        provider, model = embeddings.chosen(saved)
-        # A built-in choice saved for a model this DEIXIS no longer runs (bge-small, the earlier PyTorch Qwen3, or no
-        # model): kept as saved, never remapped; runs fail with builtin_model_changed until a catalog model is chosen.
-        changed = provider == "builtin" and embeddings.builtin_model(model) is None
-        return {"provider": provider, "model": model, "explicit": saved is not None,
-                "builtin_model_changed": {"from": (saved or {}).get("model"), "to": None} if changed else None,
-                "options": embeddings.options(await request.app.state.local_tools.snapshot(refresh),
-                                              request.app.state.builtin.options("embedding"))}
-
-    @app.get("/api/semantic-search")
-    async def get_semantic_search(request: Request) -> dict[str, Any]:
-        return await semantic_search_view(request)
-
-    @app.put("/api/semantic-search")
-    async def put_semantic_search(body: SemanticChoice, request: Request) -> dict[str, Any]:
-        """Save the embedding provider for later answers; a provider or model not offered now is refused, never replaced."""
-        tools = await request.app.state.local_tools.snapshot(refresh=body.provider in ("ollama", "lm_studio"))
-        offered = embeddings.options(tools, request.app.state.builtin.options("embedding"))
-        if body.provider == "builtin":
-            option = next((o for o in offered if o["provider"] == "builtin" and o["model"] == body.model), None)
-            if option is None:
-                raise HTTPException(422, "Choose a built-in model" if body.model is None
-                                    else f"Model '{body.model}' is not a built-in model of this DEIXIS")
-        else:
-            option = next(o for o in offered if o["provider"] == body.provider)
-        if not option["available"]:
-            raise HTTPException(422, option["reason"])
-        model = None
-        if body.provider != "off":
-            model = body.model or (option["models"][0] if body.provider in ("gemini", "openai", "voyage", "cohere") else None)
-            if model is None:
-                raise HTTPException(422, "Choose an embedding model")
-            if model not in option["models"]:
-                raise HTTPException(422, f"Model '{model}' is not offered by {body.provider}")
-        store_of(request).set_setting("semantic_search", {"provider": body.provider, "model": model})
-        return await semantic_search_view(request)
-
     def reranking_view(request: Request) -> dict[str, Any]:
         options = rerankers.options(request.app.state.builtin.options("reranker"))
         stored = store_of(request).setting(rerankers.SETTING)
@@ -2051,13 +2011,6 @@ def create_app(
         except ServiceError as exc:
             raise service_error(exc) from exc
         return await request.app.state.builtin.status()
-
-    @app.delete("/api/semantic-search/builtin/legacy")
-    async def remove_builtin_legacy(request: Request) -> dict[str, Any]:
-        try:
-            return await request.app.state.builtin.remove_legacy()
-        except ServiceError as exc:
-            raise service_error(exc) from exc
 
     # The institution's proxy address (slice 18a): links open through it in the person's browser; DEIXIS never
     # sends a request through it. Empty means links open directly.
@@ -2224,7 +2177,7 @@ def create_app(
                 broad_index_arm=settings.broad_index_arm,
                 date_scope=years,
                 lexical_exclusion=settings.lexical_gate == "on",
-                candidate_embedding=settings.effective_candidate_embedding() == "on"),
+),
                                                         store.research(research_id)["intent"])
             if settings.benchmark_list_barrier:
                 # Benchmark only (M3's gate): outside the fast-path policy, so its hash and ledger do not move.

@@ -7,7 +7,7 @@ import re
 from functools import cache
 from typing import Any
 
-from deixis.documents import embeddings, local_embedding, pdf
+from deixis.documents import pdf
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.contracts import SOURCE_MENTION, citation_handles, locate_anchor, name_sources_in_prose, step_output_schema
 from deixis.domain.numbers import quoted_measures
@@ -831,6 +831,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     ctx = queue_context(store, research_id)
     probe = probe_rules.probe_set(ctx)
     scope_view = dict(scope)
+    scope_view["english_question"] = store.english_question(research_id, scope["revision"])
+    scope_view["needs_english_question"] = not english_question_rules.is_english(scope["question"], scope.get("language_hint"))
     # Each seed PDF in canonical order with what it did in this revision's search; never its excerpt's text.
     scope_view["seeds"] = [{key: seed[key] for key in SEED_VIEW_KEYS} | {"passage_count": len(seed["passages"]), "use": use}
                            for seed, use in zip(scope["seeds"], _seed_uses(store, research_id, scope))]
@@ -1050,9 +1052,6 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     for a in answers:
         if first and a["report_title"] is not None:
             a["report_title"] = first["report_title"]
-    # Similarity from the chosen semantic search model only; with semantic search off, no source has one.
-    provider, model = embeddings.chosen(store.setting("semantic_search"))
-    similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
     answered_in_queue = queue_answers(store, research_id)
     sources = []
     work_flags = store.research_works_retracted(research_id)
@@ -1065,13 +1064,11 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     for row in conn.execute(
         "SELECT m.added_by, m.created_at AS added_at, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
         " (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
-        " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.id AS candidate_id, c.rank, c.scope_revision AS found_in_revision,"
-        " (SELECT ss.similarity FROM source_similarities ss WHERE ss.research_id = m.research_id AND ss.source_version_id = m.source_version_id"
-        "  AND ss.scope_revision = c.scope_revision AND ss.model = ?) AS similarity"
+        " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.id AS candidate_id, c.rank, c.scope_revision AS found_in_revision"
         " FROM corpus_memberships m JOIN source_versions s ON s.id = m.source_version_id"
         " JOIN selections sel ON sel.research_id = m.research_id AND sel.source_version_id = m.source_version_id"
         " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
-        " WHERE m.research_id = ? AND m.removed_at IS NULL ORDER BY m.created_at, c.rank", (similarity_model, research_id)
+        " WHERE m.research_id = ? AND m.removed_at IS NULL ORDER BY m.created_at, c.rank", (research_id,)
     ):
         svid = row["id"]
         # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken.
@@ -1137,7 +1134,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
             # The version's own flag, and the work's: a preprint of a retracted article is marked too.
             "is_retracted": _retracted(row["is_retracted"]), "work_is_retracted": work_flags.get(row["work_id"]),
-            "added_by": row["added_by"], "added_at": row["added_at"], "rank": row["rank"], "similarity": row["similarity"],
+            "added_by": row["added_by"], "added_at": row["added_at"], "rank": row["rank"], "similarity": None,
             # Whether an answer can read this version's PDF pages rather than its abstract.
             "has_pdf_text": bool(assets) and store.has_pdf_text(svid),
             # Some of that text was read with OCR from scanned pages and is labelled so.
@@ -1296,8 +1293,6 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "branched_from": view_branch,
             "run_total": run_total, "study_table_pending": study_table_pending, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
-            # The semantic search arm for this research's current revision (slice 21); no count of what will be sent.
-            "semantic": semantic_view(store, research_id, scope),
             # The probe set's columns and the probes no arm found (slice 19).
             "probes": probe_rules.probes_view(store, research_id, probe),
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
@@ -1307,36 +1302,6 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             # `reviewer` above already give the models in effect now.
             "model_changes": store.model_changes(research_id)}
 
-
-def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, Any]:
-    """The provider semantic search uses, and whether its arm runs for this revision (decision 10).
-
-    `arm`: "off" (no provider), "builtin_model_changed" (a built-in choice saved for a model this DEIXIS no longer
-    runs), "english_question_missing" (a built-in Qwen3 model, a question not in English and no sentence saved),
-    "not_installed" (the built-in model is chosen but not ready now), else "on". The provider is what Settings say now;
-    a run freezes its own in its step."""
-    provider, model = embeddings.chosen(store.setting("semantic_search"))
-    embedder = embeddings.Embedder(provider, model) if provider != "off" and model else None
-    stored_model = embedder.stored_model if embedder else None
-    row = store.english_question(research_id, scope["revision"])
-    needs = bool(embedder and embeddings.english_only(embedder)
-                 and not english_question_rules.is_english(scope["question"], scope.get("language_hint")))
-    catalog_model = embeddings.builtin_model(model) if provider == "builtin" else None
-    if stored_model is None:
-        arm = "off"
-    elif provider == "builtin" and catalog_model is None:
-        arm = "builtin_model_changed"
-    elif needs and row is None:
-        arm = "english_question_missing"
-    elif provider == "builtin" and not local_embedding.model_available(catalog_model.id):
-        arm = "not_installed"
-    else:
-        arm = "on"
-    return {"provider": provider, "stored_model": stored_model, "arm": arm,
-            "english_question": {"text": row["text"], "origin": row["origin"]} if row else None,
-            "needs_english_question": needs,
-            # Whether the search words are read from the question itself; else from the English sentence.
-            "question_english": english_question_rules.is_english(scope["question"], scope.get("language_hint"))}
 
 
 def _given_depth(given: dict[str, Any]) -> dict[str, int]:

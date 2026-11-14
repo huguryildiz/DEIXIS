@@ -1,4 +1,4 @@
-"""Cohere embeddings and the Cohere, Jina AI and ZeroEntropy rerankers (model-free, no paid call).
+"""The Cohere, Jina AI and ZeroEntropy rerankers (model-free, no paid call).
 
 Every endpoint is mocked (httpx.MockTransport); no request leaves the test. Passing shows request shapes, routing,
 stored identities, keys and how a reply maps back to its texts and records. It does not show that any of these
@@ -11,7 +11,7 @@ import json
 import httpx
 import pytest
 
-from deixis.documents import embeddings, rerankers
+from deixis.documents import rerankers
 
 KEY = "SYNTHETIC-provider-key"
 TOOLS = {"tools": [{"id": i, "name": i, "running": False, "installed": False, "models": []} for i in ("ollama", "lm_studio")]}
@@ -19,9 +19,6 @@ TOOLS = {"tools": [{"id": i, "name": i, "running": False, "installed": False, "m
 
 def mocked(handler):
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-
-# ---- Cohere embeddings -------------------------------------------------------------------------------
 
 
 # ---- the new rerankers --------------------------------------------------------------------------------

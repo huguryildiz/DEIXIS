@@ -51,7 +51,6 @@
 .source-status .source-fact.is-retracted{color:var(--warn-ink)}
 .source-fact.is-cited{--fact:var(--accent)}
 .source-fact.is-unstated{--fact:var(--muted)}
-.source-fact.is-similarity{--fact:var(--attr-similarity);font-variant-numeric:tabular-nums;cursor:help}
 .legacy-research .proposal{font-size:12px!important;margin:8px 0 0!important;line-height:1.55}
 .legacy-research .proposal.is-model{display:flex;gap:8px;margin-top:9px!important;padding:0;border-radius:0;background:none;color:var(--ink-2);font-size:12.5px!important;line-height:1.5}
 .proposal em{font-style:normal;color:var(--ink);font-weight:600}
@@ -61,7 +60,7 @@
 .verdict.is-uncertain{--pill:var(--tone-uncertain)}
 .legacy-research .proposal.is-stale{padding-left:9px;border-left:2px solid var(--accent);color:var(--ink)}
 .proposal span span{font-size:11px}
-.proposal>span:not(.proposal-tag){min-width:0}
+.proposal>span{min-width:0}
 .proposal.ocr-note{display:flex;align-items:flex-start;gap:6px;color:var(--muted)}
 .proposal.ocr-note>svg{flex:none;margin:3px 0 0;color:var(--muted)}
 .pdf-ready-head .ocr-note{margin-top:6px!important}
@@ -150,7 +149,6 @@
 .source-focus button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 /* Semantic search notes in a research (slice 21): the conditional line under the answer and table buttons, the
    built-in model's English sentence and its form at the top of the Sources tab. */
-.semantic-upload-note{margin:6px 0 0;max-width:76ch;color:var(--muted);font-size:12px;line-height:1.5}
 .english-question-line{margin:0 0 10px;max-width:76ch;color:var(--muted);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
 .english-question{display:grid;gap:8px;margin:0 0 14px;max-width:76ch}
 .english-question form{display:flex;flex-wrap:wrap;align-items:center;gap:8px}

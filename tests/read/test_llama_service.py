@@ -1,5 +1,4 @@
-"""Downloading, checking and removing the built-in models one at a time, the catalog's Settings routes, and the
-earlier PyTorch install (`workflow/run/local_embedding_service.py`, `api/app.py`).
+"""Downloading, checking and removing built-in rerankers one at a time through the model service.
 
 The runtime archive and the model files are SYNTHETIC, served through httpx.MockTransport as GitHub and Hugging Face
 would; the archive's `llama-server` is `fake_llama_server.py`. A second process holding a lock is a real child process.
@@ -22,7 +21,7 @@ from deixis.workflow.run.local_embedding_service import LocalModelService
 from builtin_helpers import Downloads, fake_catalog, install_model, install_runtime, pin_tarball, tarball
 
 
-EMB, RER = "qwen3-embedding-0.6b", "qwen3-reranker-0.6b"
+RER_LARGE, RER = "qwen3-reranker-4b", "qwen3-reranker-0.6b"
 
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="the built-in models are POSIX only in this slice")
@@ -60,16 +59,16 @@ def test_an_install_puts_the_runtime_then_the_model_in_place_checks_it_and_recor
     paths = setup["paths"]
 
     async def scenario():
-        job = await install(service, EMB)
+        job = await install(service, RER_LARGE)
         status = await service.status()
         await service.stop()
         return job, status
     job, status = asyncio.run(scenario())
-    assert (job["status"], job["model"], job["step"], job["step_name"]) == ("succeeded", EMB, 3, "start_check"), job["output"]
-    assert job["bytes_done"] == job["bytes_total"] == len(setup["bodies"][EMB]) + llama_runtime.asset().bytes
-    assert paths.runtime.installed() and paths.model_file(builtin_catalog.get(EMB)).read_bytes() == setup["bodies"][EMB]
-    assert service.models.available(EMB) and not service.models.available(RER)
-    card = next(m for m in status["models"] if m["id"] == EMB)
+    assert (job["status"], job["model"], job["step"], job["step_name"]) == ("succeeded", RER_LARGE, 3, "start_check"), job["output"]
+    assert job["bytes_done"] == job["bytes_total"] == len(setup["bodies"][RER_LARGE]) + llama_runtime.asset().bytes
+    assert paths.runtime.installed() and paths.model_file(builtin_catalog.get(RER_LARGE)).read_bytes() == setup["bodies"][RER_LARGE]
+    assert service.models.available(RER_LARGE) and not service.models.available(RER)
+    card = next(m for m in status["models"] if m["id"] == RER_LARGE)
     assert (card["state"], card["available"], card["last_full_check"]["passed"]) == ("ready", True, True)
     assert next(m for m in status["models"] if m["id"] == RER)["state"] == "not_installed"
     assert status["runtime"]["installed"] and status["runtime"]["tag"] == llama_runtime.TAG
@@ -83,14 +82,14 @@ def test_an_install_puts_the_runtime_then_the_model_in_place_checks_it_and_recor
 
 @pytest.mark.parametrize("wrong", ["sha"])
 def test_a_model_file_of_another_size_or_digest_fails_and_leaves_nothing(setup, wrong):
-    model = builtin_catalog.get(EMB)
-    body = setup["bodies"][EMB]
+    model = builtin_catalog.get(RER_LARGE)
+    body = setup["bodies"][RER_LARGE]
     setup["downloads"].override[model.url] = body + b"x" if wrong == "size" else bytes(reversed(body))
     service = service_of(setup)
-    job = asyncio.run(install(service, EMB))
+    job = asyncio.run(install(service, RER_LARGE))
     assert job["status"] == "failed" and "[could_not_run]" in job["output"]
     assert not setup["paths"].model_file(model).exists() and list(setup["paths"].root.rglob("*.part")) == []
-    assert service.state(EMB) == "failed" and not service.models.available(EMB)
+    assert service.state(RER_LARGE) == "failed" and not service.models.available(RER_LARGE)
 
 
 def link(name, target, kind=tarfile.SYMTYPE):
@@ -107,7 +106,7 @@ def test_an_unsafe_or_wrong_archive_is_refused_and_nothing_is_unpacked(setup, mo
     archive = tarball(entries)
     pin_tarball(monkeypatch, archive)
     setup["downloads"].archive = archive
-    job = asyncio.run(install(service_of(setup), EMB))
+    job = asyncio.run(install(service_of(setup), RER_LARGE))
     assert job["status"] == "failed", job
     root = setup["paths"].runtime.root
     assert not setup["paths"].runtime.installed() and not (root / llama_runtime.TAG).exists()
@@ -117,29 +116,29 @@ def test_an_unsafe_or_wrong_archive_is_refused_and_nothing_is_unpacked(setup, mo
 def test_a_dead_install_is_marked_failed_at_start_and_its_parts_removed(setup):
     paths = setup["paths"]
     paths.root.mkdir(parents=True)
-    paths.job_file.write_text(json.dumps({"status": "running", "model": EMB, "output": "SYNTHETIC"}))
-    paths.model_dir(EMB).mkdir(parents=True)
-    (paths.model_dir(EMB) / "f.part").write_bytes(b"x")
+    paths.job_file.write_text(json.dumps({"status": "running", "model": RER_LARGE, "output": "SYNTHETIC"}))
+    paths.model_dir(RER_LARGE).mkdir(parents=True)
+    (paths.model_dir(RER_LARGE) / "f.part").write_bytes(b"x")
     service = service_of(setup)
     asyncio.run(service.start())
     assert service.read_job()["status"] == "failed" and "stopped when DEIXIS closed" in service.read_job()["output"]
-    assert not (paths.model_dir(EMB) / "f.part").exists()
+    assert not (paths.model_dir(RER_LARGE) / "f.part").exists()
 
 
 def test_check_files_finds_a_changed_byte(setup):
     paths = setup["paths"]
     install_runtime(paths)
-    install_model(paths, EMB)
+    install_model(paths, RER_LARGE)
     service = service_of(setup)
-    assert service.state(EMB) == "ready"
-    target = paths.model_file(builtin_catalog.get(EMB))
+    assert service.state(RER_LARGE) == "ready"
+    target = paths.model_file(builtin_catalog.get(RER_LARGE))
     data = bytearray(target.read_bytes())
     data[0] ^= 1
     st = os.stat(target)
     target.write_bytes(bytes(data))
     os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns))  # same size and time: only a full check sees it
-    status = asyncio.run(service.check(EMB))
-    card = next(m for m in status["models"] if m["id"] == EMB)
+    status = asyncio.run(service.check(RER_LARGE))
+    card = next(m for m in status["models"] if m["id"] == RER_LARGE)
     assert (card["state"], card["last_full_check"]["passed"]) == ("files_do_not_match", False)
 
 

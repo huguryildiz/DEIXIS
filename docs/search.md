@@ -65,8 +65,6 @@ The chain starts from a matched seed PDF if there is one, else from the work the
 
 The run records why each planned source was or was not searched. The Scopus sub-topic search and Semantic Scholar's bulk search are off: they read no records.
 
-**Candidate embedding** is off unless you turn it on in Settings. When it is on, an embedding model embeds each record's title and abstract as it arrives, and the ranking gains an embedding signal.
-
 **Missing abstracts** are looked up before the reranker runs. For works in the reranker's window that have a DOI and no abstract, the run asks Semantic Scholar, then Crossref, then Scopus when it is set up. This round covers at most 400 works within 8 seconds.
 
 ## Ranking
@@ -82,7 +80,6 @@ The ranking orders the pool. It removes nothing and decides nothing about releva
 - `tfidf`: text likeness to your seeds, from TF-IDF word vectors (word counts weighted by rarity). It needs seed PDFs or works you included.
 - `graph`: citation links to seeds. Its seeds are the works you included, filled up to 15 with works from the top of the `bm25` and `blocks` fusion. Seed PDFs are added on top, and each work counts only the seed PDF nearest to it.
 - `joint`: whether the compared terms appear together. It runs only for comparison questions.
-- `embedding`: similarity to the question. It runs only when candidate embedding is on.
 
 A signal that cannot run is left out, and the run records why. A work a signal cannot score is ranked last in that signal.
 
@@ -195,7 +192,7 @@ The plan, search and ranking times are the same at every depth. Read and answer 
 | Plan stage | 35 s | Recorded allocation. Nothing is cut | Live Quick plans took 29 to 38 s in six runs; one took 72 s |
 | Search stage | 14 s | Search requests stop at this deadline | 90th percentile of stored search times |
 | Search minimum | 10 s | The search stage never gets less than this from its own start | Measured keyword pages took 1.1 to 1.8 s each |
-| Ranking stage | 15 s | Chaining, embedding, lookups and the reranker work inside it | 90th percentile of stored ranking times |
+| Ranking stage | 15 s | Chaining, lookups and the reranker work inside it | 90th percentile of stored ranking times |
 | Reranker allowance | 3 s | Least time the reranker gets, even when it must run past the ranking cutoff | 95th percentile of measured Voyage reranks over 400 works |
 | Abstract-read ceiling | 60 s | Longest the run waits for the model's abstract reads of the top N | A ceiling against a hung call, not a measured need |
 
@@ -242,7 +239,7 @@ A run keeps the rules it froze when you started it. The policy, with its hash, i
 
 ## Limits
 
-- Ranks, embeddings, cited-by counts, reranker scores and model screening are priority signals. They are not relevance verdicts.
+- Ranks, cited-by counts, reranker scores and model screening are priority signals. They are not relevance verdicts.
 - A low place does not mean a work is irrelevant. It does not say whether an earlier run read the work.
 - Found, screened, read in full, given to the model and cited are separate counts. A large pool says little about how much the run read.
 - OpenAlex keyword search does not match full text. Only the plain phrase searches can match the full text OpenAlex holds.
@@ -257,7 +254,7 @@ A run keeps the rules it froze when you started it. The policy, with its hash, i
 - [workflow/search/search_plan.py](../deixis/workflow/search/search_plan.py), [workflow/search/search_query.py](../deixis/workflow/search/search_query.py), [workflow/search/vocabulary.py](../deixis/workflow/search/vocabulary.py), [workflow/search/english_question.py](../deixis/workflow/search/english_question.py), [workflow/search/protocol.py](../deixis/workflow/search/protocol.py): the model's plan, term counts, question words, translation, the frozen protocol
 - [workflow/search/seed_match.py](../deixis/workflow/search/seed_match.py), [workflow/search/date_scope.py](../deixis/workflow/search/date_scope.py): seed PDF matching, the years a question states
 - [workflow/search/search.py](../deixis/workflow/search/search.py), [workflow/search/routing.py](../deixis/workflow/search/routing.py), [workflow/search/completion.py](../deixis/workflow/search/completion.py), [workflow/search/mesh.py](../deixis/workflow/search/mesh.py): the search stage, field source and Scopus choice, Semantic Scholar completion, PubMed headings
-- [workflow/search/phrase_search.py](../deixis/workflow/search/phrase_search.py), [workflow/search/fast_chain.py](../deixis/workflow/search/fast_chain.py), [workflow/search/fast_embedding.py](../deixis/workflow/search/fast_embedding.py): short phrase searches, citation chaining, candidate embedding
+- [workflow/search/phrase_search.py](../deixis/workflow/search/phrase_search.py), [workflow/search/fast_chain.py](../deixis/workflow/search/fast_chain.py): short phrase searches and citation chaining
 - [workflow/search/ranking.py](../deixis/workflow/search/ranking.py), [workflow/search/small_batch.py](../deixis/workflow/search/small_batch.py), [workflow/search/preselect.py](../deixis/workflow/search/preselect.py), [documents/rerankers.py](../deixis/documents/rerankers.py): signals, fusion, second pass, the reranker window and blend, the frozen list
 - [workflow/search/lookups.py](../deixis/workflow/search/lookups.py), [providers/pacing.py](../deixis/providers/pacing.py): abstract lookups, Semantic Scholar pacing
 - [workflow/read/read.py](../deixis/workflow/read/read.py), [workflow/screen/abstract_stage.py](../deixis/workflow/screen/abstract_stage.py), [workflow/read/adjudication.py](../deixis/workflow/read/adjudication.py), [workflow/read/background_fetch.py](../deixis/workflow/read/background_fetch.py), [workflow/screen/queue.py](../deixis/workflow/screen/queue.py): screening, full-text reading, background download, the screening queue

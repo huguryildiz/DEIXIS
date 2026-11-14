@@ -154,10 +154,10 @@ def roles(literature=("deepseek", "deepseek-flash"), answer=("deepseek", "deepse
 
 
 def estimate(depth="standard", **kwargs):
-    return spend_estimate.estimate(skill.load_skill_package(), depth, roles(**kwargs), reading_on=True, embedding_provider="builtin")
+    return spend_estimate.estimate(skill.load_skill_package(), depth, roles(**kwargs), reading_on=True)
 
 
-def test_the_estimate_route_reads_the_embedding_choice(tmp_path):
+def test_the_estimate_route_reads_the_requested_effort(tmp_path):
     with TestClient(served(tmp_path, PaidAdapter())) as raw:
         client = session(raw)
         choice = {"connection": "deepseek", "model": "deepseek-flash", "reasoning_effort": None}
@@ -165,7 +165,7 @@ def test_the_estimate_route_reads_the_embedding_choice(tmp_path):
         response = client.post("/api/spend/estimate", json=body)
         assert response.status_code == 200, response.text
         data = response.json()
-        assert data["usd"][0] < data["usd"][1] and data["embedding"]["included"] is False
+        assert data["usd"][0] < data["usd"][1] and "embedding" not in data
         assert client.post("/api/spend/estimate", json=body | {"effort": "huge"}).status_code == 422
 
 

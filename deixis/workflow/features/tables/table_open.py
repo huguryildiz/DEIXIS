@@ -103,37 +103,3 @@ def open_table(store: Any, research_id: str, question: str, key: str) -> dict[st
         record["refused"] = refused
     store._event(research_id, "study_table_opened", record)
     return record
-
-
-def accept_proposed(store: Any, research_id: str, table_id: str, run_id: str, key: str) -> dict[str, Any]:
-    """Add the columns the run's proposal step wrote, beside the question's own. Returns what was added.
-
-    The proposal only adds: a column whose name is already in the table is skipped, so neither a person's column nor
-    one of the question's own is replaced by a model's. Recorded as accepted by the app, as the chain records it.
-    """
-    tables = TableStore(store)
-    suggestion = tables.column_suggestions(table_id)
-    added, skipped = [], []
-    with transaction(store.conn):
-        if store.conn.execute("SELECT 1 FROM events WHERE run_id = ? AND type = 'study_table_columns_accepted'",
-                              (run_id,)).fetchone():
-            return {"table_id": table_id, "replayed": True}  # a resumed run: already accepted and recorded
-        if suggestion is not None and suggestion["run_id"] == run_id:
-            names = {column["name"].casefold() for column in tables._columns(table_id)}
-            for index, column in enumerate(suggestion["columns"]):
-                spec = {field: column.get(field)
-                        for field in ("name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint")}
-                if str(spec["name"] or "").strip().casefold() in names:
-                    skipped.append({"name": spec["name"], "reason": "a column of this name is already in the table"})
-                    continue
-                try:
-                    added.append(tables.add_column(research_id, table_id, spec, tables._table(research_id, table_id)["version"],
-                                                   f"{key}:proposed:{index}", origin="model_suggestion",
-                                                   suggestion_step_id=suggestion["step_id"], accepted_by="automatic"))
-                    names.add(str(spec["name"]).strip().casefold())
-                except InvalidTableInput as exc:
-                    skipped.append({"name": spec["name"], "reason": str(exc)})
-        record = {"table_id": table_id, "accepted_by": "automatic", "reviewed_by_person": False,
-                  "added": len(added), "skipped": skipped}
-        store._event(research_id, "study_table_columns_accepted", record, run_id)
-    return record

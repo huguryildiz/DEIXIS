@@ -22,7 +22,6 @@ import './EvidenceTable.css'
 import '../lineage/lineage.css'
 import { Notice } from '../components/Notice'
 import { focusWhenLost } from '../lib/focus'
-import { UploadedTextNote } from '../components/SemanticNotes'
 import { accessLabels, comparisonText, downloadTableCsv, hasValue, reportGate, revisionText, stateLabels, stateText } from './tableCsv'
 
 // The Evidence table panel (mockup `evtable()`, P21-P29): a table whose rows are source versions and whose
@@ -165,7 +164,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   const [discarded, setDiscarded] = useState<string[]>([])
   const [focus, setFocus] = useState<[number, number]>([0, 0])
   const [cancelling, setCancelling] = useState<Run | null>(null)
-  // How the grid shows its rows on this screen only: a sort (the source's similarity, year or key, or a column's values)
+  // How the grid shows its rows on this screen only: a sort (the source's year or key, or a column's values)
   // and a text filter. Neither changes the stored table, its export or a report.
   const [sort, setSort] = useState<{ key: string; desc: boolean } | null>(null)
   const [rowFilter, setRowFilter] = useState('')
@@ -314,7 +313,6 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   const sourceById = new Map(view.sources.map(s => [s.source_version_id, s]))
   // A row's sort value: a number or lower-case text; null (no score, no year, an empty cell) always sorts last.
   const sortValue = (row: TableRow, key: string): number | string | null => {
-    if (key === 'similarity') return sourceById.get(row.source_version_id)?.similarity ?? null
     if (key === 'year') return row.year
     if (key === 'key') return (row.source_key ?? row.title).toLocaleLowerCase()
     const col = columns.find(c => c.id === key)
@@ -327,7 +325,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
     ...columns.map(col => { const current = cells.get(`${col.id}:${row.source_version_id}`)?.current; return current ? revisionText(col, current) : '' })]
     .some(x => x != null && String(x).toLocaleLowerCase().includes(query))
   const shown = rows.filter(matches)
-  if (sort && (['similarity', 'year', 'key'].includes(sort.key) || columns.some(c => c.id === sort.key))) {
+  if (sort && (['year', 'key'].includes(sort.key) || columns.some(c => c.id === sort.key))) {
     const values = new Map(shown.map(row => [row.source_version_id, sortValue(row, sort.key)]))
     shown.sort((a, b) => {
       const x = values.get(a.source_version_id) ?? null, y = values.get(b.source_version_id) ?? null
@@ -482,7 +480,6 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
     {runLine(fillProgress ? [t('{done} / {n} sources', fillProgress)] : columnProgress ? [t('{column}: {done} / {n} cells', { column: columns.find(c => c.id === columnRecheck?.target?.column_id)?.name ?? '', ...columnProgress })] : suggesting ? [t('From the question and the rows’ abstracts')] : [])}
     {cancelDialog}
     {(fillable || (activeRun && !tableRun) || estimate.sources_without_text > 0 || estimate.sources_beyond_limit > 0 || columns.some(c => c.accepted_by === 'automatic')) && <div className="table-notes">
-      {fillable && <UploadedTextNote semantic={view.semantic} />}
       {((activeRun && !tableRun) || estimate.sources_without_text > 0 || estimate.sources_beyond_limit > 0) && <p className="foot-note evidence-toolbar-note">
         {[activeRun && !tableRun && t('Model actions are off while a run is active.'),
           estimate.sources_without_text > 0 && t('{n} of the sources to fill have no stored text; they get “No text” without a model call.', { n: estimate.sources_without_text }),
@@ -537,16 +534,15 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
         <div className="tbl-wrap evidence-grid-wrap">
           <table ref={grid} className="evidence-grid" role="grid" aria-label={tableTitle(table.table.title, researchHeading(view))} aria-describedby="evidence-grid-keys" onKeyDown={moveFocus}>
             <thead><tr>
-              <th scope="col" className="evidence-corner" aria-sort={sort && ['similarity', 'year', 'key'].includes(sort.key) ? (sort.desc ? 'descending' : 'ascending') : undefined}>
+              <th scope="col" className="evidence-corner" aria-sort={sort && ['year', 'key'].includes(sort.key) ? (sort.desc ? 'descending' : 'ascending') : undefined}>
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<button type="button" className="th-b evidence-col-head" />}>
-                    <span>{t('Source')}</span>{sortIcon('similarity') ?? sortIcon('year') ?? sortIcon('key')}<ChevronDown size={13} aria-hidden />
+                    <span>{t('Source')}</span>{sortIcon('year') ?? sortIcon('key')}<ChevronDown size={13} aria-hidden />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="table-menu">
                     <DropdownMenuGroup>
                       <DropdownMenuLabel>{t('Sort rows')}</DropdownMenuLabel>
-                      {([['similarity', true, t('Similarity, highest first'), t('The embedding score the search ranked with; not a relevance judgment.')],
-                        ['year', true, t('Year, newest first'), null], ['year', false, t('Year, oldest first'), null], ['key', false, t('Source key, A → Z'), null]] as const).map(([key, desc, label, note]) =>
+                      {([['year', true, t('Year, newest first'), null], ['year', false, t('Year, oldest first'), null], ['key', false, t('Source key, A → Z'), null]] as const).map(([key, desc, label, note]) =>
                         <DropdownMenuItem key={`${key}:${desc}`} onClick={() => setSort({ key, desc })}>
                           {sort?.key === key && sort.desc === desc ? <Check size={15} aria-hidden /> : <span className="w-[15px]" aria-hidden />}<span>{label}{note && <small>{note}</small>}</span></DropdownMenuItem>)}
                       <DropdownMenuItem disabled={!sort} onClick={() => setSort(null)}>{!sort ? <Check size={15} aria-hidden /> : <span className="w-[15px]" aria-hidden />}<span>{t('Table order')}</span></DropdownMenuItem>
@@ -596,7 +592,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <span className="src-m evidence-row-meta">{[row.year, versionText(row.version_label), sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })].filter(Boolean).join(' · ')}</span>
+                  <span className="src-m evidence-row-meta">{[row.year, versionText(row.version_label)].filter(Boolean).join(' · ')}</span>
                   <DepthBadge depth={row.access_level === 'pdf_available' ? 'full_text' : row.access_level} label={t(accessLabels[row.access_level])} />
                   <span className="src-m evidence-row-state">{row.report_membership === 'abstract_only' ? t('Undecided in Sources · in the report, read from the abstract only') : row.report_membership === 'full_text_read' ? t(row.selection_state === 'excluded' ? 'Excluded in Sources · in the report, read in full, did not meet the whole criterion' : 'Undecided in Sources · in the report, read in full, did not meet the whole criterion') : row.selection_state && t(rowSelectionLabels[row.selection_state])}</span>
                 </th>

@@ -110,6 +110,7 @@ def manifest(n=61, priority=()):
 def test_fused_order_and_manifest_are_exactly_replayable():
     listing = small_batch.build_list(manifest())
     stored = json.loads(json.dumps(listing))
+    assert "embedding" in small_batch.replay(stored["manifest"])["ranks"]
     assert stored["manifest_hash"] == canonical.sha256_hex(stored["manifest"])
     assert stored["automatic_order"] == small_batch.replay(stored["manifest"])["fused"]
     assert stored["order_hash"] == canonical.sha256_hex(stored["order"])

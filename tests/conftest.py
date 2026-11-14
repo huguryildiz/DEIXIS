@@ -153,15 +153,6 @@ def no_held_folder_locks():
 
 
 @pytest.fixture(autouse=True)
-def no_registered_builtin_model(monkeypatch):
-    """The built-in model's integrity is registered module-wide by an app; with nothing saved, a ready model is the
-    default, so one test's app never leaks it into another test."""
-    from deixis.documents import local_embedding
-
-    monkeypatch.setattr(local_embedding, "_registered", None)
-
-
-@pytest.fixture(autouse=True)
 def tools_only_on_path(monkeypatch):
     """`find_tool` (A3) also looks in the usual install folders and the login shell's PATH; in tests only PATH counts, so
     a test's fake tool (or its absence) is what the app sees, never a real CLI in /opt/homebrew/bin or ~/.local/bin.

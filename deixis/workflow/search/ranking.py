@@ -543,8 +543,7 @@ def rank_rows(ranked: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                 embedding_model: str | None = None, off_reason: str | None = None) -> dict[str, Any]:
+def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, Any]:
     """Rank this revision's records and store every rank; returns the step output.
 
     The pool is the work heads the search offered, the records slice 05 holds back from screening included: they are
@@ -557,10 +556,9 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     in_pool = {row["id"]: row for row in pool}
 
     verified = seed_rows(store, run, scope, versions, in_pool)
-    from deixis.workflow.run import fast_path
-    similarities = fast_path.ranking_similarities(store, run, embedding_model) if embedding_model else {}
+    similarities = {}
     from deixis.workflow.search.search import graph_rule
-    ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities, off_reason,
+    ranked = rank_pool(pool, verified, query_words, blocks, None, similarities, None,
                        joint_terms(store, scope, vocabulary), graph_rule(store, run))
     ranks, reasons, graph_seeds = ranked["ranks"], ranked["reasons"], ranked["graph_seeds"]
 
@@ -571,7 +569,7 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         "pool": len(pool),
         "signals": {name: {"ran": name in ranks, **({"reason": reasons[name]} if name in reasons else {}),
                            "available": sum(available for _, available in ranks.get(name, {}).values())}
-                    for name in SIGNALS},
+                    for name in CODE_SIGNALS},
         "seeds": sorted(([{"source_version_id": seed["id"], "kind": "verified"} for seed in verified]
                          + [{"source_version_id": seed["id"], "kind": "code"} for seed in graph_seeds
                             if not any(seed is row for row in verified)]),
@@ -580,5 +578,4 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         "no_reference_list": len(no_references),
         "no_reference_list_share": round(len(no_references) / len(pool), 4) if pool else None,
         "no_abstract": sum(not row["abstract"] for row in pool),
-        "embedding_model": embedding_model,
     }

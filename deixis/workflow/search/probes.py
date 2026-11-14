@@ -36,7 +36,6 @@ BROUGHT_BY = ("user_upload", "zotero_import", "library")
 NOT_A_READING = (*RETRIEVAL_CODES, "pdf_identity_unconfirmed", "human_pdf_wrong")
 # The two orders the signal table reads beside the single signals. Both are stored as exact integer places.
 ORDERS = ("fused", "inspection")
-ARM_KINDS = ("keyword", "expansion", "chain")
 
 
 
@@ -322,7 +321,7 @@ def signal_table(store: Store, run_id: str, probe: dict[str, Any]) -> dict[str, 
     ran = [name for name in SIGNALS if name in stored]
     signals = [{"signal": name, "ran": (output.get("signals") or {}).get(name, {}).get("ran", name in stored),
                 "reason": (output.get("signals") or {}).get(name, {}).get("reason"),
-                "available": (output.get("signals") or {}).get(name, {}).get("available")} for name in SIGNALS]
+                "available": (output.get("signals") or {}).get(name, {}).get("available")} for name in SIGNALS if name != "embedding" or name in stored]
     seeds = output.get("seeds") or []
     person = _captures(store, step["id"], set(probe["verified"]), ran)
     person["status"] = "too_few" if person["denominator"] < PROBE_JUDGE_MIN else "descriptive"

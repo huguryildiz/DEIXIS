@@ -60,11 +60,6 @@ of the A–I records; every other case leaves it unset and gets the server it al
 J and M, slice 20) adds one work both reading runs include, for the audit sample and an sw answer. `DEIXIS_FIXTURE_WAITING=on`
 (case K, slice 18a) adds to those one work no route has a PDF for, so the retrieval leaves it waiting for the person's.
 Its file's reading takes a few seconds a call (case L, slice 18b), so the view can be seen while the model reads.
-`DEIXIS_FIXTURE_BUILTIN_EMBEDDING=fake` (case N, slice 21) gives the built-in embedding model a fake install: a fake
-`uv` in the data directory, SYNTHETIC model files served as the pinned revision, and the fake runner, so Settings can
-download, show the steps, check, choose and remove the model with no network, no uv and no fastembed. With
-`GEMINI_API_KEY` set the Gemini embedding endpoint answers too.
-
 `DEIXIS_FIXTURE_ARXIV_SOURCE=fake` (case O, slice 22) starts the server with `Settings(arxiv_source="auto")` and
 monkeypatches `deixis.documents.fetch.fetch_file`, before `create_app`, to an async fake that calls the rate gate's
 `before()`/`after()` and returns a SYNTHETIC arXiv source archive (`tests/support/arxiv_helpers.py`) instead of a network
@@ -1320,42 +1315,6 @@ def late_pdf_answer(si: dict[str, Any]) -> str:
     return json.dumps(output)
 
 
-def fake_builtin(data_dir: Path):
-    """Case N: the built-in models' catalog with SYNTHETIC GGUF files behind their pinned addresses, a SYNTHETIC
-    llama.cpp archive whose `llama-server` is the fake server, and Gemini's embedding endpoint; every other request
-    goes to the OpenAlex mock. The status route serves the real shape (catalog, runtime, machine, recommendation,
-    legacy) over this synthetic data."""
-    import builtin_helpers
-    from deixis.documents import local_embedding
-
-    class Patch:
-        def setattr(self, target, name, value):
-            setattr(target, name, value)
-
-    bodies = builtin_helpers.fake_catalog(Patch())
-    archive = builtin_helpers.tarball()
-    builtin_helpers.pin_tarball(Patch(), archive)
-    downloads = builtin_helpers.Downloads(archive, bodies)
-    from deixis.tools import child_env
-    child_env.OS_PREFIXES = ("LC_", "FAKE_")  # the fake server reads these switches; real children never see them
-
-    failing: set[bool] = set()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host in ("huggingface.co", "github.com"):
-            return downloads(request)
-        if request.url.host == "generativelanguage.googleapis.com":
-            rows = json.loads(request.content)["requests"]
-            # `[embed-fails]` in the question: once its query is embedded, document batches answer HTTP 500.
-            if rows[0]["taskType"] == "RETRIEVAL_QUERY" and "[embed-fails]" in rows[0]["content"]["parts"][0]["text"]:
-                failing.add(True)
-            elif rows[0]["taskType"] == "RETRIEVAL_DOCUMENT" and failing:
-                return httpx.Response(500, json={"error": {"message": "SYNTHETIC embedding failure"}})
-            return httpx.Response(200, json={"embeddings": [{"values": [1.0, float(i % 3)]} for i, _ in enumerate(rows)]})
-        return openalex(request)
-
-    paths = local_embedding.builtin_paths(data_dir)
-    return handler, local_embedding.LocalModels(paths)
 
 
 def fake_arxiv_source() -> None:
@@ -1509,15 +1468,13 @@ def main() -> None:
         drain(lib)
         lib.store.conn.execute("UPDATE researches SET title = '[late-pdf] SYNTHETIC revised answer' WHERE id = ?", (lib.rid,))
         lib.store.conn.close()
-    handler, local_embedder = openalex, None
-    if os.environ.get("DEIXIS_FIXTURE_BUILTIN_EMBEDDING") == "fake":
-        handler, local_embedder = fake_builtin(args.data_dir)
+    handler = openalex
     if ARXIV_SOURCE_MODE:
         fake_arxiv_source()  # before create_app: SourceStore reads fetch_module.fetch_file at construction
     scripted = ScriptedCodex(args.data_dir)
     app = create_app(settings, adapters={"codex": scripted},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetch,
-                     local_embedder=local_embedder, xml_fetcher=europepmc_xml if EUROPEPMC_MODE else None)
+                     xml_fetcher=europepmc_xml if EUROPEPMC_MODE else None)
     scripted.app = app  # "[pause-at-read]" asks for a pause and "[stale-seed]" replaces a file through the app's store
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)
 

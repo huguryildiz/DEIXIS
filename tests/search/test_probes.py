@@ -48,9 +48,6 @@ class Probe(Lib):
         return [provider_record(f"{prefix}{self.n}-{i}", f"SYNTHETIC {self.field['topic']} record {self.n}-{i}",
                                 f"10.9999/p{self.n}.{i}") for i in range(n)]
 
-    def card(self, queries, run=None):
-        step = self.store.step(run or self.run, "protocol_approval", "code:protocol_approval")
-        self.store.finish_step(step["id"], "succeeded", output={"approved": {"queries": queries}})
 
     def ranking(self, rows, output=None, run=None, key="ranking"):
         run = run or self.new_run("discovery")

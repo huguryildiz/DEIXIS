@@ -160,7 +160,7 @@ def test_the_built_in_model_server_never_sees_a_key_or_a_network_setting(tmp_pat
         seen.update(kwargs["env"])
         raise OSError("SYNTHETIC: not started")
     monkeypatch.setattr(asyncio, "create_subprocess_exec", capture)
-    server = local_embedding.LlamaServer(paths, builtin_catalog.get("qwen3-embedding-0.6b"), None)
+    server = local_embedding.LlamaServer(paths, builtin_catalog.get("qwen3-reranker-0.6b"), None)
     with pytest.raises(local_embedding.LocalEmbeddingError):
         asyncio.run(server.start())
     assert_clean(seen)

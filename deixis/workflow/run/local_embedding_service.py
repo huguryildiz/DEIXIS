@@ -14,9 +14,6 @@ removal take it exclusively and give up (409) when they cannot. The runtime has 
 model file is in place. Nothing here changes a saved choice: Settings stores `(provider, model)` and only the person's
 "Use" changes it.
 
-The earlier PyTorch built-in model (`tools/embedding`, `embedding-models`, `embedding-hf-home`, `uv-python`,
-`uv-cache`) is reported with its measured size and removed only on request.
-
 POSIX only in this slice.
 """
 
@@ -191,7 +188,7 @@ class LocalModelService:
         return "not_installed"
 
     def option(self, model_id: str) -> dict[str, Any]:
-        """One catalog model as a choice in `embeddings.options` / `rerankers.options`: available, else why not."""
+        """One catalog model as a choice in `rerankers.options`: available, else why not."""
         model = self._model(model_id)
         state = self.state(model.id)
         available = state == "ready"
@@ -205,8 +202,6 @@ class LocalModelService:
     async def status(self) -> dict[str, Any]:
         machine = await asyncio.to_thread(_machine)
         recommended = builtin_catalog.recommended(machine["memory_gb"])
-        legacy = self.paths.legacy()
-        legacy_bytes = await asyncio.to_thread(lambda: sum(local_embedding.tree_size(p) for p in legacy))
         job = self.job if self.owns_job() else self.read_job()
         supported = local_embedding.supported()
         runtime = self.paths.runtime
@@ -229,7 +224,6 @@ class LocalModelService:
             "recommended": recommended | {"rule": f"the largest Qwen3 model whose estimated memory is at most "
                                                   f"{int(builtin_catalog.RECOMMEND_SHARE * 100)}% of this computer's "
                                                   "memory; a starting value, not measured"},
-            "legacy": {"present": bool(legacy), "bytes": legacy_bytes, "paths": [str(p) for p in legacy]},
             "job": job, "path": str(self.paths.root),
         }
 
@@ -336,7 +330,7 @@ class LocalModelService:
                 self._checker = LlamaServer(self.paths, model, self.models.client)
                 try:
                     await self._checker.start(lock_fd=self._model_fd)
-                    self._output(f"llama-server answered the {'embedding' if model.kind == 'embedding' else 'rerank'} probe\n")
+                    self._output('llama-server answered the rerank probe\n')
                 finally:
                     await self._checker.stop()
                     self._checker = None
@@ -460,42 +454,6 @@ class LocalModelService:
             await _to_completion(shutil.rmtree, self.paths.runtime.root, True)
         finally:
             _release(runtime_fd)
-
-    async def remove_legacy(self) -> dict[str, Any]:
-        """Delete what the earlier PyTorch built-in model left, on the person's request only. Its locks are
-        taken exclusively first, so an older DEIXIS still running it is not pulled from under its feet."""
-        if not local_embedding.supported():
-            raise ServiceError("unsupported_platform", UNSUPPORTED)
-        root = self.paths.root
-        install_fd = try_lock(root / "embedding-install.lock", exclusive=True) if (root / "embedding-install.lock").exists() else None
-        in_use_fd = try_lock(root / "embedding-in-use.lock", exclusive=True) if (root / "embedding-in-use.lock").exists() else None
-        busy = ((root / "embedding-install.lock").exists() and install_fd is None) or \
-               ((root / "embedding-in-use.lock").exists() and in_use_fd is None)
-        try:
-            if busy:
-                raise ServiceError("in_use_by_another_process", "the earlier built-in model is in use by another DEIXIS")
-            failed: list[str] = []
-
-            def delete() -> None:
-                for path in self.paths.legacy():
-                    if path.name.endswith(".lock"):
-                        continue
-                    if path.is_dir() and not path.is_symlink():
-                        shutil.rmtree(path, onexc=lambda _f, p, _e: failed.append(str(p)))
-                    else:
-                        try:
-                            path.unlink()
-                        except OSError:
-                            failed.append(str(path))
-            await _to_completion(delete)
-            if failed:
-                raise ServiceError("remove_incomplete", f"{len(failed)} file(s) could not be deleted, for example {failed[0]}")
-        finally:
-            _release(in_use_fd)
-            _release(install_fd)
-        for name in ("embedding-install.lock", "embedding-in-use.lock"):
-            (root / name).unlink(missing_ok=True)
-        return await self.status()
 
     async def stop(self) -> None:
         if self.owns_job():

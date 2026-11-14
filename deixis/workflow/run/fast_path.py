@@ -72,7 +72,6 @@ COMPLETION_ARMS = ("off", "conditional", "always")
 BROAD_INDEX_RULE = "broad_index_v1"
 BROAD_INDEX_ARMS = ("off", "conditional", "always")
 # Stored shared-search policies can carry a zero-record sub-topic block.
-SUBTOPIC_RULE = "subtopic_search_v1"
 # The years a run searches in, where the question states them or a measurement supplies them
 # (`search.date_scope`). Frozen here with the rest of the policy, before the first request opens: the question's
 # own semantic request goes out before the protocol is frozen, so a bound kept only in the protocol would miss it.
@@ -179,7 +178,7 @@ def elapsed(start: str, end: str) -> int:
 
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
                   deep_screening: bool = False,
-                  lexical_exclusion: bool = True, candidate_embedding: bool = True,
+                  lexical_exclusion: bool = True,
                   completion_arm: str = "off", broad_index_arm: str = "off",
                   date_scope: dict[str, Any] | None = None) -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
@@ -189,9 +188,6 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
 
     `deep_screening` adds the deeper screening's window under `deep_screening`; off adds nothing, so a policy
     frozen without it is byte for byte the one frozen before, hash included. Quick takes no window.
-
-    `candidate_embedding` off records that this run embeds no candidate, so the ranking's embedding signal is left
-    out and says why; the reranker reads titles and abstracts as text and needs no embedding. On adds nothing.
 
     `lexical_exclusion` off records that the abstract stage may not close a record for naming neither gate block
     (`flow._abstract_code_stage`); on adds nothing and leaves the policy as it was. The arm is frozen here, so a
@@ -253,7 +249,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
                          "share": shared["field_share"],
                          "table_version": SOURCE_ROUTES_VERSION},
         "fulltext_search_rule": FULLTEXT_SEARCH_RULE, "fulltext_searches": mode.fulltext_searches,
-        "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
+        "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
         # Search always gets at least its own base; an earlier overrun is charged to the later stages instead.
         "protected_stages": ["search"],
@@ -310,8 +306,6 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
                                   "abstract_ceiling_ms": EVIDENCE_ABSTRACT_CEILING_MS}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
-    if not candidate_embedding:
-        policy["candidate_embedding"] = False
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
         policy["no_deadline_stages"] = ["read", "answer"]
@@ -393,11 +387,6 @@ def broad_index(budget: dict[str, Any]) -> dict[str, Any] | None:
     return (budget.get("fast_path") or {}).get("broad_index")
 
 
-def subtopic_search(budget: dict[str, Any]) -> dict[str, Any] | None:
-    """The sub-topic search's arm this run froze, or None for a run of the `off` arm and for every run queued
-    before the rule."""
-    return (budget.get("fast_path") or {}).get("subtopic_search")
-
 
 def date_scope(budget: dict[str, Any]) -> dict[str, Any] | None:
     """The years this run searches in, or None for a run that bounds none and for every run queued before the rule."""
@@ -461,10 +450,6 @@ def rerank_carry_ms(store: Any, run: dict[str, Any]) -> int:
     output = json.loads(row["output_json"]) if row and row["output_json"] else {}
     return int((output.get("allowance") or {}).get("past_cutoff_ms") or 0)
 
-
-def candidate_embedding_on(budget: dict[str, Any]) -> bool:
-    """Whether this run embeds its candidates. A budget frozen before the switch embedded them, so it still does."""
-    return (budget.get("fast_path") or {}).get("candidate_embedding", True)
 
 
 def chain_on(budget: dict[str, Any]) -> bool:
@@ -569,19 +554,6 @@ def note_handover_passed(store: Any, run: dict[str, Any]) -> None:
     store.conn.execute("UPDATE fast_path_ledgers SET handover_passed_at = ? WHERE ledger_run_id = ?"
                        " AND handover_passed_at IS NULL", (timestamp(store.clock), ledger_id))
 
-
-def ranking_similarities(store: Any, run: dict[str, Any], model: str) -> dict[str, float]:
-    scores = store.source_similarities(run["research_id"], run["scope_revision"], model)
-    if not enabled(run["budget"]) or run["kind"] != "discovery":
-        return scores
-    heads = store.work_heads(run["research_id"])
-    for row in store.conn.execute(
-            "SELECT q.source_version_id, v.work_id FROM fast_path_embedding_queue q"
-            " JOIN source_versions v ON v.id = q.source_version_id"
-            " WHERE q.run_id = ? AND q.status = 'unembedded_at_cutoff'", (run["id"],)):
-        scores.pop(row["source_version_id"], None)
-        scores.pop(heads.get(row["work_id"]), None)
-    return scores
 
 
 def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -> dict[str, Any]:

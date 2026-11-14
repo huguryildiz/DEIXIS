@@ -285,8 +285,6 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
       </div>
       {loaded.queries.map(query => <label key={query.label} className="lbl">{t('Query {n}', { n: query.label.replace(/^Query /, '') })}{' · '}{t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}
         <textarea className="field mono" rows={2} readOnly value={query.query_text} /></label>)}
-      {/* The English sentence the semantic search sends for this question revision (§2.2), as stored; read only here. */}
-      {view.semantic?.english_question?.text && <div className="lbl plan-english">{t('English question for the semantic search')}<span>{view.semantic.english_question.text}</span></div>}
       <p className="plan-note">{[
         loaded.queries_preview && t('A preview: the query is compiled again from the words when the search starts. A backup word takes the place of a word OpenAlex counts at zero, and is added beside a word that finds no record together with the other part, while the query stays within 8 words.'),
         wordsChanged && t('The queries above are the stored ones; the edited words are compiled into a new query when the search starts.'),

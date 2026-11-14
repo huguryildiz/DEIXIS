@@ -105,7 +105,7 @@ A preview for Windows 10 and 11 on x64 PCs. So far it has been tried on a GitHub
 
 DEIXIS opens in its own window. Closing the window keeps it running in the notification area, where Quit stops it and everything it started. Your library stays in `%LOCALAPPDATA%\DEIXIS` when you update or uninstall the app. There is no automatic update: DEIXIS says when a newer version exists (as on macOS); run the newer installer.
 
-Not in the Windows preview: the built-in local models in Settings (keyword search, the Voyage reranker and API embedding connections work), and reading arXiv LaTeX sources (the PDF is read instead).
+Not in the Windows preview: the built-in local models in Settings (keyword search and the Voyage reranker work), and reading arXiv LaTeX sources (the PDF is read instead).
 
 <a id="install-on-linux"></a>
 

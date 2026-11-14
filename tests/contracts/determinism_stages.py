@@ -20,9 +20,7 @@ from deixis.runtime.config import Settings
 from deixis.documents.pdf import chunk_page
 from deixis.domain.canonical import canonical_rows, sha256_hex
 from deixis.domain import survey
-from deixis.domain.vocabulary import extract
 from deixis.providers.common import ProviderRecord
-from deixis.providers.query_compiler import compile_block_queries
 from deixis.storage import db
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run import links
@@ -34,7 +32,6 @@ from deixis.workflow.search.protocol import build_protocol
 from deixis.workflow.run.store import Store
 from deixis.workflow.search.criterion import consensus
 from deixis.workflow.answer import criterion_passages
-from deixis.workflow.search.vocabulary import apply_labels, build_vocabulary
 
 CONCEPTS = [
     {"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel", "molecular channel"]},
@@ -231,50 +228,6 @@ def stage_link_records(rows: list[dict[str, Any]]) -> Any:
                   for r in conn.execute("SELECT * FROM record_links WHERE closed_at IS NULL")]
         conn.close()
     return {"works": canonical_rows(works, "work"), "links": canonical_rows(stored, "pair")}
-
-
-VOCABULARY_QUESTION = ("SYNTHETIC: what is the effect of packet size on energy consumption in wireless sensor "
-                       "networks, using integer programming, not surveys?")
-# A fixed answer per probe query, so the stage reads counts without a network. The numbers are invented: they make
-# the gate exceed MANAGEABLE_TOTAL once, which is the branch the replay has to pin down.
-VOCABULARY_COUNTS = {
-    '"packet size"': 900, "packet": 2_400_000, "size": 9_000_000,
-    '"energy consumption"': 40_000, "energy": 3_100_000, "consumption": 1_200_000,
-    '"wireless sensor networks"': 50_000, "wireless": 800_000, "networks": 7_000_000,
-}
-
-
-# SYNTHETIC answers of three block-labelling runs over the phrases the question above gives (SW17). Two runs agree
-# that the second phrase is a setting and that the method phrase is a claim; the third dissents, and all three
-# disagree about "effect", which is the branch where no majority forms and the rule's label stands.
-VOCABULARY_LABEL_RUNS = [
-    {"energy consumption": "outcome", "wireless sensor networks": "setting", "synthetic": "not_a_term",
-     "effect": "not_a_term", "packet size": "task", "integer programming": "claim", "surveys": "exclusion"},
-    {"energy consumption": "outcome", "wireless sensor networks": "setting", "synthetic": "not_a_term",
-     "effect": "task", "packet size": "task", "integer programming": "claim", "surveys": "exclusion"},
-    {"energy consumption": "task", "wireless sensor networks": "setting", "synthetic": "not_a_term",
-     "effect": "outcome", "packet size": "task", "integer programming": "setting", "surveys": "exclusion"},
-]
-
-
-def stage_code_vocabulary(rows: list[dict[str, Any]]) -> Any:
-    """The question read by code, labelled by three runs, probed against fixed counts and compiled (SW2, SW17).
-
-    The rows are the providers, which carry no order of their own; the question is one string, so the phrase order
-    inside the vocabulary is the question's and is not shuffled. The three labelling runs carry no order of their
-    own either, so the row order decides which one arrives first and must not reach the result.
-    """
-    async def count(query: str) -> int | None:
-        return VOCABULARY_COUNTS.get(query, 6_000)  # an unlisted query is over MANAGEABLE_TOTAL, so the gate narrows
-
-    providers = [row["id"] for row in rows]
-    turn = providers.index("openalex") % len(VOCABULARY_LABEL_RUNS)
-    labelled, records = apply_labels(extract(VOCABULARY_QUESTION), VOCABULARY_LABEL_RUNS[turn:] + VOCABULARY_LABEL_RUNS[:turn])
-    vocabulary = asyncio.run(build_vocabulary(labelled, count))
-    vocabulary["labelling"] = {"runs_ok": len(VOCABULARY_LABEL_RUNS), "skipped": None, "failures": [],
-                               "phrases": records}
-    queries = compile_block_queries(vocabulary, providers, len(providers))
-    return {"vocabulary": vocabulary, "queries": canonical_rows(queries, "provider_id")}
 
 
 SURVEY_QUESTION_FORMS = ["release scheduling", "diffusion channel", "integer programming", "code review"]
@@ -546,7 +499,6 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "build_protocol": stage_build_protocol,
     "work_outcome": stage_work_outcome,
     "link_records": stage_link_records,
-    "code_vocabulary": stage_code_vocabulary,
     "survey_flags": stage_survey_flags,
     "criterion": stage_criterion,
     "record_ranking": stage_record_ranking,
@@ -561,7 +513,6 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     "fuse_rankings": [{"id": f"psg_{i}", "text": "SYNTHETIC passage"} for i in range(6)],
     "answer_source_order": [{"id": f"svr_{i}", "text": "SYNTHETIC molecule release schedule"} for i in range(6)],
     "build_protocol": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed")],
-    "code_vocabulary": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed", "scopus")],
     "criterion": [{"run": number} for number in (1, 2, 3)],
     # Four works: one still a candidate on the abstract stage, one whose two versions disagree on the full text, one
     # the user decided, and one whose two versions reached the same outcome, so the version named for the work must

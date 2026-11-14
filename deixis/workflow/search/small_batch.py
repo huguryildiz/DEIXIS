@@ -233,8 +233,8 @@ def replay(manifest: dict[str, Any]) -> dict[str, Any]:
     # A manifest without `graph_rule` was frozen before seeds guided the graph signal, or by an unseeded run.
     rule = manifest.get("graph_rule", "sum_v1")
     ranked = ranking.rank_pool(pool, verified,
-                             set(manifest["query_words"]), manifest["blocks"], manifest["embedding_model"],
-                             manifest["similarities"], manifest["off_reason"], manifest["compared_terms"], rule)
+                             set(manifest["query_words"]), manifest["blocks"], manifest.get("embedding_model"),
+                             manifest.get("similarities") or {}, manifest.get("off_reason"), manifest["compared_terms"], rule)
     version = manifest.get("ranking_version", 1)
     top = ranked["fused"][:20]
     if version == 3:
@@ -448,8 +448,6 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
     query, blocks = ranking.query_vocabulary(scope, vocabulary)
     keyword_step = store.existing_step(run["id"], "ranking")
     keyword_output = keyword_step["output"]
-    model = keyword_output.get("embedding_model")
-    off = (keyword_output.get("signals", {}).get("embedding") or {}).get("reason")
     counts = {row["work_id"]: row["cited_by_count"] for row in store.conn.execute(
         "SELECT work_id, MAX(cited_by_count) AS cited_by_count FROM source_versions"
         " WHERE work_id IN (SELECT v.work_id FROM corpus_memberships m"
@@ -464,9 +462,7 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
                 "protocol": store.existing_step(run["id"], "protocol")["output"],
                 "pool": sorted(pool.values(), key=lambda row: row["id"]), "priority_pool": priority_pool,
                 "versions": versions,
-                "verified": verified, "query_words": query, "blocks": blocks, "embedding_model": model,
-                "similarities": fast_path.ranking_similarities(store, run, model) if model else {},
-                "off_reason": off, "compared_terms": ranking.joint_terms(store, scope, vocabulary),
+                "verified": verified, "query_words": query, "blocks": blocks, "compared_terms": ranking.joint_terms(store, scope, vocabulary),
                 "user_priority": list(dict.fromkeys(priority)),
                 "provenance": store.candidates(rid, run["scope_revision"]),
                 "chain_steps": [s["id"] for s in store.run_steps(run["id"])

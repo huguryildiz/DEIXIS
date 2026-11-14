@@ -153,8 +153,7 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
         # The criterion the model proposed, read back from its own step as the body was built from it.
         criterion=_criterion_result(store.latest_step_output(rid, "criterion", 1)),
         approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"],
-        # The fast path's own inputs, frozen beside the others: the semantic search model and the search plan.
-        embedding_model=next(s["model"] for s in body["signals"] if s["signal"] == "embedding"),
+        # The fast path search plan is frozen beside the other protocol inputs.
         fast_path_search=body["fast_path_search"])
     assert sha256_hex(again) == rows[0]["body_sha256"]
 
@@ -219,8 +218,8 @@ def test_the_questions_own_request_starts_before_the_first_planning_model_call(t
     steps = [dict(row) for row in store.conn.execute(
         "SELECT operation_key, started_at, protocol_hash FROM run_steps WHERE run_id = ? ORDER BY rowid", (run_id,))]
     keys = [step["operation_key"] for step in steps]
-    # Opened first of all the run's work; `source_similarity` opens with the run and sends nothing to a provider.
-    assert keys[0] in ("search:fast:semantic", "source_similarity") and "search:fast:semantic" in keys[:2]
+    # The question's search opens before planning requests.
+    assert keys[0] == "search:fast:semantic"
     first = next(step for step in steps if step["operation_key"] == "search:fast:semantic")
     model = next(step for step in steps if step["operation_key"].startswith("search_query:"))
     assert first["started_at"] <= model["started_at"]

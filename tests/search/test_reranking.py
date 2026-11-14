@@ -1,4 +1,4 @@
-"""Voyage embeddings, the reranker layer and the Qwen3 built-in identity (model-free, no paid call).
+"""The reranker layer and the Qwen3 built-in identity (model-free, no paid call).
 
 Voyage is a mocked endpoint (httpx.MockTransport); the built-in model and reranker are the injected fake local embedder;
 no model is downloaded and no request leaves the test. Passing shows routing, request shapes, cache identities, how a
@@ -15,12 +15,12 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from deixis.documents import embeddings, local_embedding, rerankers
+from deixis.documents import local_embedding, rerankers
 from deixis.providers import pacing
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.workflow.search import english_question, small_batch
 from deixis.workflow.run.flow import RunStopped
-from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
+from rerank_session import FakeLocal, Session
 from test_lookup_flow import headers_back, headers_out, written
 from test_ranking_flow import STRONG, Pool, pool, work
 from windows_env import WAIT_FACTOR
@@ -32,24 +32,6 @@ KEY = "SYNTHETIC-voyage-key"
 
 def voyage(handler):
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-
-# ---- Voyage embeddings -----------------------------------------------------------------------------
-
-
-def test_voyage_without_a_key_sends_nothing(monkeypatch):
-    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
-    sent = []
-
-    async def go():
-        async with voyage(lambda r: sent.append(r) or httpx.Response(500)) as client:
-            return await embeddings.Embedder("voyage", embeddings.VOYAGE_MODEL).embed(client, ["SYNTHETIC"], "RETRIEVAL_DOCUMENT")
-    with pytest.raises(embeddings.EmbeddingError, match="VOYAGE_API_KEY is not set"):
-        asyncio.run(go())
-    assert sent == []
-
-
-# ---- cache identity and the provider choice --------------------------------------------------------
 
 
 # ---- the reranker layer ----------------------------------------------------------------------------
@@ -381,7 +363,7 @@ class RerankingLocal(FakeLocal):
 def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(tmp_path, monkeypatch, fail):
     # Standard: the list waits for the reranker there, as Quick's now does (its own tests below).
     local = RerankingLocal(fail=fail)
-    s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
+    s = Session(tmp_path, monkeypatch, local=local)
     s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2, "timeout_seconds": 60})
     try:
         rid, run_id, view, run = s.discover(effort="standard")
@@ -419,7 +401,7 @@ def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(t
 
 def quick_run(tmp_path, monkeypatch, local, **saved):
     """One Quick discovery run with the built-in reranker; its listing, rerank step, lookup step and frozen rule."""
-    s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
+    s = Session(tmp_path, monkeypatch, local=local)
     s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60,
                                             **saved})
     try:
@@ -504,26 +486,6 @@ def test_a_candidate_set_that_moved_keeps_the_fused_order_and_says_not_applied()
     assert order == ["a", "b", "c"] and told["applied"] is False and told["reason"] == "candidates_changed"
 
 
-def test_a_run_queued_with_candidate_embedding_off_embeds_nothing_and_says_why(tmp_path, monkeypatch):
-    """The pilot default: the reranker reads each record's title and abstract as text, so a run embeds no candidate.
-    The signal is left out of the ranking and the run records the reason; the person can turn it on."""
-    local = RerankingLocal()
-    s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
-    s.store.set_setting("candidate_embedding", "off")  # what an app with nothing saved does on its own
-    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
-    try:
-        rid, run_id, view, run = s.discover(effort="standard")
-        similarity = s.store.existing_step(run_id, "source_similarity")["output"]
-        listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
-        frozen = s.store.run(run_id)["budget"]["fast_path"]
-    finally:
-        s.close()
-    assert frozen["candidate_embedding"] is False  # frozen when the run was queued, not read again later
-    assert similarity["embedding_off_reason"] == "candidate_embedding_off" and similarity["provider"] == "off"
-    assert local.documents() == 0, "no candidate was embedded"
-    # The ranking left the signal out, and the list says so rather than ranking every record last in it.
-    assert listing["manifest"]["embedding_model"] is None
-    assert listing["signal_reasons"].get("embedding")
 
 
 LOOKED_UP = "We SYNTHETIC measure the packet size that lowers the energy of a sensor node."

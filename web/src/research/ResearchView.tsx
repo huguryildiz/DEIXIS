@@ -1,3 +1,4 @@
+import { EnglishQuestion } from '../components/EnglishQuestion'
 import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, MessageSquareQuote, PencilLine, GitFork, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -30,7 +31,6 @@ import { HumanQueue } from './HumanQueue'
 import { FunnelPanel } from './FlowReport'
 import { AuditSample } from './AuditSample'
 import { WaitingForPdf } from './WaitingForPdf'
-import { EnglishQuestion, UploadedTextNote } from '../components/SemanticNotes'
 import { AnswerThread, type AnswerReviewControl, type AnswerThreadContext } from './AnswerThread'
 import { printReport } from './printPanel'
 import { ChooseModelDialog, type ChooseModelTarget } from './ChooseModelDialog'
@@ -912,7 +912,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {earlierRevision > 0 && <EarlierRevision key={earlierRevision} researchId={id} revision={earlierRevision} intent={view.research.intent} answer={earlierReport} onOpenReport={setOpenReportId} />}
     {revising
       ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''}
-        englishQuestion={view.semantic && view.semantic.question_english === false ? view.semantic.english_question?.text ?? '' : null} nextRevision={view.research.next_scope_revision} focus={revising.focus} focusRequest={revising.ask}
+        englishQuestion={view.scope.needs_english_question ? view.scope.english_question?.text ?? '' : null} nextRevision={view.research.next_scope_revision} focus={revising.focus} focusRequest={revising.ask}
         conflict={reviseConflict} onRebase={() => setRevising(form => (form ? { ...form, revision: view.research.current_scope_revision } : form))}
         disabled={busy || active} onSubmit={(text, terms, english) => { void saveRevision(text, terms, english) }} onCancel={endRevise} />
       : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}
@@ -1006,7 +1006,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           ? <NextStepsCard included={included} onDismiss={() => setNextDismissed(lastSearch.id)}>{actions}
             {included > 0 && <Button variant="outline" onClick={e => openPanel('table', { opener: e.currentTarget })}><Table2 size={15} aria-hidden />{t('Evidence table')}</Button>}</NextStepsCard>
           : <div className="answer-actions">{actions}</div>
-      })()}<UploadedTextNote semantic={view.semantic} /></>}
+      })()}</>}
       {/* Follow-up questions and their answers, oldest first (R31), then the sticky composer (R30). */}
       {followups.error && <Notice tone="error">{t('Could not load the follow-up questions: {error}', { error: followups.error })}</Notice>}
       {followups.turns.length > 0 && <div className="followup-turns">{followups.turns.map(turn => <FollowupTurnView key={turn.id} turn={turn} sources={view.sources}

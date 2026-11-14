@@ -347,11 +347,9 @@ class Round:
                 # "no suitable work" case, and this round then supplies a seed from the keyword results as before.
                 return {"seeds": [], "not_needed": True, "named_by_plan": True}
             versions, by_work, pool = ranking.pool_rows(self.store, self.run["research_id"], self.run["scope_revision"])
-            model, reason = self.flow._ranking_embedding(self.run, self.scope)
-            scores = fast_path.ranking_similarities(self.store, self.run, model) if model else {}
             query, blocks = ranking.query_vocabulary(self.scope, self.vocabulary)
             verified = ranking.seed_rows(self.store, self.run, self.scope, versions, {})
-            ranked = ranking.rank_pool(pool, verified, query, blocks, model, scores, reason,
+            ranked = ranking.rank_pool(pool, verified, query, blocks, None, {}, None,
                                        ranking.joint_terms(self.store, self.scope, self.vocabulary),
                                        fast_search.graph_rule(self.store, self.run))
             identities = []
@@ -370,7 +368,7 @@ class Round:
                             identities.append((oid, {}, None))
             return {"seeds": self.choose(identities, "fallback", initial),
                     "order_hash": canonical.sha256_hex(ranked["fused"]), "top100": ranked["fused"][:100],
-                    "embedded": sum(row["id"] in scores for row in pool), "pool": len(pool)}
+                    "pool": len(pool)}
         seeds = self.save("fast_chain:seeds_fallback", snapshot)["seeds"]
         prior = self.store.existing_step(self.run["id"], "fast_chain:plan")["output"]["requests"]
         plan = self.save("fast_chain:plan_fallback", lambda: request_plan(seeds, self.policy, self.held(), prior))
@@ -474,9 +472,6 @@ class Round:
             fast_arrival={"arrived_at": arrived, "cutoff": cutoff, "late": late,
                           "raw_returned": raw_returned, "admitted_returned": len(dispatched.outcome.records) if not late else 0},
             normalised=True)
-        consumer = self.flow._fast_consumers.get(self.run["id"])
-        if consumer:
-            consumer.notify()
 
     def done(self):
         for writer in self.writers:
@@ -528,12 +523,11 @@ class Round:
 
 
 def manifest(store, run):
-    steps = [s for s in store.run_steps(run["id"]) if s["operation_key"].startswith("fast_chain:")]
-    return {"steps": [{"id": s["id"], "key": s["operation_key"], "sha256": canonical.sha256_hex(store.step_output(s["id"]))} for s in steps],
+    steps = [step for step in store.run_steps(run["id"]) if step["operation_key"].startswith("fast_chain:")]
+    return {"steps": [{"id": step["id"], "key": step["operation_key"],
+                       "sha256": canonical.sha256_hex(store.step_output(step["id"]))} for step in steps],
             "summary": (store.existing_step(run["id"], "fast_chain:summary") or {}).get("output"),
-            "cutoff_at": ((store.existing_step(run["id"], "source_similarity") or {}).get("output") or {}).get("cutoff_at"),
-            "unembedded": [r[0] for r in store.conn.execute("SELECT source_version_id FROM fast_path_embedding_queue"
-                " WHERE run_id = ? AND status = 'unembedded_at_cutoff' ORDER BY class, request_index, position", (run["id"],))]}
+            "cutoff_at": None, "unembedded": []}
 
 
 def read_versions(flow, run, listing, items=None, key="fast_chain:read_versions", with_order=False):

@@ -61,7 +61,6 @@ LMSTUDIO_SUGGESTED = (
     {"id": "zai-org/glm-4.7-flash", "name": "GLM 4.7 Flash", "maker": "Zhipu", "purpose": "research", "size_bytes": None, "memory_gb": 16},
     {"id": "google/gemma-4-31b", "name": "Gemma 4 · 31B", "maker": "Google", "purpose": "research", "size_bytes": None, "memory_gb": 19},
     {"id": "qwen/qwen3.5-35b-a3b", "name": "Qwen 3.5 · 35B-A3B", "maker": "Alibaba", "purpose": "research", "size_bytes": None, "memory_gb": 21},
-    {"id": "google/embedding-gemma-300m", "name": "EmbeddingGemma", "maker": "Google", "purpose": "embedding", "size_bytes": 300_000_000, "memory_gb": None},
 )
 # A catalog id: publisher/model. It goes into a JSON body, never a command.
 LMSTUDIO_MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}/[A-Za-z0-9][A-Za-z0-9._@-]{0,119}")
@@ -80,9 +79,6 @@ OLLAMA_SUGGESTED = (  # download sizes as ollama.com/library lists them (15 Oct 
     {"id": "glm-4.7-flash", "name": "GLM 4.7 Flash", "maker": "Zhipu", "purpose": "research", "size_bytes": 19_000_000_000},
     {"id": "gemma4:31b", "name": "Gemma 4 · 31B", "maker": "Google", "purpose": "research", "size_bytes": 19_000_000_000},
     {"id": "qwen3.5:35b", "name": "Qwen 3.5 · 35B", "maker": "Alibaba", "purpose": "research", "size_bytes": 22_000_000_000},
-    {"id": "nomic-embed-text", "name": "Nomic Embed Text", "maker": "Nomic", "purpose": "embedding", "size_bytes": 274_000_000},
-    {"id": "embeddinggemma", "name": "EmbeddingGemma", "maker": "Google", "purpose": "embedding", "size_bytes": 622_000_000},
-    {"id": "mxbai-embed-large", "name": "mxbai Embed Large", "maker": "Mixedbread", "purpose": "embedding", "size_bytes": 670_000_000},
 )
 # An Ollama model name: library or namespace/model, an optional :tag. It goes into a JSON body, never a command.
 OLLAMA_MODEL_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,79}(/[a-z0-9][a-z0-9._-]{0,79})?(:[A-Za-z0-9][A-Za-z0-9._-]{0,79})?")
@@ -342,7 +338,7 @@ class LocalTools:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._procs: dict[str, asyncio.subprocess.Process] = {}
-        self._pull: dict[str, Any] | None = None  # the Ollama embedding model download, while it runs and after
+        self._pull: dict[str, Any] | None = None  # the Ollama model download, while it runs and after
         self._pull_task: asyncio.Task | None = None
         self._lms_pull: dict[str, Any] | None = None  # the LM Studio model download, while it runs and after
         self._lms_task: asyncio.Task | None = None
@@ -801,7 +797,7 @@ class LocalTools:
 
     async def suggested(self, tool_id: str, http: httpx.AsyncClient) -> dict[str, Any]:
         """Suggested research models read from the tool's catalog and sized for this computer's memory, kept for a day;
-        the fixed list when the catalog cannot be read. Embedding suggestions always come from the fixed list."""
+        the fixed list when the catalog cannot be read."""
         from deixis.tools import local_catalog
 
         fixed = OLLAMA_SUGGESTED if tool_id == "ollama" else LMSTUDIO_SUGGESTED
@@ -811,8 +807,7 @@ class LocalTools:
         memory = (await self.snapshot())["machine"].get("memory_gb")
         read = local_catalog.ollama if tool_id == "ollama" else local_catalog.lmstudio
         live = await read(http, memory)
-        embedding = [m for m in fixed if m["purpose"] == "embedding"]
-        result = ({"models": [*live, *embedding], "source": "catalog", "memory_gb": memory} if live else
+        result = ({"models": live, "source": "catalog", "memory_gb": memory} if live else
                   {"models": list(fixed), "source": "fixed", "memory_gb": memory})
         if live:  # a failed read is tried again on the next open, not kept for a day
             self._catalogs[tool_id] = (time.monotonic(), result)

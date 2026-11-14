@@ -5,7 +5,6 @@ import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, t
 import { ConnectionIcon } from '../components/connectionIcons'
 import { fileRestoreNote, fileRestoreTone, pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText, waitingRelevanceParts } from '../lib/labels'
 import { Notice } from '../components/Notice'
-import { UploadedTextNote } from '../components/SemanticNotes'
 import { useToast } from '../components/Toast'
 import { t } from '../lib/i18n'
 
@@ -302,7 +301,6 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
       {answerNote && <span className="foot-note">{answerNote}</span>}
       {onSearchAgain && <button type="button" className="link" disabled={busy} onClick={onSearchAgain}>{t('Search again')}</button>}
     </div>
-    <UploadedTextNote semantic={view.semantic} />
   </div>
 }
 

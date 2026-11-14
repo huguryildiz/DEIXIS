@@ -293,9 +293,6 @@ class Route:
         if result is None and not self.flow._stop_requested(run_id, self.run["scope_revision"]):
             # Not written: the search stage's own time ran out at the pacer or before the reply came.
             fast_search.cancel_step(store, run_id, key, KIND, CUTOFF, ("pending", "running"))
-        consumer = self.flow._fast_consumers.get(run_id)
-        if consumer:
-            consumer.notify()
 
     def watch(self) -> None:
         """From the start of the search stage, close the route at that stage's own deadline."""

@@ -277,11 +277,6 @@ def year_range(scope: dict[str, Any] | None) -> str | None:
     return f"{lower}-{upper}"
 
 
-def years_of(value: str) -> tuple[int, int]:
-    """The two years a `year_range` names, for an adapter that sends them as two parameters of its own."""
-    lower, upper = value.split("-", 1)
-    return int(lower), int(upper)
-
 
 def with_filter(existing: str | None, added: str | None) -> str | None:
     """`existing` and `added` as one OpenAlex filter value; a comma is OpenAlex's own AND."""

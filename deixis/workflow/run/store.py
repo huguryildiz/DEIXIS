@@ -3115,25 +3115,6 @@ class Store:
             self._count_works_added(search_fields["research_id"], srid, before, found)
             if snippets:
                 self._insert_snippets(search_fields["research_id"], srid, provider, records, found, snippets)
-            from deixis.workflow.run import fast_path
-            run = self.run(search_fields["run_id"]) if admission and not late else None
-            if run and fast_path.enabled(run["budget"]) and run["kind"] == "discovery":
-                similarity = self.existing_step(run["id"], "source_similarity")
-                identity = (similarity or {}).get("output") or {}
-                model = identity.get("stored_model")
-                stored = self.source_similarities(run["research_id"], run["scope_revision"], model) if model else {}
-                cut = identity.get("cutoff_at")
-                heads = self.work_heads(run["research_id"])
-                ts = fast_path.timestamp(self.clock)
-                for position, svid in enumerate(found):
-                    head = heads.get(self.source(svid)["work_id"], svid)
-                    status = "unembedded_at_cutoff" if cut else "from_store" if head in stored else "pending"
-                    self.conn.execute(
-                        "INSERT OR IGNORE INTO fast_path_embedding_queue"
-                        " (run_id, class, request_index, position, source_version_id, search_run_id, enqueued_at,"
-                        " status, embedded_at, cutoff_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (run["id"], admission["class"], admission["request_index"], position, svid, srid, ts,
-                         status, ts if status == "from_store" else None, cut))
             output = {**step_output, "search_run_id": srid} if step_output is not None else None
             if keep_found and output is not None:
                 output["accepted_source_version_ids"] = list(dict.fromkeys(found))
@@ -4140,41 +4121,6 @@ class Store:
         return self.conn.execute(
             "SELECT 1 FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
         ).fetchone() is not None
-
-    def passage_embeddings(self, passage_ids: list[str], model: str) -> dict[str, bytes]:
-        found: dict[str, bytes] = {}
-        for start in range(0, len(passage_ids), 500):
-            chunk = passage_ids[start:start + 500]
-            rows = self.conn.execute(
-                f"SELECT passage_id, vector FROM passage_embeddings WHERE model = ? AND passage_id IN ({','.join('?' * len(chunk))})",
-                (model, *chunk),
-            )
-            found.update({row["passage_id"]: row["vector"] for row in rows})
-        return found
-
-    def save_passage_embeddings(self, model: str, dimensions: int, vectors: dict[str, bytes]) -> None:
-        ts = now()
-        with transaction(self.conn):
-            self.conn.executemany(
-                "INSERT OR IGNORE INTO passage_embeddings (passage_id, model, dimensions, vector, created_at) VALUES (?, ?, ?, ?, ?)",
-                [(pid, model, dimensions, blob, ts) for pid, blob in vectors.items()],
-            )
-
-    def source_similarities(self, research_id: str, scope_revision: int, model: str) -> dict[str, float]:
-        """Every stored similarity of this question revision under one embedding model; empty when none was written."""
-        return {row[0]: row[1] for row in self.conn.execute(
-            "SELECT source_version_id, similarity FROM source_similarities WHERE research_id = ? AND scope_revision = ?"
-            " AND model = ?", (research_id, scope_revision, model),
-        )}
-
-    def save_source_similarities(self, research_id: str, scope_revision: int, model: str, scores: dict[str, float]) -> None:
-        ts = now()
-        with transaction(self.conn):
-            self.conn.executemany(
-                "INSERT OR IGNORE INTO source_similarities (research_id, source_version_id, scope_revision, model, similarity, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                [(research_id, svid, scope_revision, model, score, ts) for svid, score in scores.items()],
-            )
 
     def save_answer(self, research_id: str, run_id: str, step_id: str | None, step_input_id: str | None, scope_revision: int,
                     status: str, draft: dict[str, Any] | None, validation: dict[str, Any],

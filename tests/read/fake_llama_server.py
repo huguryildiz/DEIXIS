@@ -2,31 +2,27 @@
 
 Run directly (the tests write it into the runtime folder as `llama-server` with a shebang to this interpreter). It
 serves GET /health (503 while "loading", then 200, no key), and with `Authorization: Bearer <--api-key>`:
-POST /v1/embeddings (OpenAI shape, `data[].index`), POST /v1/rerank (`results[{index, relevance_score}]`), POST
-/tokenize (one token per UTF-8 byte) and POST /detokenize. Vectors come from the words: each word adds 1 to one of
-FAKE_LLAMA_DIMS places (1,024), unit length. A rerank scores each document by the share of the query's words it holds,
+POST /v1/rerank (`results[{index, relevance_score}]`), POST
+/tokenize (one token per UTF-8 byte) and POST /detokenize. A rerank scores each document by the share of the query's words it holds,
 times 7, minus 3: raw scores of either sign and above 1, as llama.cpp's are.
 
 FAKE_LLAMA (comma-separated) chooses what goes wrong:
-  slow_load:S (503 for S seconds), null_vector, nan, wrong_count, duplicate_index, wrong_dim, not_unit, crash (exits on
-  the first embed or rerank after the probe), hang (never answers an embed or rerank after the probe),
+  slow_load:S (503 for S seconds), nan, wrong_count, duplicate_index, crash (exits on
+  the first rerank after the probe), hang (never answers a rerank after the probe),
   reject_key (401 to every authenticated call), bind_fail:N (the first N starts say the port is taken and exit 1;
-  FAKE_LLAMA_STATE counts them), slow:S (waits S s before each embed or rerank reply).
+  FAKE_LLAMA_STATE counts them), slow:S (waits S s before each rerank reply).
 FAKE_LLAMA_RECORD, when set, gets one JSON line per start (argv, pid) and per request (path, body).
 """
 
 import json
-import math
 import os
 import sys
 import threading
 import time
-import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ARGS = sys.argv[1:]
 MODES = [m for m in os.environ.get("FAKE_LLAMA", "").split(",") if m]
-DIMS = int(os.environ.get("FAKE_LLAMA_DIMS", "1024"))
 RECORD = os.environ.get("FAKE_LLAMA_RECORD")
 STARTED = time.monotonic()
 STATE = {"calls": 0}
@@ -47,16 +43,6 @@ def record(**fields):
     if RECORD:
         with open(RECORD, "a") as handle:
             handle.write(json.dumps(fields) + "\n")
-
-
-def vector(text):
-    values = [0.0] * DIMS
-    for word in text.lower().split():
-        values[zlib.crc32(word.strip(".,;:?!").encode()) % DIMS] += 1.0
-    if not any(values):
-        values[0] = 1.0
-    norm = math.sqrt(sum(v * v for v in values))
-    return [v / norm for v in values]
 
 
 def words(text):
@@ -100,24 +86,6 @@ class Handler(BaseHTTPRequestHandler):
             if mode("hang"):
                 time.sleep(3600)
             time.sleep(float(mode("slow") or 0))
-        if self.path == "/v1/embeddings" and "--embedding" in ARGS:
-            texts = body["input"]
-            data = [{"object": "embedding", "index": i, "embedding": vector(t)} for i, t in enumerate(texts)]
-            if not probe:
-                if mode("null_vector"):
-                    data[0]["embedding"] = [None] * DIMS
-                if mode("nan"):
-                    data[0]["embedding"][0] = float("nan")
-                if mode("wrong_count"):
-                    data = data[:-1]
-                if mode("duplicate_index") and len(data) > 1:
-                    data[1]["index"] = 0
-                if mode("wrong_dim"):
-                    data[0]["embedding"] = data[0]["embedding"][:-1]
-                if mode("not_unit"):
-                    data[0]["embedding"] = [v * 2 for v in data[0]["embedding"]]
-            data.reverse()  # mapped by index, never by position
-            return self.reply(200, {"object": "list", "data": data, "usage": {"prompt_tokens": 1, "total_tokens": 1}})
         if self.path == "/v1/rerank" and "--rerank" in ARGS:
             query = words(body["query"])
             results = [{"index": i, "relevance_score": 7 * len(query & words(d)) / max(1, len(query)) - 3}

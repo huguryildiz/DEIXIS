@@ -218,8 +218,8 @@ def expected(settings):
 def read_settings(server, settings):
     """What the server reports, and a stop where it differs from what the configuration pinned.
 
-    A folder's defaults are never measured by accident, and the check is not only the embedding and the reranker:
-    every endpoint the configuration names is read, the pinned keys are compared, and the whole reply of each
+    A folder's defaults are never measured by accident. Every endpoint the configuration names is read, the pinned
+    keys are compared, and the whole reply of each
     endpoint in `record` is kept with the rows, so a setting nobody pinned is at least readable afterwards.
     """
     wanted, got, recorded = expected(settings), {}, {}

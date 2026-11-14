@@ -1,4 +1,4 @@
-"""The query text the built-in embedding model reads (slice 21, SW8.6), and the revision's English sentence.
+"""The revision's English sentence for reranking and search.
 
 The built-in model reads English only. Its query is the question when `detect_language` reads the question as English,
 else the revision's English sentence, else nothing: the built-in arm is then off for the research and says why
@@ -36,7 +36,3 @@ def embedding_query(store: Any, scope: dict[str, Any]) -> tuple[str, str] | None
         return scope["question"], "question"
     row = store.english_question(scope["research_id"], scope["revision"])
     return (row["text"], "english_question") if row else None
-
-
-def query_sha256(text: str) -> str:
-    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()

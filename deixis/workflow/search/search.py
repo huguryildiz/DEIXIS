@@ -427,25 +427,6 @@ def broad_plan(run, scope, queries, excluded, field_specs):
              "request_index": 0, "arm": rule["arm"]}, told)
 
 
-def subtopic_plan(run, scope, queries, vocabulary, excluded, broad_spec, field_specs):
-    """Record why a frozen zero-record sub-topic block sends no request."""
-    rule = fast_path.subtopic_search(run["budget"])
-    if not rule:
-        return None, None
-    in_scope = [p for p in broad_index_providers() if p in scope["providers"]]
-    provider = next(iter(in_scope or broad_index_providers()), None)
-    if provider is None:
-        return None, None
-    owned = [i for i, query in enumerate(queries)
-             if query["provider_id"] == provider and query.get("role") == "focused"]
-    told = {"provider_id": provider, "indexes": owned}
-    if not in_scope:
-        return None, told | {"reason": "not_in_scope"}
-    if broad_spec is not None:
-        return None, told | {"reason": "broad_index_planned"}
-    if not rule["records"]:
-        return None, told | {"reason": "depth_pays_for_no_subtopic_search"}
-    raise ValueError("sub-topic search requires a removed discovery rule")
 
 
 def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
@@ -486,16 +467,9 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     broad_spec, broad_told = broad_plan(run, scope, queries, excluded, field_specs)
     broad_spec = broad_spec | {"query": with_date_scope(broad_spec["query"], years)} if broad_spec else None
     broad_records = broad_spec["records"] if broad_spec else 0
-    # The one sub-topic search of that index, where this depth pays for no second index of its own. Decided after
-    # the broad plan, because its own condition is that there is none. Its records are its own and come off no
-    # cap: whether it is sent is decided after the keyword loop has ended, so records taken off that loop's cap
-    # would be lost on every question where nothing is sent, and the arms could not be compared on one total.
-    subtopic_spec, subtopic_told = subtopic_plan(run, scope, queries, vocabulary, excluded, broad_spec,
-                                                field_specs)
     # The queries those two arms own are reported on their own arms, with their own reasons: the field plan's list
     # of what was not sent does not also name them as field sources that lost their place.
     owned = {broad_told["index"]} if broad_told and broad_told["index"] is not None else set()
-    owned |= set(subtopic_told["indexes"]) if subtopic_told else set()
     field_dropped = [row for row in field_dropped if row["index"] not in owned]
     return {"version": 1, "semantic": semantic_spec(scope, policy, seed_context),
             # The whole scope, in the plan a person reads as well as in the budget the run froze: the two come from
@@ -526,10 +500,6 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
             **({"broad": broad_spec} if broad_spec else {}),
             **({"broad_not_sent": {"provider_id": broad_told["provider_id"], "reason": broad_told["reason"]}}
                if broad_told and "reason" in broad_told else {}),
-            # The one sub-topic search of that index, and why none. Whether its gap was still open is on its own
-            # step, not here: the plan freezes the request, the stage reads the condition.
-            **({"subtopic_not_sent": {"provider_id": subtopic_told["provider_id"], "reason": subtopic_told["reason"]}}
-               if subtopic_told and "reason" in subtopic_told else {}),
             "page_size": policy["uniform_search"]["keyword_page_size"],
             "order": "page_then_query",
             "dropped": field_dropped,
@@ -789,9 +759,6 @@ def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("bu
             if not ok:
                 store.set_step_output(step["id"], (store.step_output(step["id"]) or {}) | {
                     "stop_reason": reason, "read_total": before + returned, "provider_total": answer.provider_total})
-        consumer = flow._fast_consumers.get(run_id)
-        if consumer:
-            consumer.notify()
         return store.step_output(step["id"]), limit
 
     return send_page
@@ -817,9 +784,6 @@ async def question_semantic(flow, run, plan, send_page):
                                     terminal="single_page")
         if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
             cancel_step(store, run_id, "search:fast:semantic", "provider_search:openalex", "deadline", None)
-        consumer = flow._fast_consumers.get(run_id)
-        if consumer:
-            consumer.notify()
     chain = flow._fast_chains.get(run_id)
     if chain:
         # The links inside this page first: they cost no request, so every depth writes them, and a depth that
@@ -904,9 +868,6 @@ async def execute(flow, run, scope, plan, retry_failed):
             if previous is not None:
                 await previous
             cancel_step(store, run_id, key, "provider_search:openalex", "deadline", ("pending", "running"))
-        consumer = flow._fast_consumers.get(run_id)
-        if consumer:
-            consumer.notify()
 
     async def semantic_requests():
         """Send the question's and each seed's semantic request in plan order."""
@@ -956,9 +917,6 @@ async def execute(flow, run, scope, plan, retry_failed):
             return
         arm_spent["records"] += result.get("result_count") or 0
         store.set_step_output(store.existing_step(run_id, key)["id"], result | record)
-        consumer = flow._fast_consumers.get(run_id)
-        if consumer:
-            consumer.notify()
 
     async def snippet_for(index, covered):
         """The snippet request of the concept whose focused query is at `index`, decided by that query's own gate."""
@@ -1061,9 +1019,6 @@ async def execute(flow, run, scope, plan, retry_failed):
                 cancel_step(store, run_id, key, f"provider_search:{provider}", "deadline")
                 return
             spent += reserved
-            consumer = flow._fast_consumers.get(run_id)
-            if consumer:
-                consumer.notify()
             if result.get("stop_reason") or not result.get("next_cursor"):
                 return
             state |= {"number": state["number"] + 1, "cursor": result.get("next_cursor"),
@@ -1146,9 +1101,6 @@ async def execute(flow, run, scope, plan, retry_failed):
                     await resolve_completion("deadline")
                     return shared["failure"]
                 slots += reserved
-                consumer = flow._fast_consumers.get(run_id)
-                if consumer:
-                    consumer.notify()
                 request_index += int(reserved > 0)
                 state["ended"] = bool(result.get("stop_reason")) or not result.get("next_cursor")
                 state["before"] = result.get("read_total", state["before"])

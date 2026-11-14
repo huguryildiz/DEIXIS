@@ -10,7 +10,6 @@ import asyncio
 import json
 import sqlite3
 import time
-from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
@@ -27,8 +26,6 @@ from deixis.workflow.search import search as fast_search
 from fakes import FakeAdapter, valid_response
 from windows_env import WAIT_FACTOR
 
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
-STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["H_search_query"]
 
 
 def term(phrase, kind="topic", why="SYNTHETIC reason"):
@@ -390,17 +387,6 @@ def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_pa
     assert "search_query" not in protocol_body(client, rid)
 
 
-def phrase_plan(si):
-    """The fake's plan with its setting term replaced by the phrase "rail freight", read from the record's title."""
-    body = json.loads(valid_response(si))
-    if si["task_type"] == "search_plan":
-        record = si["sources"][0]
-        start = record["title"].index("rail freight")
-        body["setting"] = [{"term": "rail freight", "kind": "topic", "why": "SYNTHETIC setting term",
-                            "evidence": {"record_id": record["source_id"], "field": "title",
-                                         "span": [start, start + len("rail freight")],
-                                         "relation": "SYNTHETIC relation to the question"}}]
-    return json.dumps(body)
 
 
 

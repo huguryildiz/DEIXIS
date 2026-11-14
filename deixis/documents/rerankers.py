@@ -31,14 +31,17 @@ refused.
 
 from __future__ import annotations
 
+import asyncio
 import math
+import re
+import time
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import httpx
 
-from deixis.documents import builtin_catalog, embeddings, local_embedding
+from deixis.documents import builtin_catalog, local_embedding
 from deixis.keys import key_verification
 from deixis.models.gemini import error_message
 from deixis.providers.common import redact
@@ -46,7 +49,13 @@ from deixis.providers.common import redact
 SETTING = "reranking"
 PROVIDERS = ("builtin", "voyage", "cohere", "jina", "zeroentropy")
 VOYAGE_MODEL = "rerank-3-lite"  # the cheaper Voyage reranker ($0.02 per million tokens; owner, 17 Oct)
-VOYAGE_URL = embeddings.VOYAGE_URL
+VOYAGE_URL = "https://api.voyageai.com/v1"
+COHERE_URL = "https://api.cohere.com/v2"
+MAX_WAIT_SECONDS = 180
+RATE_LIMIT_RETRIES = 3
+DEFAULT_WAITS = (10, 20, 40)
+_sleep = asyncio.sleep
+_clock = time.monotonic
 COHERE_MODEL = "rerank-v4.0-fast"
 COHERE_MAX_DOC_TOKENS = 4096  # Cohere's default `max_tokens_per_doc`; past it a document would be cut
 JINA_URL = "https://api.jina.ai/v1"
@@ -72,6 +81,113 @@ MAX_CANDIDATES = 400  # never more records than this in one rerank, whatever the
 DEFAULT_TIMEOUT_SECONDS = 180
 MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS = 10, 900
 MAX_DOCUMENT_CHARS = 20_000  # a title and abstract longer than this is cut here, and the cut is counted
+
+
+class RerankerTransportError(Exception):
+    pass
+
+
+@dataclass
+class RateBudget:
+    """What a step may still wait for HTTP 429s, and what it has waited: kept in the step output, so a resumed step
+    starts with what is left. `on_wait` persists it after each one-second slice; `stop` is the flow's checkpoint."""
+
+    waited_seconds: float = 0.0
+    rate_limited_waits: int = 0
+    on_wait: Callable[["RateBudget"], None] | None = field(default=None, repr=False)
+
+    @property
+    def seconds_left(self) -> float:
+        return max(0.0, MAX_WAIT_SECONDS - self.waited_seconds)
+
+    @classmethod
+    def from_output(cls, output: dict[str, Any] | None, on_wait: Callable[["RateBudget"], None] | None = None) -> "RateBudget":
+        output = output or {}
+        return cls(float(output.get("waited_seconds") or 0), int(output.get("rate_limited_waits") or 0), on_wait)
+
+    def counts(self) -> dict[str, Any]:
+        return {"rate_limited_waits": self.rate_limited_waits, "waited_seconds": round(self.waited_seconds, 1)}
+
+    async def wait(self, seconds: float, stop: Callable[[], None] | None) -> None:
+        """Wait `seconds` in slices of at most one second, counting the time that really passed: a busy event loop
+        that wakes late is charged what it took. The budget is checked after every wake: once the step has waited
+        more than MAX_WAIT_SECONDS, the wait ends with RerankerTransportError and the batch is not sent again."""
+        self.rate_limited_waits += 1
+        left = seconds
+        while left > 0:
+            started = _clock()
+            await _sleep(min(1.0, left))
+            elapsed = max(0.0, _clock() - started)
+            left -= elapsed
+            self.waited_seconds += elapsed
+            if self.on_wait:
+                self.on_wait(self)
+            if stop:
+                stop()
+            if self.waited_seconds > MAX_WAIT_SECONDS:
+                raise RerankerTransportError(f"HTTP 429: rate limited; the waits passed the step's {MAX_WAIT_SECONDS} s limit")
+
+
+def retry_after(response: httpx.Response) -> float | None:
+    """Seconds a 429 asks to wait: the Retry-After header, else Gemini's RetryInfo.retryDelay in the body."""
+    header = response.headers.get("retry-after", "").strip()
+    if re.fullmatch(r"\d+(\.\d+)?", header):
+        return float(header)
+    try:
+        details = response.json()["error"]["details"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    for detail in details if isinstance(details, list) else []:
+        delay = detail.get("retryDelay") if isinstance(detail, dict) else None
+        if isinstance(delay, str) and (match := re.fullmatch(r"(\d+(?:\.\d+)?)s", delay.strip())):
+            return float(match.group(1))
+    return None
+
+
+# Failures before any byte of the request can have left: the text was not sent.
+NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol)
+
+
+async def _send(send: Callable[[], Any], budget: RateBudget | None, stop: Callable[[], None] | None,
+                on_sent: Callable[[], None] | None = None, secret: str | None = None) -> httpx.Response:
+    """One batch's request, sent again after each HTTP 429 the budget can wait out; any other failure raises.
+
+    `on_sent` is called each time the request was issued: a reply came back (any status), or it failed after the
+    connection was made (a write or read error, a timeout while waiting). A connection that was never made calls
+    nothing."""
+    retries = 0
+    while True:
+        # The persisted budget is read before every send, so a step resumed after a late wake past the limit (the
+        # pause can land before `RateBudget.wait` checks it) does not send the refused batch again (Sol r3, finding 2).
+        if budget is not None and budget.waited_seconds > MAX_WAIT_SECONDS:
+            raise RerankerTransportError(f"HTTP 429: rate limited; the waits passed the step's {MAX_WAIT_SECONDS} s limit "
+                                 f"({budget.waited_seconds:g} s waited)")
+        try:
+            response = await send()
+        except NOT_SENT as exc:
+            raise RerankerTransportError(f"{type(exc).__name__}: {str(exc)[:200]}") from exc
+        except httpx.HTTPError as exc:
+            if on_sent:
+                on_sent()
+            raise RerankerTransportError(f"{type(exc).__name__}: {str(exc)[:200]}") from exc
+        if on_sent:
+            on_sent()
+        if response.status_code != 429 or budget is None:
+            return response
+        if retries >= RATE_LIMIT_RETRIES:
+            raise RerankerTransportError(f"HTTP 429: rate limited {retries + 1} times on one batch: {redact(error_message(response), secret)}")
+        wait = retry_after(response)
+        wait = DEFAULT_WAITS[min(retries, len(DEFAULT_WAITS) - 1)] if wait is None else wait
+        if wait > budget.seconds_left:
+            raise RerankerTransportError(f"HTTP 429: rate limited; waiting {wait:g} s would pass the step's "
+                                 f"{MAX_WAIT_SECONDS} s limit ({budget.seconds_left:g} s left)")
+        retries += 1
+        await budget.wait(wait, stop)
+
+
+
+def estimated_tokens(text: str) -> int:
+    return len(text) // 3 + 1
 
 
 class RerankError(Exception):
@@ -223,11 +339,11 @@ async def _rerank(choice: Choice, client: httpx.AsyncClient, local: Any, query: 
     if choice.provider == "voyage":
         return await rerank_voyage(client, key, query, documents, stop)
     if choice.provider == "cohere":
-        q = embeddings.estimated_tokens(query)
-        long = [i for i, text in enumerate(documents) if q + embeddings.estimated_tokens(text) > COHERE_MAX_DOC_TOKENS]
+        q = estimated_tokens(query)
+        long = [i for i, text in enumerate(documents) if q + estimated_tokens(text) > COHERE_MAX_DOC_TOKENS]
         if long:  # Cohere would cut them; refused instead, never cut
             raise RerankError("reranker_failed", f"{len(long)} record(s) longer than Cohere reads in one document")
-        return await rerank_results(client, key, f"{embeddings.COHERE_URL}/rerank", query, documents, [list(range(len(documents)))],
+        return await rerank_results(client, key, f"{COHERE_URL}/rerank", query, documents, [list(range(len(documents)))],
                                     lambda docs: {"model": COHERE_MODEL, "query": query, "documents": docs, "top_n": len(docs),
                                                   "max_tokens_per_doc": COHERE_MAX_DOC_TOKENS}, stop)
     if choice.provider == "jina":
@@ -265,13 +381,13 @@ async def rerank_results(client: httpx.AsyncClient, key: str, url: str, query: s
     scores: list[float | None] = [None] * len(documents)
     tokens: int | None = None
     units: int | None = None
-    budget = embeddings.RateBudget()
+    budget = RateBudget()
     for indexes in batches:
         body = body_of([documents[i] for i in indexes])
         try:
-            response = await embeddings._send(lambda body=body: client.post(
+            response = await _send(lambda body=body: client.post(
                 url, timeout=120, json=body, headers={"Authorization": f"Bearer {key}"}), budget, stop, None, key)
-        except embeddings.EmbeddingError as exc:
+        except RerankerTransportError as exc:
             raise RerankError("reranker_failed", str(exc)) from exc
         if response.status_code != 200:
             raise RerankError("reranker_failed", f"HTTP {response.status_code}: {redact(error_message(response), key)}")
@@ -306,12 +422,12 @@ def voyage_batches(query: str, documents: list[str]) -> list[list[int]]:
     """Indexes of `documents` per request, each request's estimated "query × documents + documents" under
     VOYAGE_TOTAL_TOKENS and at most 1,000 documents. Scores from separate requests are on the same scale (each is the
     model's relevance of one document to the query), so one order can hold them all."""
-    q = embeddings.estimated_tokens(query)
+    q = estimated_tokens(query)
     batches: list[list[int]] = []
     current: list[int] = []
     total = 0
     for i, text in enumerate(documents):
-        cost = q + embeddings.estimated_tokens(text)
+        cost = q + estimated_tokens(text)
         if current and (len(current) >= 1000 or total + cost > VOYAGE_TOTAL_TOKENS):
             batches.append(current)
             current, total = [], 0
@@ -322,18 +438,18 @@ def voyage_batches(query: str, documents: list[str]) -> list[list[int]]:
 
 async def rerank_voyage(client: httpx.AsyncClient, key: str, query: str, documents: list[str],
                         stop: Callable[[], None] | None = None) -> dict[str, Any]:
-    """Voyage's /rerank. HTTP 429 is waited out a bounded number of times (embeddings._send with its own budget)."""
+    """Voyage's /rerank. HTTP 429 is waited out a bounded number of times (_send with its own budget)."""
     scores: list[float | None] = [None] * len(documents)
     used = 0
-    budget = embeddings.RateBudget()
+    budget = RateBudget()
     for indexes in voyage_batches(query, documents):
         body = {"query": query, "documents": [documents[i] for i in indexes], "model": VOYAGE_MODEL,
                 "truncation": False}
         try:
-            response = await embeddings._send(lambda body=body: client.post(
+            response = await _send(lambda body=body: client.post(
                 f"{VOYAGE_URL}/rerank", timeout=120, json=body, headers={"Authorization": f"Bearer {key}"}),
                 budget, stop, None, key)
-        except embeddings.EmbeddingError as exc:
+        except RerankerTransportError as exc:
             raise RerankError("reranker_failed", str(exc)) from exc
         if response.status_code != 200:
             raise RerankError("reranker_failed", f"HTTP {response.status_code}: {redact(error_message(response), key)}")

@@ -7,13 +7,8 @@ it says nothing about how many relevant works a real chain reaches, which the sl
 
 import pytest
 
-from deixis.workflow.search import chaining, ranking
+from deixis.workflow.search import chaining
 
-IRRIGATION = {"setting": ["greenhouse"], "task": ["irrigation scheduling"]}
-
-
-def forms(blocks):
-    return ranking.block_forms(blocks)
 
 
 def test_a_linked_work_the_library_already_holds_is_not_chained():

@@ -207,7 +207,6 @@ def test_the_off_arm_freezes_no_rule_and_plans_nothing(tmp_path):
     assert "broad" not in plan and "broad_not_sent" not in plan
     assert "subtopic" not in plan and "subtopic_not_sent" not in plan
     assert fast_path.broad_index(lib.run["budget"]) is None
-    assert fast_path.subtopic_search(lib.run["budget"]) is None
     assert views.broad_index_view(lib.store, lib.run, {"fast_path_search": plan}) is None
     lib.conn.close()
 

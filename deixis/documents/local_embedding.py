@@ -1,13 +1,12 @@
-"""The built-in embedding models and rerankers: GGUF files from `builtin_catalog`, run by llama.cpp's `llama-server`.
+"""The built-in rerankers: GGUF files from `builtin_catalog`, run by llama.cpp's `llama-server`.
 
 Each catalog model is downloaded, checked, removed and chosen on its own (`workflow/run/local_embedding_service.py`). A
 chosen model gets its own `llama-server` process the first time it is asked for, one model per process, on a free
 loopback port with a random API key of that process; `LocalModels` keeps one server per model and stops it after
 LOCAL_IDLE_SECONDS without a request. DEIXIS talks to it through the loopback client (no proxy, no redirects).
 
-A server counts as ready only when `/health` answers 200, an authenticated probe only this process can answer comes
-back right (one sentence embedded into a unit vector of the catalog's dimension; two documents reranked into two
-finite scores), and the child is still alive. A port another process took is detected by the child's own bind error
+A server counts as ready only when `/health` answers 200, an authenticated rerank probe returns two finite scores,
+and the child is still alive. A port another process took is detected by the child's own bind error
 and the next port is tried, at most MAX_START_ATTEMPTS times.
 
 The child runs under a small `/bin/sh` watcher that holds a pipe from DEIXIS: when DEIXIS ends, even killed, the pipe
@@ -15,8 +14,7 @@ closes and the watcher kills `llama-server`, so no server outlives it. The model
 runtime's are handed to the child (`pass_fds`) and live as long as it does; installing or removing a model takes that
 model's lock exclusively, so neither happens under a running server.
 
-Replies are checked fail-closed: embeddings mapped by `index` (each 0..n-1 once), every vector of the catalog's
-dimension, finite, not null and of unit length; rerank results mapped by `results[].index` (each 0..n-1 once), every
+Replies are checked fail-closed: rerank results map by `results[].index` (each 0..n-1 once), with every
 score a finite number of any sign or size (llama.cpp returns raw scores; only their order is used).
 
 Token limits are explicit: a text over the input limit is counted with the same server's `/tokenize`, cut at the limit
@@ -40,7 +38,6 @@ import secrets
 import shutil
 import signal
 import socket
-from array import array
 from collections import defaultdict
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -61,13 +58,12 @@ LOCAL_BATCH = 16  # records per request (a starting value, not measured), so a p
 LOCAL_IDLE_SECONDS = 300  # an idle server is stopped: it holds its model in memory
 READY_TIMEOUT_SECONDS = 120  # loading the model and answering the probe
 LOCK_WAIT_SECONDS = 30  # waiting for a model's in-use lock that an install's check or a removal holds
-SECONDS_PER_BATCH_LIMIT = 300  # one embedding request
+SECONDS_PER_BATCH_LIMIT = 300  # one local model request
 MAX_START_ATTEMPTS = 3  # ports tried when another process took the free one first
 INPUT_TOKENS = CTX - 16  # tokens one text may have (room for the model's own start and end tokens)
 RERANK_TEMPLATE_TOKENS = 256  # room for the reranker's template around the question and the document
-MAX_INPUT_CHARS = 20_000  # a longer text is refused, never cut (`embeddings.MAX_CHARS`)
+MAX_INPUT_CHARS = 20_000  # a longer text is refused, never cut
 LOG_TAIL_BYTES = 4096
-UNIT_TOLERANCE = 1e-3
 CHECK_SENTENCE = "Packet size and energy consumption in wireless sensor networks."
 # Watches the pipe from DEIXIS: at its end (DEIXIS closed or killed) the server is killed; the server's own exit code
 # is the watcher's. "$@" is the server and its arguments.
@@ -75,8 +71,6 @@ WATCHER = ('exec 3<&0; "$@" 0</dev/null & child=$!; '
            '(while read -r _ <&3; do :; done; kill -KILL "$child" 2>/dev/null) & reaper=$!; '
            'wait "$child"; code=$?; kill -KILL "$reaper" 2>/dev/null; exit "$code"')
 BIND_FAILURE = ("couldn't bind", "could not bind", "address already in use", "failed to bind")
-LEGACY_FOLDERS = ("embedding", "embedding-models", "embedding-hf-home", "uv-python", "uv-cache")
-LEGACY_FILES = ("embedding-job.json", "embedding-install.lock", "embedding-in-use.lock")
 
 RUNNER_THREADS: ContextVar[int | None] = ContextVar("deixis_embedding_threads", default=None)
 
@@ -150,11 +144,6 @@ class BuiltinPaths:
     def installed(self, model: Model) -> bool:
         """The model's file is in place (not a part); whether it matches is the integrity record's business."""
         return self.model_file(model).is_file()
-
-    def legacy(self) -> list[Path]:
-        """What the earlier PyTorch built-in model left under tools; shown and removed only on request."""
-        return [p for p in ([self.root / n for n in LEGACY_FOLDERS] + [self.root / n for n in LEGACY_FILES])
-                if p.exists() or p.is_symlink()]
 
 
 def builtin_paths(data_dir: Path) -> BuiltinPaths:
@@ -279,29 +268,6 @@ def _number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def check_vectors(reply: Any, count: int, dimensions: int) -> list[array]:
-    """`/v1/embeddings` vectors in input order, mapped by `index`, or `builtin_bad_reply`: each index 0..count-1 once,
-    every vector `dimensions` long, finite, not null and of unit length."""
-    items = reply.get("data") if isinstance(reply, dict) else None
-    if not isinstance(items, list) or len(items) != count or not all(isinstance(i, dict) for i in items):
-        raise LocalEmbeddingError("builtin_bad_reply", f"{len(items) if isinstance(items, list) else 'no'} vectors for {count} texts")
-    indexes = [item.get("index") for item in items]
-    if any(type(i) is not int for i in indexes) or sorted(indexes) != list(range(count)):
-        raise LocalEmbeddingError("builtin_bad_reply", f"the reply's indexes are not 0 to {count - 1}, each once")
-    vectors: list[array | None] = [None] * count
-    for item in items:
-        values = item.get("embedding")
-        if not isinstance(values, list) or len(values) != dimensions:
-            raise LocalEmbeddingError("builtin_bad_reply", f"a vector has {len(values) if isinstance(values, list) else 'no'} "
-                                                           f"dimensions, not {dimensions}")
-        if not all(_number(v) for v in values):
-            raise LocalEmbeddingError("builtin_bad_reply", "a vector holds a null or a value that is not finite")
-        norm = math.sqrt(sum(v * v for v in values))
-        if abs(norm - 1.0) > UNIT_TOLERANCE:
-            raise LocalEmbeddingError("builtin_bad_reply", f"a vector has length {norm:.4f}, not 1")
-        vectors[item["index"]] = array("f", values)
-    return vectors  # type: ignore[return-value]
-
 
 def check_scores(reply: Any, count: int) -> list[float]:
     """`/v1/rerank` scores in input order, mapped by `results[].index`, or `builtin_bad_reply`: each index 0..count-1
@@ -340,7 +306,7 @@ class LlamaServer:
 
     def argv(self, port: int, key: str) -> list[str]:
         model = self.model
-        kind = (["--embedding", "--pooling", model.pooling] if model.kind == "embedding" else ["--rerank"])
+        kind = ["--rerank"]
         return (["-m", str(self.paths.model_file(model)), "--host", "127.0.0.1", "--port", str(port), "-c", str(CTX),
                  "-ub", str(CTX), "-b", str(CTX), "-np", "1", "-ngl", "99", "--api-key", key, *kind]
                 + (["--threads", str(self.threads)] if self.threads is not None else []))
@@ -428,10 +394,7 @@ class LlamaServer:
         # Only this process knows the key: a server another process runs on this port cannot answer the probe.
         seconds = max(1.0, ends - loop.time())
         try:
-            if self.model.kind == "embedding":
-                await self.embed([CHECK_SENTENCE], "query", seconds)
-            else:
-                await self.rerank(CHECK_SENTENCE, [CHECK_SENTENCE, "ready"], seconds)
+            await self.rerank(CHECK_SENTENCE, [CHECK_SENTENCE, "ready"], seconds)
         except LocalEmbeddingError:
             self._exited()
             raise
@@ -477,20 +440,6 @@ class LlamaServer:
         if not isinstance(content, str):
             raise LocalEmbeddingError("builtin_bad_reply", "the detokenizer's reply holds no text")
         return content, True
-
-    async def embed(self, texts: list[str], kind: str, seconds: float) -> tuple[list[array], list[int]]:
-        """Unit vectors in input order and the indexes of the texts cut at the token limit. Queries of a model with an
-        instruction carry `Instruct: …\\nQuery:`; documents are sent as they are."""
-        prefix = (f"Instruct: {self.model.query_instruction}\nQuery:"
-                  if kind == "query" and self.model.query_instruction else "")
-        inputs, cut = [], []
-        for index, text in enumerate(texts):
-            fitted, was_cut = await self._fit(prefix + text, INPUT_TOKENS, seconds)
-            inputs.append(fitted)
-            if was_cut:
-                cut.append(index)
-        reply = await self._post("/v1/embeddings", {"input": inputs, "encoding_format": "float"}, seconds)
-        return check_vectors(reply, len(texts), self.model.dimensions or 0), cut
 
     async def rerank(self, query: str, documents: list[str], seconds: float) -> tuple[list[float], list[int]]:
         """Raw relevance scores in input order and the indexes of the documents cut so that question, template and
@@ -597,15 +546,6 @@ class LocalModels:
                                                               "DEIXIS; choose one in Settings")
         return model
 
-    async def embed(self, model_id: str, texts: list[str], kind: str, report: dict[str, int] | None = None) -> list[array]:
-        """Vectors in input order for `kind` "document" or "query"; raises LocalEmbeddingError. `report`, when given,
-        gets `truncated_texts`: how many of these texts were cut at the token limit."""
-        model = self._model(model_id, "embedding")
-        vectors, cut = await self._request(model, lambda server: server.embed(texts, kind, SECONDS_PER_BATCH_LIMIT))
-        if report is not None:
-            report["truncated_texts"] = report.get("truncated_texts", 0) + len(cut)
-        return vectors
-
     async def rerank(self, model_id: str, query: str, documents: list[str], seconds: float) -> tuple[list[float], list[int]]:
         """Raw scores in input order and the indexes of the documents cut. A request that outlives `seconds`, or is
         cancelled, kills the server, so no reply is left unread."""
@@ -669,19 +609,6 @@ class LocalModels:
                     await server.stop()
             finally:
                 lock.release()
-
-
-# The running app's models, for views that only have the store (as `views.semantic_view` is).
-_registered: LocalModels | None = None
-
-
-def register(models: LocalModels) -> None:
-    global _registered
-    _registered = models
-
-
-def model_available(model_id: str | None) -> bool:
-    return bool(_registered is not None and hasattr(_registered, "available") and _registered.available(model_id))
 
 
 def remove_model_files(paths: BuiltinPaths, model: Model) -> list[str]:

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DataLocationCard } from './DataLocation'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinModel, type BuiltinModels, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type Reranking, type RerankProvider, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from '../lib/api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinModel, type BuiltinModels, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type Reranking, type RerankProvider } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { ocrLanguagesText } from '../reading/ocr'
 import { t, uiLocale } from '../lib/i18n'
@@ -63,7 +63,6 @@ const providerKeySignup: Record<string, { url: string; steps: string }> = {
 const MAILTO_PROVIDERS = new Set(['openalex', 'crossref'])
 // The model connections that sign in with an account on this computer, and the command-line tool each one runs.
 const ACCOUNT_TOOLS: Record<string, { tool: LocalTool['id']; name: string }> = { codex: { tool: 'codex', name: 'Codex CLI' }, claude: { tool: 'claude_code', name: 'Claude Code' }, copilot_cli: { tool: 'copilot_cli', name: 'GitHub Copilot CLI' }, gemini_cli: { tool: 'gemini_cli', name: 'Gemini CLI' } }
-const SERVER_IDS = ['ollama', 'lm_studio']
 
 // The Models tab (owner-approved connection mockup, 15 Oct 2026): one card per company, each with up to two ways to
 // connect, an account sign-in and an API key, and each way keeps its own connection's state. Texts are English; the
@@ -85,11 +84,11 @@ const MAIN_COMPANIES: Company[] = [
     key: { conn: 'anthropic', env: 'ANTHROPIC_API_KEY', site: 'console.anthropic.com', service: 'Anthropic' } },
   { id: 'chatgpt', name: 'ChatGPT', maker: 'OpenAI', icon: 'openai',
     account: { conn: 'codex', label: 'With your ChatGPT account', desc: 'If you have a ChatGPT Plus, Pro or Business subscription. No extra charge.' },
-    key: { conn: 'openai', env: 'OPENAI_API_KEY', site: 'platform.openai.com', service: 'OpenAI', desc: 'Pay as you go. Get the key at {site}. The same key can also be used for semantic search.' } },
+    key: { conn: 'openai', env: 'OPENAI_API_KEY', site: 'platform.openai.com', service: 'OpenAI', desc: 'Pay as you go. Get the key at {site}. ' } },
   { id: 'gemini', name: 'Gemini', maker: 'Google', icon: 'gemini', keyFirst: true,
     intro: 'Either way is enough. Google recommends an API key for apps that run Gemini in the background.',
     account: { conn: 'gemini_cli', label: 'With your Google account', desc: 'A free Google account is enough; there is a daily usage limit.' },
-    key: { conn: 'gemini', env: 'GEMINI_API_KEY', site: 'aistudio.google.com', desc: 'Get the key at {site}. The same key can also be used for semantic search.' } },
+    key: { conn: 'gemini', env: 'GEMINI_API_KEY', site: 'aistudio.google.com', desc: 'Get the key at {site}. ' } },
   { id: 'copilot', name: 'GitHub Copilot', maker: 'GitHub', icon: 'copilot',
     // GitHub retired GitHub Models, its token way, on 30 Jul 2026; Copilot CLI is a separate service.
     account: { conn: 'copilot_cli', label: 'With your GitHub account', desc: 'If you have a Copilot subscription. Free for students and teachers.' } },
@@ -139,7 +138,7 @@ const GLYPHS: Record<string, ReactNode> = {
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
 
-type Selected = { kind: 'company' | 'local' | 'semantic' | 'mathpix' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
+type Selected = { kind: 'company' | 'local' | 'mathpix' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
 // Why a service refused a new key, in plain words, with the HTTP code it answered. The readings follow each
@@ -361,7 +360,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
       ? <>
         <p className="local-tool-note">{t('Running · {endpoint}', { endpoint: tool.endpoint ?? '' })}</p>
         {tool.models && tool.models.length > 0
-          ? <ul className="local-tool-models">{tool.models.map(m => <li key={m.id}><span>{m.id}</span><span className="local-tool-model-meta">{m.size_bytes != null && formatBytes(m.size_bytes)}{m.embedding && <span className="status-chip is-configured">{t('Embedding')}</span>}</span></li>)}</ul>
+          ? <ul className="local-tool-models">{tool.models.filter(m => !m.embedding).map(m => <li key={m.id}><span>{m.id}</span><span className="local-tool-model-meta">{m.size_bytes != null && formatBytes(m.size_bytes)}</span></li>)}</ul>
           : <p className="local-tool-note">{t('No models found.')}</p>}
       </>
       : <p className="local-tool-note">{t(offerApp ? 'Only the command-line version is installed. Install the Ollama app to run it without a terminal.' : tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
@@ -885,7 +884,7 @@ function BuiltinCatalog({ builtin, kind, inUse, onOpen }: { builtin: BuiltinMode
   })}</ul>
 }
 
-// A model's sheet: what it is, its files and the section that chooses it (given by the semantic search or reranking section).
+// A reranker model's sheet shows its files and selection control.
 function BuiltinModelSheet({ builtin, model, dark, use, onClose, onChanged }: {
   builtin: BuiltinModels; model: BuiltinModel | null; dark: boolean; use: ReactNode; onClose: () => void; onChanged: () => Promise<void>
 }) {
@@ -896,15 +895,11 @@ function BuiltinModelSheet({ builtin, model, dark, use, onClose, onChanged }: {
           <span className="sheet-mark" aria-hidden>{settingsIcon('builtin')}</span>
           <div className="sheet-head-text">
             <SheetTitle>{model.name}</SheetTitle>
-            <SheetDescription>{t(model.kind === 'embedding' ? 'Semantic search' : 'Reranking')}</SheetDescription>
+            <SheetDescription>{t('Reranking')}</SheetDescription>
           </div>
         </SheetHeader>
         <div className="connection-body mk pad detail">
-          <p className="foot-note is-ink">{model.kind === 'embedding'
-            ? (model.english_query_required
-              ? withCode(t('{model} · reads English; for a question in another language it asks for one English sentence'), { model: model.name })
-              : withCode(t('{model} · reads questions in many languages'), { model: model.name }))
-            : withCode(t('{model} · runs on this computer; no text leaves it'), { model: model.name })}</p>
+          <p className="foot-note is-ink">{withCode(t('{model} · runs on this computer; no text leaves it'), { model: model.name })}</p>
           <BuiltinModelFiles builtin={builtin} model={model} dark={dark} onChanged={onChanged} />
           {use}
         </div>
@@ -983,26 +978,6 @@ function BuiltinModelFiles({ builtin, model: m, dark, onChanged }: { builtin: Bu
       description={t('Its file is deleted. Scores it already gave are kept; sources not yet scored are ranked without it until you download it again.')}
       confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(() => api.removeBuiltinModel(m.id))} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
   </section>
-}
-
-// The earlier PyTorch built-in model: its measured size, removed only when the person asks.
-function BuiltinLegacy({ builtin, dark, onChanged }: { builtin: BuiltinModels; dark: boolean; onChanged: () => Promise<void> }) {
-  const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const toast = useToast()
-  if (!builtin.legacy.present) return null
-  const remove = () => {
-    setBusy(true)
-    api.removeBuiltinLegacy().then(() => { setOpen(false); toast('success', t('The earlier built-in model was removed.')); return onChanged() })
-      .catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
-  }
-  return <div className="builtin-legacy">
-    <span><HardDrive size={14} aria-hidden />{t('Earlier built-in model (PyTorch) · {size}', { size: formatBytes(builtin.legacy.bytes) })}</span>
-    <button type="button" className="ghost" disabled={busy} onClick={() => setOpen(true)}><Trash2 size={14} aria-hidden />{t('Remove')}</button>
-    <ConfirmDialog open={open} dark={dark} title={t('Remove the earlier built-in model?')}
-      description={t('The PyTorch model files and the Python environment the earlier version of DEIXIS used are deleted ({size}). The current built-in models do not use them. Scores it already gave are kept.', { size: formatBytes(builtin.legacy.bytes) })}
-      context={builtin.path} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={remove} onOpenChange={setOpen} />
-  </div>
 }
 
 // Turns the bare site addresses in a settings sentence (openalex.org, zotero.org/settings/keys) into links.
@@ -1238,11 +1213,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [mathpix, setMathpix] = useState<Mathpix | null>(null)
   const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   const [pdfReader, setPdfReader] = useState<PdfReader | null>(null)
-  const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
-  const [semError, setSemError] = useState('')
-  const [pending, setPending] = useState<{ provider: SemanticSearchProvider; model: string | null } | null>(null)
   const [builtin, setBuiltin] = useState<BuiltinModels | null>(null)
-  const [builtinSheet, setBuiltinSheet] = useState<string | null>(null)  // the built-in embedding model whose sheet is open
   // What this sheet checked itself, and when the answer came: "checked HH:MM" belongs to that answer only.
   const [checking, setChecking] = useState<string | null>(null)
   const [showing, setShowing] = useState<string | null>(null)  // the hidden model being offered again
@@ -1267,7 +1238,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const toast = useToast()
   // A later read wins: an answer to an earlier request that arrives after it is dropped. Semantic search reads and saves
   // share one version: a save moves it on, so a read started before or during the save never replaces the saved result.
-  const seq = useRef({ connections: 0, tools: 0, semantic: 0, semanticVersion: 0, saving: false })
+  const seq = useRef({ connections: 0, tools: 0 })
   // The all-connections read and each single-connection check order their answers per connection through one counter (E7).
   const order = useRef(createRequestOrder())
   // Reads are cancelled when the page is left and end with "did not answer" when they take too long; saves and other writes are not (E25).
@@ -1307,23 +1278,16 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     .catch((e: Error) => { if (!isLeft(e)) setToolsError(e.message); if (strict) throw e; return false }), [leaving])
   const loadOcr = useCallback((strict = false): Promise<boolean> => api.ocr(leaving()).then(result => { setOcrTool(result); return true })
     .catch((e: Error) => { if (!isLeft(e)) setToolsError(e.message); if (strict) throw e; return false }), [leaving])
-  const loadSemantic = useCallback((strict = false): Promise<boolean> => {
-    const n = ++seq.current.semantic, version = seq.current.semanticVersion, duringSave = seq.current.saving
-    const current = () => n === seq.current.semantic && version === seq.current.semanticVersion && !duringSave
-    return api.semanticSearch(leaving()).then(result => { if (!current()) return false; setSemantic(result); setSemError(''); return true })
-      .catch((e: Error) => { if (current() && !isLeft(e)) setSemError(e.message); if (strict) throw e; return false })
-  }, [leaving])
-  const loadBuiltin = useCallback(() => api.builtinModels(leaving()).then(setBuiltin).catch((e: Error) => { if (!isLeft(e)) setSemError(e.message) }), [leaving])
+  const loadBuiltin = useCallback(() => api.builtinModels(leaving()).then(setBuiltin).catch((e: Error) => { if (!isLeft(e)) setError(e.message) }), [leaving])
   useEffect(() => { void load(false) }, [load])
   useEffect(() => { loadCredentials() }, [loadCredentials])
   useEffect(() => { void loadTools(false) }, [loadTools])
-  useEffect(() => { void loadSemantic() }, [loadSemantic])
   useEffect(() => { void loadBuiltin() }, [loadBuiltin])
   useEffect(() => {
     if (!builtin?.models.some(m => m.state === 'installing' || m.state === 'installing_elsewhere' || m.state === 'removing')) return
-    const timer = window.setInterval(() => { void loadBuiltin().then(() => loadSemantic()) }, 1500)
+    const timer = window.setInterval(() => { void loadBuiltin() }, 1500)
     return () => window.clearInterval(timer)
-  }, [builtin, loadBuiltin, loadSemantic])
+  }, [builtin, loadBuiltin])
   useEffect(() => { void loadOcr() }, [loadOcr])
   useEffect(() => { void loadMathpix() }, [loadMathpix])
   useEffect(() => {
@@ -1351,7 +1315,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       if (order.current.settle(id, n)) setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
     }, (e: Error) => { if (gaveNoAnswer(e)) order.current.release(n); throw e })
   }, [leaving])
-  const reloadAfterKeyChange = useCallback(() => { loadCredentials(); void load(true); void loadSemantic() }, [loadCredentials, load, loadSemantic])
+  const reloadAfterKeyChange = useCallback(() => { loadCredentials(); void load(true);  }, [loadCredentials, load])
   // A model key change also re-checks that one connection on its own: the full refresh waits on every connection
   // (about 12 s with the CLIs), and until then the card would still show the state before the change.
   const reloadAfterModelKeyChange = useCallback((conn: string) => {
@@ -1517,82 +1481,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       toast('success', url ? t('Local server address saved.') : t('Local server address removed.'))
     }).catch((e: Error) => setServerError(e.message)).finally(() => setServerBusy(false))
   }
-  // Semantic search rows (plan ST5); "Local model server" (Ollama, LM Studio) only while it is the saved choice. A row that
-  // cannot be chosen says what it needs, from the options' own state. A choice is saved at once; choosing the row that
-  // is only the default (nothing saved yet) saves it too.
-  const option = (p: SemanticSearchProvider) => semantic?.options.find(o => o.provider === p)
-  const serverOptions = SERVER_IDS.map(id => option(id as SemanticSearchProvider)).filter((o): o is SemanticSearchOption => !!o)
-  const serverChoices = serverOptions.filter(o => o.available).flatMap(o => o.models.map(m => ({ provider: o.provider, model: m, label: `${o.provider === 'ollama' ? 'Ollama' : 'LM Studio'} · ${m}` })))
-  const chosen = pending ?? (semantic ? { provider: semantic.provider, model: semantic.model } : null)
-  const saving = pending !== null
-  function chooseSemantic(provider: SemanticSearchProvider, model: string | null) {
-    if (saving || !semantic) return
-    const version = ++seq.current.semanticVersion
-    seq.current.saving = true
-    setPending({ provider, model })
-    api.saveSemanticSearch(provider, model).then(result => {
-      if (version !== seq.current.semanticVersion) return
-      seq.current.semantic++  // reads started before the save are dropped
-      setSemantic(result); setSemError(''); toast('success', t('Semantic search setting saved.'))
-    }).catch((e: Error) => { if (version === seq.current.semanticVersion) toast('error', t('Could not save: {message}', { message: e.message })) })
-      .finally(() => { if (version === seq.current.semanticVersion) { seq.current.saving = false; setPending(null) } })
-  }
-  const needsPill = (row: string): string | null => {
-    if (!semantic) return null
-    if (row === 'gemini') return option('gemini')?.available ? null : t('Needs a Google AI key')
-    if (row === 'openai') return option('openai')?.available ? null : t('Needs an OpenAI key')
-    if (row === 'voyage') return option('voyage')?.available ? null : t('Needs a Voyage AI key')
-    if (row === 'cohere') return option('cohere')?.available ? null : t('Needs a Cohere key')
-    if (row === 'server') return serverChoices.length ? null : serverOptions.some(o => /lists no embedding model/.test(o.reason ?? '')) ? t('Needs an embedding model') : t('Needs a local server')
-    return null
-  }
-  const semanticRows: { id: string; label: string; local: boolean | null; model?: string; apiKey?: { env: string; site: string; service: string; conn?: string }; desc?: ReactNode; providers: SemanticSearchProvider[]; body?: ReactNode }[] = [
-    { id: 'gemini', providers: ['gemini'], label: t('Gemini embeddings'), local: false, model: option('gemini')?.models[0] ?? 'gemini-embedding',
-      desc: withCode(t('{model} · sends titles, abstracts and passage text to Google'), { model: option('gemini')?.models[0] ?? 'gemini-embedding' }),
-      apiKey: { env: 'GEMINI_API_KEY', site: 'aistudio.google.com/apikey', service: 'Google AI Studio', conn: 'gemini' },
-      body: <p className="foot-note is-ink">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p> },
-    { id: 'openai', providers: ['openai'], label: t('OpenAI embeddings'), local: false, model: option('openai')?.models[0] ?? 'text-embedding-3-small',
-      desc: withCode(t('{model} · sends titles, abstracts and passage text to OpenAI'), { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }),
-      apiKey: { env: 'OPENAI_API_KEY', site: 'platform.openai.com', service: 'OpenAI', conn: 'openai' } },
-    { id: 'voyage', providers: ['voyage'], label: t('Voyage AI embeddings'), local: false, model: option('voyage')?.models[0] ?? 'voyage-4-lite',
-      desc: withCode(t('{model} · sends titles, abstracts and passage text to Voyage AI'), { model: option('voyage')?.models[0] ?? 'voyage-4-lite' }),
-      apiKey: { env: 'VOYAGE_API_KEY', site: 'dashboard.voyageai.com', service: 'Voyage AI' } },
-    { id: 'cohere', providers: ['cohere'], label: t('Cohere embeddings'), local: false, model: option('cohere')?.models[0] ?? 'embed-v5.0-fast',
-      desc: withCode(t('{model} · sends titles, abstracts and passage text to Cohere'), { model: option('cohere')?.models[0] ?? 'embed-v5.0-fast' }),
-      apiKey: { env: 'COHERE_API_KEY', site: 'dashboard.cohere.com/api-keys', service: 'Cohere' } },
-    // Local model servers are no longer offered (the built-in models cover keyless use); a saved Ollama or LM Studio
-    // choice still shows its row, so it is never switched away without the person choosing another.
-    ...(semantic && SERVER_IDS.includes(semantic.provider)
-      ? [{ id: 'server', providers: ['ollama', 'lm_studio'] as SemanticSearchProvider[], label: t('Local model server'), local: true, model: 'Ollama · LM Studio', desc: t('An embedding model on Ollama or LM Studio') }] : []),
-    { id: 'off', providers: ['off'], label: t('Off'), local: null, model: t('Keyword search only; sources get no similarity score.'), desc: t('Keyword search only; sources get no similarity score.') },
-  ]
-  const privacyOf = (provider: SemanticSearchProvider) => provider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.')
-    : provider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, which DEIXIS cannot detect, Google may use that text to improve its products.')
-    : provider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' })
-    : provider === 'cohere' ? t('The question, titles, abstracts and passage text are sent to {service}. Each run records the tokens Cohere billed.', { service: 'Cohere' })
-    : provider === 'voyage' ? t('The question, titles, abstracts and passage text are sent to {service}. Each run records the tokens Voyage counted.', { service: 'Voyage AI' })
-    : provider === 'builtin' ? t('For semantic search, no text leaves the computer.') : t('Passage text stays on this computer.')
-  const privacy = semantic ? privacyOf(semantic.provider) : null
-  // A semantic search row's state: chosen, choosable, and what its card's pill says.
-  const semanticState = (row: (typeof semanticRows)[number]) => {
-    const isChosen = !!chosen && row.providers.includes(chosen.provider)
-    const available = !!semantic && (row.id === 'server' ? serverChoices.length > 0 : !!option(row.providers[0])?.available)
-    const need = needsPill(row.id)
-    return { isChosen, available, need, status: need ?? (isChosen ? t('In use') : t('Not in use')) }
-  }
-  const pickSemantic = (row: (typeof semanticRows)[number]) => {
-    if (row.id === 'server') { const first = serverChoices[0]; if (first) chooseSemantic(first.provider, first.model) }
-    else chooseSemantic(row.providers[0], null)
-  }
-  const semanticRow = selected?.kind === 'semantic' ? semanticRows.find(r => r.id === selected.id) : undefined
-  // The built-in embedding models: one choice per catalog model, in use only when the provider and the model are both it.
-  const builtinOption = (id: string) => semantic?.options.find(o => o.provider === 'builtin' && o.model === id)
-  const builtinChosen = chosen?.provider === 'builtin' ? chosen.model : null
-  const builtinModel = builtin?.models.find(m => m.id === builtinSheet && m.kind === 'embedding') ?? null
-  const builtinModelOption = builtinModel ? builtinOption(builtinModel.id) : undefined
-  const builtinModelChosen = !!builtinModel && builtinChosen === builtinModel.id
-  const builtinReady = !!builtinModel && !!builtinModelOption?.available
-  const builtinChanged = async () => { await loadBuiltin(); await loadSemantic() }
+  const builtinChanged = async () => { await loadBuiltin() }
 
   // ---- the connection sheet ----
   const sel = selected
@@ -1606,7 +1495,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const name = !sel ? ''
     : company ? company.name
     : sel.kind === 'local' ? (sel.id === 'local_server' ? t('Another local server') : localToolNames[sel.id] ?? sel.id)
-    : sel.kind === 'semantic' ? semanticRow?.label ?? sel.id
     : sel.kind === 'provider' ? providerNames[sel.id] ?? sel.id
     : sel.kind === 'mathpix' ? t('Mathpix equation reader')
     : sel.kind === 'ocr-tool' ? t('OCR (Tesseract)')
@@ -1619,7 +1507,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     : company ? t(company.maker)
     : sel.kind === 'provider' ? (providerUse[sel.id] ? t(providerUse[sel.id]) : providerRole(provider?.role))
     : sel.kind === 'zotero' ? t('Read-only collections')
-    : sel.kind === 'semantic' ? t('Semantic search')
     : sel.kind === 'reference-files' ? t('Import a .bib or .ris file')
     : null
   const checkedLine = (key: string) => checked[key] && !checkFailed[key] ? <span className="status-chip is-configured">{t('checked {time}', { time: clock(checked[key]) })}</span> : null
@@ -1735,8 +1622,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const model = data?.models[way.conn]
     const entry = keyEntry(way.env)
     const status: [Tone, string] = !data || !credentials ? loading : model?.ready ? ['ok', t('Ready')] : entry?.configured && model ? modelStatus(model) : ['no', t('No key entered')]
-    const effect = way.env === 'OPENAI_API_KEY' ? t('Research steps with this key, and semantic search with OpenAI, stop until a new key is added.')
-      : way.env === 'GEMINI_API_KEY' ? t('Research steps with this key, and semantic search with Gemini, stop until a new key is added.')
+    const effect = way.env === 'OPENAI_API_KEY' ? t('Research steps with this key stop until a new key is added.')
+      : way.env === 'GEMINI_API_KEY' ? t('Research steps with this key stop until a new key is added.')
       : t('This connection stops working until a new key is added.')
     return <section key="key" className={`way ${model?.ready ? 'is-on' : ''}`} aria-label={t(way.label ?? 'With an API key')}>
       {wayHead(t(way.label ?? 'With an API key'), status, undefined, c.keyFirst ? <span className="st rec">{t('Recommended')}</span> : undefined)}
@@ -1747,11 +1634,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       {model?.hidden_models?.length ? hiddenModels(way.conn, model.hidden_models) : null}
       {model && (model.models?.length || way.conn === 'gemini') ? <details className="way-more">
         <summary><ChevronRight size={14} aria-hidden />{t('Details')}</summary>
-        {way.conn === 'gemini' && <div className="connection-checks">
-          {/* From the saved semantic search provider, not from the key alone: another provider or Off may be chosen. */}
-          {check(t('Semantic passage search'), !semantic ? t('not known') : semantic.provider === 'gemini' ? t('on · passage text is sent to Google')
-            : model.key_configured ? t('off · another provider is chosen') : t('off'))}
-        </div>}
         <ModelCatalogue model={model} />
       </details> : null}
     </section>
@@ -1760,39 +1642,9 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     {wayHead(t(label), ['no', t('Coming soon')])}
     <p className="way-desc">{t('Signing in with a subscription account is not available for this model yet.')}</p>
   </section>
-  const localCheck = (conn: string | null) => Promise.all([...(conn ? [refreshModel(conn)] : []), loadTools(true, true), loadSemantic(true)])
+  const localCheck = (conn: string | null) => Promise.all([...(conn ? [refreshModel(conn)] : []), loadTools(true, true)])
   let body: ReactNode = null
-  if (semanticRow) {
-    const { isChosen, available, need, status } = semanticState(semanticRow)
-    const key = semanticRow.apiKey
-    const entry = key ? keyEntry(key.env) : undefined
-    body = <>
-      {semanticRow.desc && <p className="foot-note is-ink">{semanticRow.desc}</p>}
-      {key && <section className={`way ${entry?.configured ? 'is-on' : ''}`} aria-label={t('With an API key')}>
-        {wayHead(t('With an API key'), !credentials ? loading : entry?.configured ? ['ok', t('Ready')] : ['no', t('No key entered')])}
-        <p className="way-desc">{linkify(t('Get the key at {site}.', { site: key.site }))}</p>
-        {credentials && <KeyField key={key.env} env={key.env} entry={entry} keychain={credentials.keychain} label={t('Key')} service={key.service}
-          removeEffect={key.env === 'VOYAGE_API_KEY' ? t('Semantic search and reranking with Voyage stop until you add a key again.')
-            : key.env === 'COHERE_API_KEY' ? t('Semantic search and reranking with Cohere stop until you add a key again.')
-            : key.env === 'OPENAI_API_KEY' ? t('Research steps with this key, and semantic search with OpenAI, stop until a new key is added.')
-            : t('Research steps with this key, and semantic search with Gemini, stop until a new key is added.')}
-          onSaved={() => key.conn ? reloadAfterModelKeyChange(key.conn) : reloadAfterKeyChange()} />}
-      </section>}
-      {semanticRow.body}
-      <section className={`way ${isChosen && !need ? 'is-on' : ''}`} aria-label={t('Semantic search')}>
-        {wayHead(t('Semantic search'), [isChosen && !need ? 'ok' : 'no', status])}
-        <p className="way-desc">{privacyOf(semanticRow.id === 'server' ? 'ollama' : semanticRow.providers[0])}</p>
-        {semanticRow.id === 'server' && isChosen && serverChoices.length > 0 && <select className="select semantic-model" aria-label={t('Embedding model')} disabled={saving} value={`${chosen?.provider}|${chosen?.model ?? ''}`}
-          onChange={e => { const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
-          {serverChoices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
-        </select>}
-        {(!isChosen || (semantic && !semantic.explicit)) && <div className="actions">
-          <button type="button" className="btn-pri" disabled={!available || saving} onClick={() => pickSemantic(semanticRow)}>
-            {saving ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{semanticRow.id === 'off' ? t('Turn semantic search off') : t('Use for semantic search')}</button>
-        </div>}
-      </section>
-    </>
-  } else if (company) {
+  if (company) {
     const ways = company.keyFirst
       ? [keyWay(company), company.account && accountWay(company)]
       : [company.account ? accountWay(company) : company.soon ? soonWay(company.soon) : null, keyWay(company)]
@@ -1805,7 +1657,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   } else if (sel?.kind === 'local' && sel.id === 'ollama') {
     const model = data?.models.ollama
     const tool = toolOf('ollama')
-    // One status line (address and version beside it), the embedding choice and the installed models; the path, role and
+    // One status line (address and version beside it) and the installed models; the path, role and
     // the fixed address field stay out, since none of them is something to act on here.
     const version = tool?.version?.match(/\d+(\.\d+)+/)?.[0]
     const address = tool?.running ? tool.endpoint?.replace(/^https?:\/\//, '') : undefined
@@ -1844,7 +1696,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
           <div><dt>{t('Research steps')}</dt><dd>{t(lmStudioInUse ? 'In use' : 'Not in use')}</dd></div>
         </dl>}
       </section>
-      <p className="foot-note is-ink">{t('LM Studio runs models on this computer. Research steps reach it through its local server address; semantic search can use one of its embedding models.')}</p>
+      <p className="foot-note is-ink">{t('LM Studio runs models on this computer. Research steps reach it through its local server address.')}</p>
       {serverError && <Notice tone="error"><p>{serverError}</p></Notice>}
       {lmStudioUrl && lmStudio?.installed && !lmStudioInUse && <div className="acts">
         <button type="button" className="btn-pri" disabled={serverBusy || !lmStudio?.running} onClick={() => saveLocalServer(lmStudioUrl)}
@@ -2006,37 +1858,9 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     <DataLocationCard dark={dark} />
 
     {defaults}
-    <h2 data-panel="search">{t('Semantic search')}</h2>
-    <p className="foot-note" data-panel="search">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
-    {semError && <Notice tone="error" panel="search">{semError}</Notice>}
-    {semantic?.builtin_model_changed && <Notice tone="attention" panel="search">{t('The built-in model chosen earlier is not available in this version of DEIXIS, so semantic search does not run with it. Pick a built-in model below; DEIXIS does not switch to another one by itself. Scores stored with the earlier model are kept but not reused.')}</Notice>}
-    <div className="choice-groups" data-panel="search" data-group="semantic" aria-busy={saving || undefined}>
-      {([[true, t('Local models')], [false, t('API models')], [null, null]] as const).map(([local, head]) => <Fragment key={String(local)}>
-        {head && <h3 className="choice-head">{head}</h3>}
-        {local === true && builtin && <BuiltinCatalog builtin={builtin} kind="embedding" inUse={builtinChosen} onOpen={setBuiltinSheet} />}
-        {semanticRows.some(row => row.local === local) && <div className={`co-grid ${local === null ? 'choice-off' : ''}`}>{semanticRows.filter(row => row.local === local).map(row => {
-          const { isChosen, need, status } = semanticState(row)
-          return <CompanyCard key={row.id} mark={companyMark(undefined, undefined, settingsIcon(row.id))} name={row.label}
-            maker={row.local === null || row.id === 'server' ? row.model ?? '' : <code className="model-id">{row.model}</code>}
-            ready={isChosen && !need} status={status} active={isChosen} compact onClick={() => show({ kind: 'semantic', id: row.id })} />
-        })}</div>}
-        {local === true && builtin && <BuiltinLegacy builtin={builtin} dark={dark} onChanged={builtinChanged} />}
-      </Fragment>)}
-    </div>
-    {builtin && <BuiltinModelSheet builtin={builtin} model={builtinModel} dark={dark} onClose={() => setBuiltinSheet(null)} onChanged={builtinChanged}
-      use={builtinModel && <section className={`way ${builtinModelChosen && builtinReady ? 'is-on' : ''}`} aria-label={t('Semantic search')}>
-        {wayHead(t('Semantic search'), [builtinModelChosen && builtinReady ? 'ok' : 'no', builtinModelChosen ? (builtinReady ? t('In use') : t(builtinModelOption?.reason ?? 'Not downloaded')) : builtinReady ? t('Not in use') : t(builtinModelOption?.reason ?? 'Not downloaded')])}
-        <p className="way-desc">{privacyOf('builtin')}</p>
-        {(!builtinModelChosen || (semantic && !semantic.explicit)) && <div className="actions">
-          <button type="button" className="btn-pri" disabled={!builtinReady || saving} aria-describedby={!builtinReady ? 'builtin-semantic-why' : undefined} onClick={() => chooseSemantic('builtin', builtinModel.id)}>
-            {saving ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{t('Use for semantic search')}</button>
-          {!builtinReady && <span className="sr-only" id="builtin-semantic-why">{t('Download the model first.')}</span>}
-        </div>}
-      </section>} />}
-    {privacy && <p className="foot-note semantic-privacy" data-panel="search">{privacy}</p>}
     <RerankingSettings dark={dark} builtin={builtin} onBuiltinChanged={builtinChanged} keyField={(env, service) => credentials ? <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} label={t('Key')} service={service}
-      removeEffect={env === 'VOYAGE_API_KEY' ? t('Semantic search and reranking with Voyage stop until you add a key again.')
-        : env === 'COHERE_API_KEY' ? t('Semantic search and reranking with Cohere stop until you add a key again.') : t('Reranking with {service} stops until you add a key again.', { service })}
+      removeEffect={env === 'VOYAGE_API_KEY' ? t('Reranking with Voyage stops until you add a key again.')
+        : env === 'COHERE_API_KEY' ? t('Reranking with Cohere stops until you add a key again.') : t('Reranking with {service} stops until you add a key again.', { service })}
       onSaved={reloadAfterKeyChange} /> : null} refresh={`${builtin?.models.map(m => m.state).join(',') ?? ''}|${['VOYAGE_API_KEY', 'COHERE_API_KEY', 'JINA_API_KEY', 'ZEROENTROPY_API_KEY'].map(env => keyEntry(env)?.configured ?? '').join('|')}`} />
 
     <section className="doc-readers" data-panel="documents" aria-labelledby="document-reading">

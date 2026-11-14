@@ -90,7 +90,6 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                    vocabulary: dict[str, Any] | None = None,
                    criterion: dict[str, Any] | None = None,
                    approval: dict[str, Any] | None = None,
-                   embedding_model: str | None = None,
                    routing: dict[str, Any] | None = None,
                    fast_path_search: dict[str, Any] | None = None,
                    seed_match: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -99,10 +98,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
     the body keeps the numbers that actually decided this research's query.
     `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null.
-    `embedding_model` is the semantic search
-    model the research was configured with when it froze this body; the flow reads it, because this function sees no
-    store; it says which signals were configured, never which of them really ran — that is in the ranking step's own
-    output — so a research whose embedding failed keeps the body it froze. `approval` is how the vocabulary and the
+    `approval` records how the vocabulary and the
     criterion below were agreed (slice 08a): who approved them, whether they were corrected and what the user was
     asked about. A body without one was frozen before that step existed. `routing` is the
     source routing the queries were compiled for: the gate query probed, the field shares, the share and table
@@ -232,9 +228,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "signals": [{"signal": "bm25"}, {"signal": "blocks"},
                      {"signal": "tfidf", "seeds": "verified"},
                      {"signal": "graph", "seeds": "verified_then_code"},
-                     {"signal": "joint", "runs": "comparison_question_with_two_task_terms"},
-                     {"signal": "embedding", "model": embedding_model,
-                      "rescue": False}],
+                     {"signal": "joint", "runs": "comparison_question_with_two_task_terms"}],
         "thresholds": {
             "screening_batch": SCREENING_BATCH,
             "max_abstract_chars": MAX_ABSTRACT_CHARS,

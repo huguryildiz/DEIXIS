@@ -4,17 +4,15 @@ import asyncio
 import hashlib
 import json
 import sqlite3
-from array import array
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
 from deixis.runtime.config import Settings
-from deixis.documents import embeddings, local_embedding
 from deixis.providers import facade, openalex
 from deixis.providers.common import ProviderRecord, SearchOutcome
-from deixis.workflow.search import english_question, fast_embedding, search as fast_search, ranking, small_batch
+from deixis.workflow.search import english_question, search as fast_search, ranking, small_batch
 from deixis.workflow.run import fast_path
 from deixis.workflow.run.flow import ResearchFlow
 from deixis.workflow.run.store import Store
@@ -74,9 +72,6 @@ def setup(lib, tmp_path, vocabulary=None):
     return flow, scope, plan
 
 
-def rows(lib):
-    return [dict(r) for r in lib.conn.execute("SELECT * FROM fast_path_embedding_queue ORDER BY class, request_index, position")]
-
 
 def scripted(flow, calls, *, advance=None, fail_at=None, short=False):
     async def send(run_id, connector, query, limit, page=None, **kwargs):
@@ -111,8 +106,6 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path):
                              " WHERE s.operation_key = ?", (fast_search.BLOCK_SEMANTIC_KEY,)).fetchall()
     arms = [q["arm"] for q in fast_search.sent_plan({"fast_path_search": plan, "compiled_queries": QUERIES})]
     assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF and not block and "block_semantic" not in arms
-    assert len(rows(lib)) == 800 + 2 * semantic
-    assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, semantic]
     # The arXiv query of this synthetic plan names a source this research does not hold, so that is the reason it
     # is dropped with, and not the old blanket one (a depth that searches no field source says so: its own test).
     assert plan['dropped'][0]['reason'] == 'not_in_scope'
@@ -120,9 +113,9 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path):
     searches = [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]
     assert searches[-1]['stop_reason'] == 'read_limit'
     assert searches[-2]['stop_reason'] == 'read_limit'
-    before = list(calls), rows(lib), searches
+    before = list(calls), searches
     asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
-    assert (calls, rows(lib), [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]) == before
+    assert (calls, [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]) == before
 
 
 def test_shared_search_stops_each_keyword_query_at_its_record_limit(library, tmp_path):
@@ -183,55 +176,6 @@ def test_semantic_adapter_abstract_headers_and_legacy_revision(monkeypatch):
     assert 'cursor' not in requests[0].url.params and 'search.title_abstract_keywords' not in requests[0].url.params
     assert result.outcome.rate_limit['x-ratelimit-credits-used'] == '10'
     assert 'SYNTHETIC KEY' not in json.dumps(result.outcome.raw_payload)
-
-
-def queued(lib, klass=1, request=0, position=0, name='W1'):
-    svid, _ = lib.store.upsert_provider_source('openalex', record(name), None)
-    lib.store.add_to_corpus(lib.rid, svid, 'search', scope_revision=1)
-    lib.conn.execute("INSERT INTO fast_path_embedding_queue (run_id, class, request_index, position, source_version_id, enqueued_at, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
-                     (lib.run['id'], klass, request, position, svid, fast_path.timestamp(lib.clock)))
-    return svid
-
-
-def fake_embedder(lib, flow, monkeypatch, *, fail=False, advance=False):
-    lib.store.set_setting('semantic_search', {'provider': 'builtin', 'model': 'qwen3-embedding-0.6b'})
-    calls = []
-    async def embed(self, client, texts, task_type, *args, **kwargs):
-        assert not lib.conn.in_transaction
-        assert local_embedding.RUNNER_THREADS.get() == 4
-        calls.append((task_type, texts))
-        await asyncio.sleep(0)
-        if fail and task_type == 'RETRIEVAL_DOCUMENT':
-            raise embeddings.EmbeddingError('SYNTHETIC batch failure')
-        if advance and task_type == 'RETRIEVAL_DOCUMENT':
-            lib.clock.advance(100)
-        return [array('f', [1.0, 0.0]) for _ in texts]
-    monkeypatch.setattr(embeddings.Embedder, 'embed', embed)
-    flow.deps.http = None
-    return calls
-
-
-def test_queue_unique_and_stored_scores_not_embedded_twice(library, tmp_path, monkeypatch):
-    lib = library
-    flow, scope, _ = setup(lib, tmp_path)
-    calls = fake_embedder(lib, flow, monkeypatch)
-    svid = queued(lib)
-    with pytest.raises(sqlite3.IntegrityError):
-        lib.conn.execute("INSERT INTO fast_path_embedding_queue SELECT run_id, class, request_index + 1, position, source_version_id, search_run_id, enqueued_at, status, embedded_at, cutoff_at FROM fast_path_embedding_queue")
-    async def execute():
-        consumer = fast_embedding.Consumer(flow, lib.run, scope)
-        lib.store.save_source_similarities(lib.rid, 1, consumer.embedder.stored_model, {svid: .5})
-        consumer.start()
-        fast_path.close_stage(lib.store, lib.run['id'], 'search')
-        fast_path.enter_stage(lib.store, lib.run, 'ranking')
-        await consumer.drain(lib.store.candidates(lib.rid, 1))
-    asyncio.run(execute())
-    assert len(calls) == 1 and rows(lib)[0]['status'] == 'from_store'
-
-
-
-
-
 
 
 

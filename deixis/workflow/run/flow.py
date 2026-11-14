@@ -27,7 +27,7 @@ import httpx
 
 from deixis.runtime.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, identity, local_embedding, ocr, pdf
+from deixis.documents import acquisition, identity, ocr, pdf
 from deixis.domain import canonical, contracts, statement as statement_rule, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
@@ -357,7 +357,6 @@ class ResearchFlow:
         if getattr(deps, "clock", None) is not None:
             self.store.clock = deps.clock
         self._clock_tasks: dict[str, dict[str, tuple[str, asyncio.Task]]] = {}
-        self._fast_consumers: dict[str, Any] = {}
         self._fast_chains: dict[str, Any] = {}
         self._phrase_routes: dict[str, Any] = {}  # per run: the short phrase searches (`phrase_search.Route`)
         self._held: dict[str, _Held] = {}
@@ -390,9 +389,6 @@ class ResearchFlow:
                 await chain.stop()
                 chain.close_open("interrupted")
             fast_openalex_pacing.reset(pacing)
-            consumer = self._fast_consumers.pop(run_id, None)
-            if consumer is not None:
-                await consumer.stop()
             # The short phrase searches still out stop with the run; what they had not answered is sent on resume.
             route = getattr(self, "_phrase_routes", {}).pop(run_id, None)
             if route is not None:
@@ -582,7 +578,7 @@ class ResearchFlow:
             if guard.get("fast_answer"):
                 from deixis.workflow.answer import answer as fast_answer
                 fast_answer.check_input(self, run_id, guard["input"])
-        # getattr: existing tests build the flow with object.__new__ and call the embedding steps, which now checkpoint.
+        # Some tests build the flow with object.__new__; use the available gate when checking a stop.
         held = getattr(self, "_held", {}).get(run_id)
         if held is not None:
             # Inside the overlap a call only reads the stop; the coordinator writes it once both arms have drained.
@@ -651,9 +647,7 @@ class ResearchFlow:
         if scope["source_scope"] == "attached":
             return
         from deixis.workflow.search import search as fast_search
-        from deixis.workflow.search.fast_embedding import Consumer
         self._enter_clock_stage(run, "plan")
-        self._fast_consumers[run_id] = Consumer(self, run, scope)
         self._checkpoint(run_id, revision)
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
@@ -685,10 +679,6 @@ class ResearchFlow:
                 criterion_calls = asyncio.create_task(self._criterion_proposals(run, scope))
             # The Boolean queries' words come from code, so no model chooses what is searched (SW2.3).
             vocabulary = await self._vocabulary(run, scope)
-            consumer = self._fast_consumers[run_id]
-            if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
-                # The vocabulary step has just stored the model's English sentence: the built-in model reads it too.
-                self._fast_consumers[run_id] = Consumer(self, run, scope)
             # The plan the model writes reads the records the question's own request returned, so the run waits for
             # that page here. The request's own failure is not raised: `first_semantic` records it, and the plan
             # step then reads whatever records the page wrote, stopping the run itself when there are none.
@@ -725,7 +715,7 @@ class ResearchFlow:
                 record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                     scope, run["budget"], None, queries,
                     self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
-                    approval=approval, embedding_model=self._protocol_embedding_model(run_id), routing=self._routing_step(run_id),
+                    approval=approval, routing=self._routing_step(run_id),
                     fast_path_search=fast_plan, seed_match=seed_context,
                 ), reason=reason)
                 self.store.finish_step(protocol_step["id"], "succeeded",
@@ -774,7 +764,6 @@ class ResearchFlow:
         self._checkpoint(run_id, revision)
         from deixis.workflow.search.fast_chain import Round
         self._fast_chains[run_id] = Round(self, run, scope, vocabulary)
-        self._fast_consumers[run_id].start()
         failure = await fast_search.execute(self, run, scope, fast_search.stored_plan(self.store, run), retry_failed)
         # Close and record a phrase request still waiting or in flight.
         await route.close()
@@ -796,8 +785,18 @@ class ResearchFlow:
         pool = [c for c in self.store.candidates(rid, revision)
                 if c["origin"] != "user" and c["source_version_id"] in heads]
         # Rank the full pool before deciding which abstracts to read.
-        await self._fast_consumers[run_id].drain(pool)
-        await self._source_similarity(run, scope, pool)
+        chain = self._fast_chains.get(run_id)
+        if chain:
+            deadline = chain.cutoff()
+            while not chain.done() and (deadline is None or self.store.clock.now() < deadline):
+                self._checkpoint(run_id, revision)
+                waits = [task for task in chain.writers if not task.done()]
+                if not waits:
+                    break
+                await asyncio.wait(waits, timeout=0.25, return_when=asyncio.FIRST_COMPLETED)
+            await chain.stop()
+            chain.close_open("cutoff")
+            chain.summary()
         await self._ranking(run, scope, vocabulary)
         self.store.update_run(run_id, stage="screening")
         await small_batch.execute(self, run, scope, vocabulary)
@@ -1168,10 +1167,6 @@ class ResearchFlow:
                    for query in query_compiler.compile_block_queries(vocabulary, providers, limit)]
         queries = search_query_rules.with_authors(vocabulary, queries, providers, limit)
         return search_query_rules.with_authors_compiled(vocabulary, queries), queries
-
-    def _user_plan_run(self, run_id: str) -> bool:
-        run = self.store.run(run_id)
-        return user_plan_rules.of(self.store.scope(run["research_id"], run["scope_revision"])) is not None
 
     async def _user_search_query(self, run: dict[str, Any], scope: dict[str, Any],
                                  code_vocabulary: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -1736,27 +1731,6 @@ class ResearchFlow:
 
         await run_report(self, run, scope)
 
-    def _embedding_model(self) -> str | None:
-        """The semantic search model this research would embed with, or None when it is off (SW8.3).
-
-        The protocol step and the expansion revision both read it here, so the two bodies name the same model and a
-        changed setting never turns the frozen one into null (SW11.10).
-        """
-        provider, model = embeddings.chosen(self.store.setting("semantic_search"))
-        if provider == "off" or not model:
-            return None
-        return embeddings.Embedder(provider, model).stored_model
-
-    def _protocol_embedding_model(self, run_id: str) -> str | None:
-        """The model the protocol names: the one this run's similarity step froze when it opened, before planning, so a
-        setting saved or a built-in model that became ready during planning never makes the protocol name a model
-        the ranking does not read. The built-in model's thread count is a cache identity, not part of the name."""
-        output = (self.store.existing_step(run_id, "source_similarity") or {}).get("output") or {}
-        if not output.get("fast_path_queue"):
-            return self._embedding_model()
-        stored = output.get("stored_model")
-        return stored.split(":threads=", 1)[0] if stored else None
-
     async def _ranking(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> list[str]:
         """Order this revision's records by rank fusion before screening reads them; returns the inspection order.
 
@@ -1773,34 +1747,9 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             return decisions.ranking_order(step["id"])
         self.store.start_step(step["id"])
-        model, off_reason = self._ranking_embedding(run, scope)
-        output = ranking_rules.rank_records(self.store, run, scope, vocabulary, model, off_reason)
-        similarity = (self.store.existing_step(run_id, "source_similarity") or {}).get("output") or {}
-        if model and "from_store" in similarity:
-            # How many of the similarities the ranking read were stored before this run, and how many it embedded.
-            output |= {"embedding_from_store": similarity["from_store"], "embedding_this_run": similarity.get("embedded", 0)}
+        output = ranking_rules.rank_records(self.store, run, scope, vocabulary)
         self.store.finish_step(step["id"], "succeeded", output=output)
         return decisions.ranking_order(step["id"])
-
-    def _ranking_embedding(self, run: dict[str, Any], scope: dict[str, Any]) -> tuple[str | None, str | None]:
-        """The embedding model this run's ranking reads, and why none when it reads none (slice 21, decision 4a).
-
-        The model is the one this run's similarity step froze when it opened, not what Settings say now: a setting
-        changed during the embedding takes effect in the next run. With no step, the built-in model without an English
-        sentence reads none (`english_question_missing`); otherwise the configured model, as before (a run from
-        before this slice that had nothing to embed opened no step).
-        """
-        step = self.store.existing_step(run["id"], "source_similarity")
-        output = (step or {}).get("output") or {}
-        if output.get("fast_path_queue") and output.get("embedding_off_reason"):
-            return None, output["embedding_off_reason"]
-        if output.get("stored_model") or output.get("model"):
-            return output.get("stored_model") or output["model"], None
-        provider, model = embeddings.chosen(self.store.setting("semantic_search"))
-        if (provider == "builtin" and model and embeddings.english_only(embeddings.Embedder(provider, model))
-                and english_question.embedding_query(self.store, scope) is None):
-            return None, english_question.MISSING
-        return self._embedding_model(), None
 
     # ---- the abstract stage of an sw run (slice 09, SW9, SW1, SW11) ----------------------
     async def _abstract_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
@@ -2397,10 +2346,7 @@ class ResearchFlow:
                     queued.add(svid)
                     self.store.conn.execute("UPDATE candidates SET rank = ? WHERE search_run_id = ? AND source_version_id = ?",
                                             (CHAIN_RANK_BASE + fast_request * 1000 + position, search[0], svid))
-                    self.store.conn.execute(
-                        "INSERT OR IGNORE INTO fast_path_embedding_queue (run_id, class, request_index, position,"
-                        " source_version_id, search_run_id, enqueued_at, status) VALUES (?, 2, ?, ?, ?, ?, ?, 'pending')",
-                        (run_id, fast_request, position, svid, search[0], fast_path.timestamp(self.store.clock)))
+
 
     def _chain_rescued(self, run_id: str) -> set[str]:
         """The works this run's rescue quota already took: the linked works a citation request wrote a record for
@@ -2459,146 +2405,9 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output=output)
         return chained
 
-    async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]], *,
-                                 key: str = "source_similarity", identity_step: str | None = None) -> None:
-        """Score sources by the similarity of their title and abstract to the question.
-
-        Uses the semantic search provider, frozen in the step when it opens (decision 4a): a resumed run reads it
-        from the step, not from Settings. The query is embedded first, then the missing sources batch by batch, each
-        batch written in its own transaction and followed by a checkpoint, so a pause waits at most one batch and a
-        resumed run embeds only what is still missing. With nothing missing no call is made: stored similarities are
-        scores, read even when the model is not installed now (decision 5). A failed batch ends the step `partial`
-        (earlier batches stay) or `failed`; either way the run goes on and the four code signals rank the same.
-        """
-        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        if key == "source_similarity" and run_id in getattr(self, "_fast_consumers", {}):
-            return  # The durable consumer owns this step, including failed/partial cutoffs.
-        step, embedder, identity_from = self._embedding_choice(run_id, key)
-        if identity_step and step is None:
-            frozen = self.store.existing_step(run_id, identity_step)
-            if not frozen:
-                return
-            identity = frozen.get("output") or {}
-            if not identity.get("provider") or not identity.get("stored_model"):
-                return
-            embedder = embeddings.Embedder.from_identity(identity["provider"], identity["stored_model"],
-                                                         getattr(self.deps, "local_embedder", None))
-            identity_from = identity_step
-        if embedder is None or (step is not None and step["status"] == "succeeded"):
-            return
-        query = self._embedding_query(scope, embedder)
-        if query is None:
-            return  # the built-in model without an English sentence: the arm is off and the ranking says why
-        identity = self._identity(embedder, identity_from)
-        step = self.store.step(run_id, key, f"similarity:{embedder.stored_model}", output=identity)
-        if identity_from:
-            self._merge_step_output(step["id"], {}, identity)
-        self.store.start_step(step["id"])
-        ids = list(dict.fromkeys(c["source_version_id"] for c in candidates))
-        stored = self.store.source_similarities(rid, revision, embedder.stored_model)
-        missing = [svid for svid in ids if svid not in stored]
-        query_text, origin = query
-        # Counted for the whole step: a resumed step keeps what its earlier attempts found stored and embedded.
-        prior = self.store.step_output(step["id"]) or {}
-        progress = {"from_store": prior.get("from_store", len(ids) - len(missing)), "embedded": prior.get("embedded", 0)}
-
-        # Whether the built-in model was installed and its files checked when this step ran: the transcript says so
-        # from the step, never from what Settings say later (decision 5).
-        installed = ({"model_installed": embeddings.builtin_ready(embedder)} if embedder.provider == "builtin" else {})
-
-        def counts() -> dict[str, Any]:
-            return {"model": embedder.stored_model, "sources": len(ids), **progress, "missing": len(missing), **installed,
-                    "query_origin": origin, "query_sha256": english_question.query_sha256(query_text)}
-
-        self._merge_step_output(step["id"], counts(), identity)
-        if not missing:
-            self._finish_embedding_step(step["id"], "succeeded", counts(), identity)
-            return
-        budget, stop = self._rate_budget(step["id"], identity), lambda: self._checkpoint(run_id, revision)
-        try:
-            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop,
-                                                   report=progress)
-            progress["dimensions"] = self._query_dimensions(query_vector, prior)
-            while missing:
-                batch = missing[:embedder.batch]
-                texts = ["\n\n".join([self.store.source(svid)["title"], *(p["text"] for p in self.store.passages_for(svid) if p["kind"] == "abstract")])
-                         for svid in batch]
-                vectors = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), texts, "RETRIEVAL_DOCUMENT", budget, stop)
-                embeddings.same_dimension(vectors, progress["dimensions"])
-                missing = missing[len(batch):]
-                progress["embedded"] += len(batch)
-                with transaction(self.store.conn):  # the batch and the step's count in one short write
-                    self.store.save_source_similarities(rid, revision, embedder.stored_model,
-                                                        {svid: embeddings.similarity(query_vector, v) for svid, v in zip(batch, vectors)})
-                    self._merge_step_output(step["id"], counts(), identity)
-                self._checkpoint(run_id, revision)
-        except embeddings.EmbeddingError as exc:
-            self._finish_embedding_step(step["id"], "partial" if progress["embedded"] else "failed", counts() | budget.counts(),
-                                        identity, error_code="embedding_failed", error={"error": str(exc)})
-            return
-        self._finish_embedding_step(step["id"], "succeeded", counts() | budget.counts(), identity)
-
-    # ---- embedding steps: the frozen model, the query, the shared wait budget (slice 21) --------------------
-    def _embedding_choice(self, run_id: str, key: str) -> tuple[dict[str, Any] | None, embeddings.Embedder | None, str | None]:
-        """The step of this key, the embedder it froze (else the one Settings name now; None when off), and
-        "resume" when an earlier step without a frozen identity takes the current setting."""
-        local = getattr(self.deps, "local_embedder", None)
-        step = self.store.existing_step(run_id, key)
-        output = (step or {}).get("output") or {}
-        if output.get("fast_path_queue") and output.get("provider") == "off":
-            return step, None, None
-        if output.get("provider") and output.get("stored_model"):
-            return step, embeddings.Embedder.from_identity(output["provider"], output["stored_model"], local), None
-        provider, model = embeddings.chosen(self.store.setting("semantic_search"))
-        if provider == "off" or not model:
-            return step, None, None
-        return step, embeddings.Embedder(provider, model, local), "resume" if step is not None else None
-
-    @staticmethod
-    def _query_dimensions(query_vector: Any, prior: dict[str, Any]) -> int:
-        """The query vector's dimension, kept in the step: every batch of the step, across a resume, must match it
-        (a provider's reply of another dimension is a bad reply, never a similarity of truncated vectors)."""
-        if prior.get("dimensions") and len(query_vector) != prior["dimensions"]:
-            raise embeddings.EmbeddingError(f"bad_reply: the query has {len(query_vector)} dimensions where this step "
-                                            f"had {prior['dimensions']}")
-        return len(query_vector)
-
-    @staticmethod
-    def _identity(embedder: embeddings.Embedder, identity_from: str | None) -> dict[str, Any]:
-        # The llama.cpp build of a built-in model is provenance, not identity: RUNTIME_NUMERICS in the stored model
-        # says when a build changes numerics.
-        return ({"provider": embedder.provider, "stored_model": embedder.stored_model}
-                | (local_embedding.provenance() if embedder.provider == "builtin" else {})
-                | ({"identity_from": identity_from} if identity_from else {}))
-
-    def _embedding_query(self, scope: dict[str, Any], embedder: embeddings.Embedder,
-                         query_text: str | None = None, query_origin: str = "column") -> tuple[str, str] | None:
-        """(text, origin) of the query. A built-in Qwen3 model reads English only (its English instruction): the
-        question when it is English, else the revision's English sentence; a table column's text only when it is
-        English. bge-m3 and the other providers take the text as written."""
-        if query_text is not None:
-            if embeddings.english_only(embedder) and not english_question.is_english(query_text):
-                return None
-            return query_text, query_origin
-        if embeddings.english_only(embedder):
-            return english_question.embedding_query(self.store, scope)
-        return scope["question"], "question"
-
     def _merge_step_output(self, step_id: str, extra: dict[str, Any], identity: dict[str, Any]) -> None:
         """Write `latest stored output | extra | identity`: `set_step_output` replaces the whole output."""
         self.store.set_step_output(step_id, (self.store.step_output(step_id) or {}) | extra | identity)
-
-    def _finish_embedding_step(self, step_id: str, status: str, counts: dict[str, Any], identity: dict[str, Any],
-                               error_code: str | None = None, error: Any = None) -> None:
-        """Every finish of an embedding step, succeeded, partial or failed: `finish_step` replaces the output, so the
-        latest stored output (the opening identity, the waits) is read first and the identity is written last."""
-        output = (self.store.step_output(step_id) or {}) | counts | identity
-        self.store.finish_step(step_id, status, output=output, error_code=error_code, error=error)
-
-    def _rate_budget(self, step_id: str, identity: dict[str, Any]) -> embeddings.RateBudget:
-        """The step's 429 wait budget, from what its stored output says it has waited; each second is written back."""
-        return embeddings.RateBudget.from_output(
-            self.store.step_output(step_id), on_wait=lambda b: self._merge_step_output(step_id, b.counts(), identity))
 
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
                            page: Page | None = None, stop: Callable[[], bool] | None = None,
@@ -2892,10 +2701,9 @@ class ResearchFlow:
         limit = run["budget"]["max_answer_passages"]
         # A short attached PDF goes to the answer whole, so nothing is ranked and no passage is embedded.
         whole = self._whole_attached_passages(scope, included, limit)
-        semantic = None if whole is not None else await self._semantic_ranking(run, scope, included)
         # Part of the input comes from the cue phrases the criterion was approved with.
         patterns = self._criterion_phrases(run, scope)
-        passages = whole if whole is not None else self._retrieve(rid, scope, included, limit, semantic, patterns)
+        passages = whole if whole is not None else self._retrieve(rid, scope, included, limit, patterns=patterns)
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -4363,151 +4171,6 @@ class ResearchFlow:
             self.queue_person_reading(row[0])
 
 
-    async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str], query_text: str | None = None,
-                                key: str = "semantic_retrieval", query_origin: str = "column",
-                                only: set[str] | None = None) -> list[dict[str, Any]] | None:
-        """Rank the included sources' passages by embedding similarity to the question, or to query_text.
-
-        Uses the provider chosen in Settings; without a choice, Gemini when GEMINI_API_KEY is set. The query is always
-        embedded (a stored passage vector is not a score); then the passages without a stored vector, batch by batch,
-        each written before the next (slice 21). If the query cannot be embedded, or no passage has a vector, the step
-        fails and the caller uses lexical retrieval alone. If a later batch fails, the passages that have a vector are
-        returned ranked and the step is `partial`: the others come from the lexical ranking only. The built-in model
-        without an English query records a skipped step and ranks nothing.
-        """
-        run_id = run["id"]
-        step, embedder, identity_from = self._embedding_choice(run_id, key)
-        if embedder is None:
-            return None
-        identity = self._identity(embedder, identity_from)
-        query = self._embedding_query(scope, embedder, query_text, query_origin)
-        if query is None:
-            # Recorded so the transcript can say why the built-in model did not rank these passages.
-            reason = f"{query_origin}_not_english" if query_text is not None else english_question.MISSING
-            step = self.store.step(run_id, key, f"embedding:{embedder.stored_model}", output=identity)
-            self.store.finish_step(step["id"], "succeeded", output=identity | {"skipped": True, "reason": reason})
-            return None
-        step = self.store.step(run_id, key, f"embedding:{embedder.stored_model}", output=identity)
-        if identity_from:
-            self._merge_step_output(step["id"], {}, identity)
-        self.store.start_step(step["id"])
-        # `only` keeps the ranking to these passages (a follow-up's pool, S22a): no other text is embedded or sent.
-        passages = [p for svid in included for p in self.store.passages_for(svid) if only is None or p["id"] in only]
-        stored = self.store.passage_embeddings([p["id"] for p in passages], embedder.stored_model)
-        missing = [p for p in passages if p["id"] not in stored]
-        uploads = self.store.user_upload_assets({p["asset_id"] for p in missing if p.get("asset_id")})
-        query_text, origin = query
-        # Counted for the whole step, across a resume: what was stored before it, what it embedded, and the text of a
-        # person's uploaded files. "Attempted" means a request carrying the passage was issued (a reply came back, or
-        # it failed after the connection was made; `Embedder.embed`'s `on_sent`), so a 429 or a 500 counts and a
-        # connection never made does not; "confirmed" means vectors came back for it. Attempted but not confirmed:
-        # whether the provider received the text is not known. The built-in model sends nothing and counts nothing.
-        # The ids stay in the output so a file or passage is counted once, however often it is sent again.
-        # A batch's uploaded ids are written as pending before its request is awaited (Sol r3, finding 3; r4, finding 2):
-        # a task stopped before the reply leaves them pending, and whether the request even started is not known. They
-        # are counted apart from attempted, as unknown, and a resume moves them to the unknown ids. A failure before any
-        # connection clears them. An id later attempted is counted there, not as unknown.
-        # `from_store` counts the stored vectors the similarity used (Sol r4, finding 1): those stored before this step,
-        # less any of another dimension; vectors an earlier attempt of this step embedded are counted in `embedded`.
-        prior = self.store.step_output(step["id"]) or {}
-        progress = {"from_store": len(stored) - prior.get("embedded", 0), "embedded": prior.get("embedded", 0),
-                    "uploaded_file_ids": prior.get("uploaded_file_ids", []),
-                    "uploaded_passage_ids": prior.get("uploaded_passage_ids", []),
-                    "uploaded_unknown_file_ids": sorted(set(prior.get("uploaded_unknown_file_ids", [])) | set(prior.get("uploaded_pending_file_ids", []))),
-                    "uploaded_unknown_passage_ids": sorted(set(prior.get("uploaded_unknown_passage_ids", [])) | set(prior.get("uploaded_pending_passage_ids", []))),
-                    "uploaded_pending_file_ids": [], "uploaded_pending_passage_ids": [],
-                    "uploaded_confirmed_file_ids": prior.get("uploaded_confirmed_file_ids", []),
-                    "uploaded_passages_confirmed": prior.get("uploaded_passages_confirmed", 0),
-                    "stored_other_dimension": 0}
-        # Texts the built-in model cut at its token limit, and the tokens Voyage or Cohere counted (their usage); others
-        # report neither, so neither is shown for them.
-        tracked = {"builtin": "truncated_texts", "voyage": "provider_tokens", "cohere": "provider_tokens"}.get(embedder.provider)
-        if tracked:
-            progress[tracked] = prior.get(tracked, 0)
-
-        def counts() -> dict[str, Any]:
-            return {"model": embedder.stored_model, "passages": len(passages), **progress, "missing": len(missing),
-                    "uploaded_files_attempted": len(progress["uploaded_file_ids"]),
-                    "uploaded_passages_attempted": len(progress["uploaded_passage_ids"]),
-                    "uploaded_files_unknown": len((set(progress["uploaded_unknown_file_ids"]) | set(progress["uploaded_pending_file_ids"]))
-                                                  - set(progress["uploaded_file_ids"])),
-                    "uploaded_passages_unknown": len((set(progress["uploaded_unknown_passage_ids"]) | set(progress["uploaded_pending_passage_ids"]))
-                                                     - set(progress["uploaded_passage_ids"])),
-                    "uploaded_files_confirmed": len(progress["uploaded_confirmed_file_ids"]),
-                    "query_origin": origin, "query_sha256": english_question.query_sha256(query_text)}
-
-        self._merge_step_output(step["id"], counts(), identity)
-        # An answer run is not stopped by a newer scope revision; a table fill's calls are (as its limiter checks).
-        revision = None if key == "semantic_retrieval" else run["scope_revision"]
-        budget, stop = self._rate_budget(step["id"], identity), lambda: self._checkpoint(run_id, revision)
-        vectors = {pid: embeddings.from_blob(blob) for pid, blob in stored.items()}
-        failure = None
-        try:
-            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop,
-                                                   report=progress)
-            progress["dimensions"] = self._query_dimensions(query_vector, prior)
-        except embeddings.EmbeddingError as exc:
-            self._finish_embedding_step(step["id"], "failed", counts() | budget.counts(), identity,
-                                        error_code="embedding_failed", error={"error": str(exc)})
-            return None
-        # A stored vector of another dimension than this query's (a local server that changed its model under the same
-        # name) is left out of the similarity, counted, and its passage falls to the keyword side (Sol r3, finding 1).
-        # It is not embedded again: the stored row would stay as it is.
-        other = [pid for pid, vector in vectors.items() if len(vector) != progress["dimensions"]]
-        for pid in other:
-            del vectors[pid]
-        progress["stored_other_dimension"] = len(other)
-        progress["from_store"] -= len(other)
-        self._merge_step_output(step["id"], counts(), identity)
-        while missing:
-            batch = missing[:embedder.batch]
-            from_uploads = [p for p in batch if p.get("asset_id") in uploads]
-
-            def attempted(from_uploads: list[dict[str, Any]] = from_uploads) -> None:
-                """Recorded as the request is issued (decision 10)."""
-                if from_uploads:
-                    progress["uploaded_file_ids"] = sorted(set(progress["uploaded_file_ids"]) | {p["asset_id"] for p in from_uploads})
-                    progress["uploaded_passage_ids"] = sorted(set(progress["uploaded_passage_ids"]) | {p["id"] for p in from_uploads})
-                    self._merge_step_output(step["id"], counts(), identity)
-            if from_uploads and embedder.provider != "builtin":
-                progress["uploaded_pending_file_ids"] = sorted({p["asset_id"] for p in from_uploads})
-                progress["uploaded_pending_passage_ids"] = sorted(p["id"] for p in from_uploads)
-                self._merge_step_output(step["id"], counts(), identity)
-            try:
-                fresh = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [p["text"] for p in batch], "RETRIEVAL_DOCUMENT", budget, stop,
-                                             on_sent=attempted, report=progress)
-                embeddings.same_dimension(fresh, progress["dimensions"])
-            except embeddings.EmbeddingError as exc:
-                failure = exc
-                progress["uploaded_pending_file_ids"], progress["uploaded_pending_passage_ids"] = [], []
-                break
-            progress["uploaded_pending_file_ids"], progress["uploaded_pending_passage_ids"] = [], []
-            missing = missing[len(batch):]
-            vectors.update({p["id"]: vector for p, vector in zip(batch, fresh)})
-            progress["embedded"] += len(batch)
-            progress["uploaded_passages_confirmed"] += len(from_uploads)
-            progress["uploaded_confirmed_file_ids"] = sorted(set(progress["uploaded_confirmed_file_ids"]) | {p["asset_id"] for p in from_uploads})
-            with transaction(self.store.conn):  # the batch and the step's counts in one short write
-                self.store.save_passage_embeddings(embedder.stored_model, len(fresh[0]),
-                                                   {p["id"]: vector.tobytes() for p, vector in zip(batch, fresh)})
-                self._merge_step_output(step["id"], counts(), identity)
-            self._checkpoint(run_id, revision)
-        ranked = sorted((p for p in passages if p["id"] in vectors), key=lambda p: -embeddings.similarity(query_vector, vectors[p["id"]]))
-        if failure is not None:
-            self._finish_embedding_step(step["id"], "partial" if ranked else "failed", counts() | budget.counts(), identity,
-                                        error_code="embedding_failed", error={"error": str(failure)})
-            return ranked or None
-        if other:
-            # Some stored vectors could not be compared: the step is partial, or failed when none could, and the
-            # passages without a comparable vector keep the keyword order (Sol r4, finding 1).
-            self._finish_embedding_step(step["id"], "partial" if ranked else "failed", counts() | budget.counts(), identity,
-                                        error_code="embedding_failed",
-                                        error={"error": f"stored_other_dimension: {len(other)} stored vectors differ from "
-                                                        f"the query's {progress['dimensions']} dimensions"})
-            return ranked or None
-        self._finish_embedding_step(step["id"], "succeeded", counts() | budget.counts(), identity)
-        return ranked
-
     def _topic_terms(self, research_id: str, scope: dict[str, Any]) -> list[str]:
         """The words `_retrieve` and the full-text reading list both rank passages by.
 
@@ -4541,7 +4204,6 @@ class ResearchFlow:
         return all_passages
 
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
-                  semantic: list[dict[str, Any]] | None = None,
                   patterns: list[tuple[str, re.Pattern[str]]] = ()) -> list[dict[str, Any]]:
         """Passages for an answer from attached sources (the fast path writes its own input, `fast_answer`).
 
@@ -4554,8 +4216,6 @@ class ResearchFlow:
         unique_terms = self._topic_terms(research_id, scope)
         fts = " OR ".join(f'"{t}"' for t in unique_terms)
         ranked = self.store.search_passages(included, fts, limit * 3)
-        if semantic is not None:
-            ranked = fuse_rankings(ranked, semantic)[: limit * 3]
         # A reference-list passage goes to the end: a misread one is ranked lower, not lost.
         ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
         # Only attached files: the few PDFs share the whole limit, so a two-PDF answer can read their result pages.
@@ -4568,12 +4228,7 @@ class ResearchFlow:
         passages_of = {svid: self.store.passages_for(svid) for svid in included}
         texts = {svid: " ".join([self.store.source(svid)["title"], *(p["text"] for p in passages_of[svid] if p["kind"] == "abstract")])
                  for svid in included}
-        semantic_rank = None
-        if semantic is not None:
-            semantic_rank = {}
-            for p in semantic:
-                semantic_rank.setdefault(p["source_version_id"], len(semantic_rank))
-        order = answer_source_order(included, self.store.answer_order_facts(research_id, included), texts, unique_terms, semantic_rank)
+        order = answer_source_order(included, self.store.answer_order_facts(research_id, included), texts, unique_terms)
         with_text = [svid for svid in included if passages_of[svid]]
         with_pdf = [svid for svid in with_text if any(q["kind"] == "pdf_page" for q in passages_of[svid])]
         # Scored once per retrieval, in memory: the phrase score is a pure function of stored text and stored
@@ -4993,17 +4648,14 @@ class ResearchFlow:
         """Passages of one source for a cell extraction call (P5 slice 1 design, §5).
 
         A source within MAX_CELL_PASSAGES passages and MAX_SMALL_PDF_CHARS characters is given whole. Otherwise its
-        abstract comes first, then passages matching the column names and instructions (fused with the semantic ranking
-        when semantic search is on), then the remaining passages in page order, up to the limit.
+        abstract comes first, then passages matching the column names and instructions, then the remaining passages
+        in page order, up to the limit.
         """
         if len(available) <= MAX_CELL_PASSAGES and sum(len(p["text"]) for p in available) <= MAX_SMALL_PDF_CHARS:
             return available
         text = " ".join(f"{c['name']} {c['instruction']}" for c in columns)
         terms = list(dict.fromkeys(t for t in re.findall(r"\w+", text.lower()) if len(t) > 2 and t not in STOPWORDS))[:40]
         ranked = self.store.search_passages([svid], " OR ".join(f'"{t}"' for t in terms), limit * 3)
-        semantic = await self._semantic_ranking(run, scope, [svid], query_text=text, key=f"semantic:{key}")
-        if semantic is not None:
-            ranked = fuse_rankings(ranked, semantic)
         ordered = [p for p in available if p["kind"] == "abstract"] + ranked + available
         return list({p["id"]: p for p in ordered}.values())[:limit]
 
@@ -5741,7 +5393,6 @@ class ResearchFlow:
                     claims: list[dict[str, Any]], model: tuple[str, str | None, str | None],
                     extraction_target: dict[str, Any] | None = None,
                     report_target: dict[str, Any] | None = None,
-                    vocabulary_target: dict[str, Any] | None = None,
                     screening_target: dict[str, Any] | None = None,
                     adjudication_target: dict[str, Any] | None = None,
                     lineage_target: dict[str, Any] | None = None,
@@ -5813,8 +5464,6 @@ class ResearchFlow:
             target["extraction_target"] = extraction_target
         if report_target is not None:
             target["report_target"] = {"validation_context": None, **report_target}
-        if vocabulary_target is not None:
-            target["vocabulary_target"] = vocabulary_target
         if screening_target is not None:
             target["screening_target"] = screening_target
         if adjudication_target is not None:
@@ -5827,9 +5476,6 @@ class ResearchFlow:
                      "passage_ids": [p["passage_id"] for p in passages]}
         if task_type == "claim_assessment" and candidate_target is not None and candidate_target["version"] is not None:
             allowlist["element_ids"] = [e["element_id"] for e in candidate_target["version"]["elements"]]
-        if vocabulary_target is not None:
-            # The allowlist for this step is the phrase list itself: it may label those phrases and name no other.
-            allowlist["phrases"] = [entry["phrase"] for entry in vocabulary_target["phrases"]]
         if task_type in contracts.REPORT_TASKS:
             report = report_target or {}
             cells, gaps = report.get("cells", []), report.get("gap_candidates", [])
@@ -6224,7 +5870,7 @@ class ResearchFlow:
                           passage_rows: list[dict[str, Any]] | None = None, selection_revision: int | None = None,
                           claims: list[dict[str, Any]] | None = None, model: tuple[str, str | None, str | None] | None = None,
                           optional: bool = False, extraction_target: dict[str, Any] | None = None,
-                          report_target: dict[str, Any] | None = None, vocabulary_target: dict[str, Any] | None = None,
+                          report_target: dict[str, Any] | None = None,
                           screening_target: dict[str, Any] | None = None,
                           adjudication_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None, budget_short: str = "pause", spend_short: str = "pause",
@@ -6440,7 +6086,7 @@ class ResearchFlow:
             self._spend_gate(run_id, connection, lambda: self.store.finish_step(
                 step["id"], "cancelled", error_code="spend_threshold", **sent_output()), skip=spend_short == "skip")
             payload = step_input_builder(step["id"]) if step_input_builder is not None else self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
-                                       claims or [], model, extraction_target, report_target, vocabulary_target,
+                                       claims or [], model, extraction_target, report_target,
                                        screening_target, adjudication_target, lineage_target, candidate_target)
             if attempt_record is not None:
                 extra = (step_output_extra or {}) | attempt_record(payload)

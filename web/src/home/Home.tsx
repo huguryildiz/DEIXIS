@@ -13,7 +13,6 @@ import { ZoteroDialog, type ZoteroChoice } from '../library/ZoteroDialog'
 import { SpendEstimateNote } from './SpendEstimate'
 import { ConnectionIcon } from '../components/connectionIcons'
 import { Notice } from '../components/Notice'
-import { SemanticSetupNote } from '../components/SemanticNotes'
 import { defaultEffort, exposesEffortControl, listedEffort } from '../lib/modelEffort'
 
 export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 'Standard', detailed: 'Detailed' }
@@ -255,20 +254,13 @@ function ResumeCard({ research }: { research: ResearchSummary }) {
 // The first-run setup card (H2): shown while no model connection is ready, so nothing can start yet. Each row states
 // what the connections list and the proxy setting hold now; none of it is a live test.
 function SetupCard({ connections, reasons, proxy }: { connections: Connections; reasons: string; proxy: string | null | undefined }) {
-  // The built-in semantic model is named only where the backend offers it (it is not available on Windows yet).
-  const [builtinOffered, setBuiltinOffered] = useState(false)
-  useEffect(() => {
-    let live = true
-    api.semanticSearch().then(result => { if (live) setBuiltinOffered(result.options.some(o => o.provider === 'builtin' && o.reason_code !== 'unsupported_platform')) }).catch(() => undefined)
-    return () => { live = false }
-  }, [])
   const keyless = connections.providers.filter(p => p.id === 'openalex' || p.id === 'crossref')
   const sourcesReady = keyless.length === 2 && keyless.every(p => p.implemented && p.access_mode !== null && p.access_mode !== 'not_configured')
   const settings = () => { window.location.hash = '/settings/connections' }
   const num = (n: number, ok: boolean) => <span className={`num ${ok ? 'ok' : ''}`} aria-hidden>{ok ? <Check /> : n}</span>
   return <section className="home-setup" aria-labelledby="home-setup-title">
     <h2 id="home-setup-title"><span>{t('Set up DEIXIS')}</span><small>{t('Three things before the first question. What is sent where is listed in Settings › General › Where your data goes.')}</small></h2>
-    <div className="home-setup-row">{num(1, false)}<p>{t('Answer and literature models')}<small>{t('Not connected. Use a Codex CLI or Claude Code account, an API key, or a local model in Ollama or LM Studio.')}{builtinOffered && ` ${t('Semantic search also has a built-in model that needs no key.')}`}</small>{reasons && <small className="home-setup-reason">{reasons}</small>}</p>
+    <div className="home-setup-row">{num(1, false)}<p>{t('Answer and literature models')}<small>{t('Not connected. Use a Codex CLI or Claude Code account, an API key, or a local model in Ollama or LM Studio.')}</small>{reasons && <small className="home-setup-reason">{reasons}</small>}</p>
       <button type="button" className="setup-connect" onClick={settings}>{t('Connect')}</button></div>
     <div className="home-setup-row">{num(2, sourcesReady)}<p>{t('Scholarly sources')}<small>{t('OpenAlex and Crossref work without a key. Configured · not tested live.')}</small></p>
       {sourcesReady ? <span className="st ok">{t('Ready')}</span> : <button type="button" className="setup-add" onClick={() => { window.location.hash = '/settings/sources' }}>{t('Connect')}</button>}</div>
@@ -670,7 +662,6 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         <small className="home-card-source">{s.research_title}</small>
       </button>)}
     </div>}
-    <SemanticSetupNote />
     <p className="hint home-hint">{busy ? <span className="shimmer-text">{t('Saving research…')}</span> : t('⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites')}</p>
   </section>
 }

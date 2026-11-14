@@ -2,7 +2,7 @@
 
 The runner sets the measured configuration in its temporary data folder and reads it back, so an empty folder's
 defaults (Gemini, reranker off) are never measured by accident. Every row carries those settings. After each question
-the run must show the expected embedding and an applied rerank; otherwise the whole run stops and the question is not
+the run must show an applied rerank; otherwise the whole run stops and the question is not
 written. One exception, decided 18 Oct after the EE survey set's second question: when the product's own ranking-stage
 time ran out before the rerank (`no_time_left`, recorded by the product), the row is written and arm C is what
 the product delivered, the fused order; the row says the rerank was not applied, and the report gives C−B over every
@@ -20,7 +20,6 @@ from pathlib import Path
 
 import httpx
 
-EMBEDDING = {'provider': 'voyage', 'model': 'voyage-4-lite'}
 # Pool factor 4, the 18 Oct configuration. An m1 arm selects 8, the product default since rerank rule version 2, with
 # `--pool-factor 8`; rows of the two factors are different configurations and are never compared.
 RERANKER = {'enabled': True, 'provider': 'voyage', 'pool_factor': 4.0, 'timeout_seconds': 180}
@@ -36,20 +35,18 @@ PROVENANCE = ('commit', 'date')  # recorded on every row, but not part of what m
 
 
 class Stop(Exception):
-    """The run must stop here: a wrong setting, a failed embedding or rerank, a pause or the budget."""
+    """The run must stop here: a wrong setting, a failed rerank, a pause or the budget."""
 
 
 def expected():
-    return {'embedding': dict(EMBEDDING),
-            'reranker': {'enabled': True, 'provider': RERANKER['provider'], 'model': RERANK_MODEL,
+    return {'reranker': {'enabled': True, 'provider': RERANKER['provider'], 'model': RERANK_MODEL,
                          'pool_factor': RERANKER['pool_factor'], 'timeout_seconds': RERANKER['timeout_seconds']}}
 
 
 def read_settings(server):
-    """The embedding and reranker settings as the server reports them; Stop when they differ from the plan's."""
-    semantic, rerank = server.get('/api/semantic-search'), server.get('/api/reranking')
-    got = {'embedding': {'provider': semantic.get('provider'), 'model': semantic.get('model')},
-           'reranker': {key: rerank.get(key) for key in expected()['reranker']}}
+    """The reranker settings as the server reports them; Stop when they differ from the plan's."""
+    rerank = server.get('/api/reranking')
+    got = {'reranker': {key: rerank.get(key) for key in expected()['reranker']}}
     if got != expected():
         raise Stop(f'settings differ from the plan: got {json.dumps(got)}, expected {json.dumps(expected())}')
     return got | {'reranker_max_candidates': rerank.get('max_candidates')}
@@ -57,7 +54,6 @@ def read_settings(server):
 
 def configure(server):
     """Write the measured settings into the temporary data folder, then read them back."""
-    server.put('/api/semantic-search', EMBEDDING)
     server.put('/api/reranking', RERANKER)
     return read_settings(server)
 
@@ -98,17 +94,6 @@ def step(conn, run_id, key):
     return (row[0], json.loads(row[1]) if row[1] else {}) if row else (None, {})
 
 
-def embedding_problems(conn, run_id, required=True):
-    """The embedding step failed or used another model; a missing step is a problem only when the list was built."""
-    status, output = step(conn, run_id, 'source_similarity')
-    model = f"{EMBEDDING['provider']}:{EMBEDDING['model']}"
-    if status is None:
-        return ['source_similarity missing'] if required else []
-    if status != 'succeeded':
-        return [f'source_similarity {status}']
-    if output.get('provider') != EMBEDDING['provider'] or not str(output.get('stored_model', '')).startswith(model):
-        return [f"embedding {output.get('provider')} {output.get('stored_model')}, expected {model}"]
-    return []
 
 
 NO_TIME = 'no_time_left'
@@ -156,17 +141,17 @@ def add_m1_args(parser):
 
 
 def problems(conn, run_id, listing):
-    """Why this question's ranking is not the configured one; empty when the embedding and the rerank both ran."""
-    found = embedding_problems(conn, run_id)
+    """Why this question's ranking is not the configured one; empty when the rerank ran."""
+    found = []
     if (listing.get('manifest') or {}).get('user_priority'):
         found.append('records included by hand: arm B would leave them out')
     return found + rerank_problems(conn, run_id, listing)
 
 
 def failed_run_problems(conn, run_id):
-    """For a run that failed before its list froze: an embedding or rerank failure is a provider problem that stops
+    """For a run that failed before its list froze: a rerank failure is a provider problem that stops
     the benchmark, not a product failure scored as zero."""
-    return embedding_problems(conn, run_id, required=False) + rerank_problems(conn, run_id)
+    return rerank_problems(conn, run_id)
 
 
 def arms(listing):
@@ -300,20 +285,16 @@ def openalex_balance(client, key):
 
 
 def voyage_check(client, key):
-    """One embedding and one rerank with the measured models; the tokens Voyage counted for each."""
+    """One rerank with the measured model; the tokens Voyage counted."""
     headers = {'Authorization': f'Bearer {key}'}
-    embed = client.post(f'{VOYAGE}/embeddings', headers=headers, timeout=60,
-                        json={'model': EMBEDDING['model'], 'input': ['beamforming'], 'input_type': 'query'})
-    embed.raise_for_status()
     rerank = client.post(f'{VOYAGE}/rerank', headers=headers, timeout=60,
                          json={'model': RERANK_MODEL, 'query': 'beamforming', 'documents': ['antenna arrays', 'soil']})
     rerank.raise_for_status()
-    return {'embedding_tokens': embed.json()['usage']['total_tokens'],
-            'rerank_tokens': rerank.json()['usage']['total_tokens']}
+    return {'rerank_tokens': rerank.json()['usage']['total_tokens']}
 
 
 def preflight(server, secret):
-    """Before a run: settings written and read back, Voyage answers with both models, OpenAlex balance read."""
+    """Before a run: settings written and read back, Voyage answers with the reranker, OpenAlex balance read."""
     report = {'settings': configure(server)}
     with httpx.Client() as client:
         if not (voyage := secret('VOYAGE_API_KEY')):

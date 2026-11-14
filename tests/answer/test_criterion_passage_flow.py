@@ -230,7 +230,7 @@ def library(tmp_path, workflow="sw", question=QUESTION):
 def retrieve(store, rid, included, limit, patterns=None):
     flow = object.__new__(ResearchFlow)
     flow.store = store
-    return flow._retrieve(rid, store.scope(rid), included, limit, None, patterns)
+    return flow._retrieve(rid, store.scope(rid), included, limit, patterns)
 
 
 def compiled(phrases=PHRASES):

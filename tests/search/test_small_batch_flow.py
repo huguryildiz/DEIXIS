@@ -84,6 +84,7 @@ def test_freeze_list_records_v3_maximum_version_counts_and_replays_without_store
         store.conn.execute("UPDATE source_versions SET cited_by_count = 23 WHERE id = ?", (other,))
         listing = freeze(flow, run, scope, vocabulary)
         manifest = listing["manifest"]
+        assert "embedding_model" not in manifest and "similarities" not in manifest
         assert manifest["ranking_version"] == 3
         counts = {r["id"]: r["cited_by_count"] for r in manifest["pool"]}
         assert counts == {heads[0]: 0, heads[1]: 23, heads[2]: None}

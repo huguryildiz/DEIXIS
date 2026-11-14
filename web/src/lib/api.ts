@@ -131,6 +131,8 @@ export type SeedSelection = { source_version_ids: string[] } | { all_eligible: t
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
   parent_revision: number | null // the revision this one was opened from; null for the first
+  english_question?: { text: string; origin: 'user' | 'question' | 'model' } | null
+  needs_english_question?: boolean
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
   // The current revision's search finished; an sw research may then answer with no included work (SW22).
   discovery_completed?: boolean
@@ -865,16 +867,8 @@ export type ResearchView = {
   probes?: Probes | null
   // The reviewer the next answer gets: the research's own setting, else the app-wide default. model null: no review.
   reviewer: { mode: ReviewMode; connection: string | null; model: string | null; reasoning_effort: string | null }
-  // The semantic search arm for the current revision (slice 21). Carries no count of what will be sent.
-  semantic?: SemanticArm
   // Every change of a role's model the person made in this research, oldest first (S17, F10).
   model_changes?: ResearchModelChange[]
-}
-export type SemanticArm = {
-  provider: SemanticSearchProvider; stored_model: string | null; arm: 'on' | 'off' | 'english_question_missing' | 'not_installed'
-  english_question: { text: string; origin: 'user' | 'question' | 'model' } | null; needs_english_question: boolean
-  // False: the search words come from the English sentence, not the question.
-  question_english?: boolean
 }
 export type ResearchSummary = {
   id: string; title: string; question: string; version: number; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
@@ -961,7 +955,7 @@ export type LocalTool = {
   running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean
   install: LocalToolInstall; job: LocalToolJob
   app_installed?: boolean  // Ollama on macOS: whether Ollama.app is in /Applications
-  // Ollama only: the embedding model download started from its card; completed and total are bytes over all layers.
+  // Ollama only: the model download started from its card; completed and total are bytes over all layers.
   pull?: { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; model: string; step: string; completed: number; total: number; finished_at: string | null; output: string } | null
   // Ollama only: the models its card suggests, with their download size from ollama.com.
   suggested?: { id: string; name: string; maker: string; purpose: 'embedding' | 'research'; size_bytes: number | null; memory_gb?: number | null }[]
@@ -989,13 +983,6 @@ export type Mathpix = {
 }
 export type MathpixTest = { status: 'ok' | 'rejected' | 'failed'; detail: string; http_status: number | null; checked_at: string }
 export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null; disk_total_gb?: number | null }; tools: LocalTool[] }
-export type SemanticSearchProvider = 'gemini' | 'builtin' | 'openai' | 'voyage' | 'cohere' | 'ollama' | 'lm_studio' | 'off'
-export type SemanticSearchOption = {
-  provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null
-  // A built-in catalog model: one option per model, with its catalog id and name, why it cannot be chosen and its
-  // file's last full sha256 check.
-  model?: string; name?: string; reason_code?: string | null; last_full_check?: { at: string; passed: boolean } | null
-}
 // The built-in models (llama.cpp and a catalog of GGUF files), each downloaded on request under the data directory.
 export type BuiltinModelState = 'not_installed' | 'installing' | 'installing_elsewhere' | 'ready' | 'failed' | 'files_do_not_match'
   | 'not_checked' | 'runtime_missing' | 'removing' | 'remove_failed' | 'unsupported_platform'
@@ -1005,7 +992,7 @@ export type BuiltinJob = {
   bytes_done?: number; bytes_total?: number; output: string
 }
 export type BuiltinModel = {
-  id: string; kind: 'embedding' | 'reranker'; name: string; maker: string; params: string; family: string; file: string; repo: string
+  id: string; kind: 'reranker'; name: string; maker: string; params: string; family: string; file: string; repo: string
   revision: string; bytes: number; sha256: string; memory_gb: number; memory_estimated: boolean; official: boolean; license: string
   multilingual: boolean; english_query_required: boolean; dimensions: number | null; identity: string
   state: BuiltinModelState; available: boolean; reason: string | null; reason_code: string | null
@@ -1015,13 +1002,8 @@ export type BuiltinModels = {
   supported: boolean; status: 'unsupported_platform' | null
   runtime: { name: string; tag: string; installed: boolean; asset: string | null; download_bytes: number | null; bytes: number }
   models: BuiltinModel[]; machine: { memory_gb: number | null; chip: string | null }
-  recommended: { embedding: string; reranker: string; rule: string }
-  legacy: { present: boolean; bytes: number; paths: string[] }; job: BuiltinJob | null; path: string
-}
-export type SemanticSearch = {
-  provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[]
-  // A built-in choice saved for a model this DEIXIS no longer runs: kept as saved, never switched; runs fail until one is chosen.
-  builtin_model_changed?: { from: string | null; to: string | null } | null
+  recommended: { reranker: string; rule: string }
+  job: BuiltinJob | null; path: string
 }
 // The reranker for the order records are read in (Voyage when nothing is saved); it never decides inclusion.
 export type RerankProvider = 'builtin' | 'voyage' | 'cohere' | 'jina' | 'zeroentropy'
@@ -1728,15 +1710,11 @@ export const api = {
   startAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`, { method: 'POST' }),
   accountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`),
   cancelAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in/cancel`, { method: 'POST' }),
-  semanticSearch: (leaving?: AbortSignal) => read<SemanticSearch>('/api/semantic-search', leaving),
-  saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
-    request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),
   builtinModels: (leaving?: AbortSignal) => read<BuiltinModels>('/api/semantic-search/builtin', leaving),
   installBuiltinModel: (model: string) => request<{ job: BuiltinJob }>('/api/semantic-search/builtin/install', json('POST', { model })),
   checkBuiltinModel: (model: string) => request<BuiltinModels>('/api/semantic-search/builtin/check', json('POST', { model })),
   cancelBuiltinModel: () => request<{ job: BuiltinJob }>('/api/semantic-search/builtin/cancel', { method: 'POST' }),
   removeBuiltinModel: (model: string) => request<BuiltinModels>('/api/semantic-search/builtin', json('DELETE', { model })),
-  removeBuiltinLegacy: () => request<BuiltinModels>('/api/semantic-search/builtin/legacy', { method: 'DELETE' }),
   reranking: (leaving?: AbortSignal) => read<Reranking>('/api/reranking', leaving),
   saveReranking: (body: { enabled: boolean; provider: RerankProvider | null; model: string | null; pool_factor: number; timeout_seconds: number }) =>
     request<Reranking>('/api/reranking', json('PUT', body)),
@@ -2449,7 +2427,6 @@ export type SpendEstimate = {
   roles: { role: SpendRole; connection: string | null; model: string | null; kind: 'api' | 'subscription' | 'local' | 'none'; priced: boolean
     usd: [number, number] | null; calls: [number, number] | null }[]
   tasks: { task: string; role: SpendRole; calls: [number, number]; input_tokens: [number, number]; output_tokens: [number, number]; repairable: boolean; usd: [number, number] | null }[]
-  embedding: { provider: string; paid: boolean; included: false }
   reranking?: { provider: string | null; paid: boolean; included: false }
   prices: { version: number; as_of: string }
   assumptions: { chars_per_token: number; reasoning_tokens: Record<string, number>; reasoning_default: number }

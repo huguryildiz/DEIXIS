@@ -261,27 +261,6 @@ def focused_record(answer: dict[str, Any], queries: list[dict[str, Any]], allowa
     return {"rule": FOCUSED_RULE, "allowance": allowance, "concepts": concepts}
 
 
-def question_subtopic(question: str, vocabulary: dict[str, Any], term: str) -> bool:
-    """Whether this concept is a sub-topic the question itself names.
-
-    The plan's concepts are written by a model reading the first page of results, so a concept can be one the
-    model inferred rather than one the person asked about, and the plan's `gap` sentence beside it is model prose
-    that no rule reads. A request that costs money is not sent on an inferred sub-topic, so the link back to the
-    question is checked in code: the concept stands in the person's own sentence as its own words, or it is one of
-    the words that sentence was read for (`question_vocabulary`, or the vocabulary itself where it is the
-    question's own).
-    """
-    from deixis.workflow.search import search_query
-
-    wanted = term.strip().casefold()
-    if not wanted:
-        return False
-    if re.search(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)", (question or "").casefold()):
-        return True
-    own = search_query.question_vocabulary(vocabulary) or vocabulary
-    return any(wanted in ((entry.get("phrase") or "").casefold(), (entry.get("root") or "").casefold())
-               for entry in own.get("terms") or [])
-
 
 def pages_cover(store: Any, run: dict[str, Any], term: str, indexes: list[int]) -> bool:
     """Whether a record the pages of these queries already found carries this concept in its own text.

@@ -14,7 +14,6 @@ import sys
 from deixis.tools import local_catalog as catalog
 from deixis.tools import local_tools
 import json
-from deixis.documents import embeddings as e
 
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake programs are shell scripts")
@@ -118,82 +117,6 @@ def run(read, handler, memory_gb):
     return asyncio.run(go())
 
 
-def test_ollama_picks_the_largest_size_that_fits_memory():
-    models = run(catalog.ollama, ollama_site, 32)
-    # 35b (22 GB) needs 28 GB; a single-size family's size sits under "latest"; "30b" is held by the "30b-a3b" tag.
-    assert [(m["id"], m["name"], m["size_bytes"]) for m in models] == [
-        ("syn-qwen:35b", "syn-qwen · 35B", 22_000_000_000), ("syn-one", "syn-one · 27B", 18_000_000_000),
-        ("syn-moe:30b-a3b", "syn-moe · 30B", 25_000_000_000)]
-    small = run(catalog.ollama, ollama_site, 16)
-    assert [m["id"] for m in small] == ["syn-qwen:9b"]  # 9b is listed as "syn-qwen:9b latest"; the 1b model is too small
 
 
 # Ollama and LM Studio paths through mocked OpenAI-compatible transports.
-
-@pytest.mark.parametrize("provider", ["ollama"])
-def test_success_returns_normalized_vectors_in_input_order(provider):
-    def handler(request):
-        assert json.loads(request.content) == {"model": "synthetic", "input": ["a", "b"]}
-        return httpx.Response(200, json={"data": [{"index": 1, "embedding": [0, 2]}, {"index": 0, "embedding": [3, 4]}]})
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    vectors = asyncio.run(e.Embedder(provider, "synthetic").embed(client, ["a", "b"], "RETRIEVAL_DOCUMENT"))
-    assert list(vectors[0]) == pytest.approx([.6, .8]) and list(vectors[1]) == [0, 1]
-
-
-def test_a_local_embedding_request_never_goes_through_a_proxy_from_the_environment(monkeypatch):
-    """Passage text sent to Ollama or LM Studio must not leave the computer through HTTP_PROXY/ALL_PROXY.
-    Two real servers on loopback, the embedding server and a proxy; the environment points every proxy at the latter."""
-    import threading
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from types import SimpleNamespace
-
-    hits = {"server": [], "proxy": []}
-
-    def serve(name, reply):
-        class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):
-                hits[name].append(self.path)
-                body = json.dumps(reply).encode()
-                self.send_response(200 if name == "server" else 502)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-            def log_message(self, *args):
-                pass
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        return httpd
-
-    server = serve("server", {"data": [{"index": 0, "embedding": [3, 4]}]})
-    proxy = serve("proxy", {"error": "SYNTHETIC proxy"})
-    try:
-        proxy_url = f"http://127.0.0.1:{proxy.server_address[1]}"
-        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "all_proxy"):
-            monkeypatch.setenv(name, proxy_url)
-        for name in ("NO_PROXY", "no_proxy"):
-            monkeypatch.delenv(name, raising=False)
-        monkeypatch.setitem(e.LOCAL_URLS, "ollama", f"http://127.0.0.1:{server.server_address[1]}/v1")
-
-        async def go():
-            async with httpx.AsyncClient() as shared:  # the app's shared client honours the proxy variables
-                control = await shared.post(e.LOCAL_URLS["ollama"] + "/embeddings", json={})
-                assert control.status_code == 502 and hits["proxy"]  # without the fix the request would go this way
-                hits["proxy"].clear()
-                deps = SimpleNamespace(http=shared)
-                assert e.client_for("openai", deps) is shared  # remote APIs keep the person's proxy
-                client = e.client_for("ollama", deps)
-                assert client is not shared and client is e.client_for("lm_studio", deps)
-                assert client.trust_env is False and client.follow_redirects is False
-                try:
-                    return await e.Embedder("ollama", "synthetic").embed(client, ["passage"], "RETRIEVAL_DOCUMENT")
-                finally:
-                    await client.aclose()
-
-        (vector,) = asyncio.run(go())
-        assert list(vector) == pytest.approx([.6, .8])
-        assert hits == {"server": ["/v1/embeddings"], "proxy": []}
-    finally:
-        server.shutdown()
-        proxy.shutdown()

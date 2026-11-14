@@ -129,11 +129,6 @@ def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules()
 
 # ---- from tests__discovery__test_vocabulary_labels.py ------------------------------------------------------------
 
-# The code rule reads the word in front of a phrase: "with" marks a method position, so "distributed ledgers" becomes
-# a claim word and the setting drops out of the query. That is the error SW17 exists to correct.
-SUPPLY = "What is the effect of shipment batching on delivery delay in supply chains with distributed ledgers?"
-
-
 def test_the_user_s_key_terms_are_labelled_by_nobody_but_the_user():
     extraction = extract("Hangi ölçekleme modelleri önerilmiştir?", key_terms=KEY_TERMS)
     assert extraction.block_assignment == "user"

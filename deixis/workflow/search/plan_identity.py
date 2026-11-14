@@ -39,17 +39,6 @@ def read_inputs(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key not in NOT_READ}
 
 
-def read_records(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """A readable summary of the records the call read, in the order it was sent them. For a report or a listing:
-    the hash above is taken over the whole payload, not over this."""
-    texts: dict[str, list[str]] = {}
-    for passage in payload.get("passages") or []:
-        texts.setdefault(passage.get("source_id"), []).append(passage.get("text") or "")
-    return [{"source_id": source.get("source_id"), "title": source.get("title"),
-             "index_keywords": list(source.get("index_keywords") or []),
-             "text": texts.get(source.get("source_id")) or []}
-            for source in payload.get("sources") or []]
-
 
 def fingerprint(payload: dict[str, Any], record: dict[str, Any], plan_rule: str,
                 schema_version: str | None = None) -> dict[str, Any]:

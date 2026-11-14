@@ -88,9 +88,9 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("ANTHROPIC_API_KEY", "model", "anthropic", testable=True),
     ManagedKey("OPENROUTER_API_KEY", "model", "openrouter", testable=True),
     ManagedKey("MIMO_API_KEY", "model", "mimo", testable=True),
-    # Voyage AI: embeddings and reranking only (Settings → Semantic search), never a model connection's key.
+    # Voyage AI is used for reranking, never as a model connection.
     ManagedKey("VOYAGE_API_KEY", "model", "voyage", testable=True),
-    # Cohere (embeddings and reranking), Jina AI and ZeroEntropy (reranking): Settings → Search and ranking only.
+    # Cohere, Jina AI and ZeroEntropy are used for reranking.
     ManagedKey("COHERE_API_KEY", "model", "cohere", testable=True),
     ManagedKey("JINA_API_KEY", "model", "jina", testable=True),
     ManagedKey("ZEROENTROPY_API_KEY", "model", "zeroentropy", testable=True),
@@ -984,7 +984,7 @@ def _source_request(env: str, value: str) -> tuple[str, dict[str, Any], dict[str
 
 
 async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any]:
-    """One short request with the key: a scholarly source asks for one record (SerpApi: its account page); Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI and Voyage embed one word, which also shows missing credit; Cohere lists its models; Jina and ZeroEntropy rerank one word against one word (a few tokens)."""
+    """One short request with the key: a scholarly source asks for one record (SerpApi: its account page); Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI lists models and Voyage lists batches; Cohere lists its models; Jina and ZeroEntropy rerank one word against one word (a few tokens)."""
     if not key_verification.is_valid_key(value):  # a header cannot carry it; nothing is sent
         return {"status": "rejected", "verification": "rejected", "detail": "The saved key is not a valid key. Enter it again.",
                 "checked_at": now(), "kind": "auth_failed", "http_status": None, "reset_at": None}
@@ -996,10 +996,9 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
         elif env == "GEMINI_API_KEY":
             response = await client.get(f"{GEMINI_API_URL}/models", params={"pageSize": 1},
                                         headers={"x-goog-api-key": value}, timeout=20)
-        elif env == "VOYAGE_API_KEY":  # one query word: a few tokens of the account's free allowance or credit
-            response = await client.post(f"{VOYAGE_API_URL}/embeddings", json={"model": "voyage-4-lite", "input": ["test"],
-                                                                                "input_type": "query"},
-                                         headers={"Authorization": f"Bearer {value}"}, timeout=20)
+        elif env == "VOYAGE_API_KEY":
+            response = await client.get(f"{VOYAGE_API_URL}/batches", params={"limit": 1},
+                                        headers={"Authorization": f"Bearer {value}"}, timeout=20)
         elif env == "COHERE_API_KEY":
             response = await client.get(f"{COHERE_API_URL}/v1/models", params={"page_size": 1},
                                         headers={"Authorization": f"Bearer {value}"}, timeout=20)
@@ -1019,8 +1018,7 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
             spec = COMPAT_BY_KEY_ENV[env]
             response = await client.get(spec.key_url or spec.list_url, headers={"Authorization": f"Bearer {value}"}, timeout=20)
         else:
-            response = await client.post(f"{OPENAI_API_URL}/embeddings", json={"model": "text-embedding-3-small", "input": ["test"]},
-                                         headers={"Authorization": f"Bearer {value}"}, timeout=20)
+            response = await client.get(f"{OPENAI_API_URL}/models", headers={"Authorization": f"Bearer {value}"}, timeout=20)
     except (httpx.HTTPError, UnicodeEncodeError) as exc:
         return {"status": "failed", "verification": "pending", "detail": "Could not reach the API.", "checked_at": now(),
                 "kind": service_error_kind(exc=exc), "http_status": None, "reset_at": None}

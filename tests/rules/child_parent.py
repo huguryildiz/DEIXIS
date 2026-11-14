@@ -2,10 +2,7 @@
 
 Not a test module. The test SIGKILLs this process and watches the child. Subcommands:
   codex <mode>        `models.codex_rpc.CodexAppServer` on `stand_in_codex.py <mode>`; prints {"child_pid": ...}
-  embedding <busy>    `documents.local_embedding.LocalModels` on the fake llama-server (FAKE_LLAMA from the environment);
-                      with `busy` one embed request is in flight; prints {"child_pid": ...} (the server's)
   pdf <path>          `documents.pdf._run_watched` on the production extraction argv, 60 s parent clock; prints {"ready": true}
-DEIXIS_DATA_DIR (embedding) is a temp directory made by the test.
 """
 
 import asyncio
@@ -37,33 +34,8 @@ async def codex(mode: str) -> None:
     await asyncio.sleep(3600)
 
 
-class Shim:
-    @staticmethod
-    def setattr(obj, name, value):
-        setattr(obj, name, value)
 
 
-async def embedding(busy: bool) -> None:
-    import builtin_helpers
-    from deixis.documents import local_embedding
-
-    record = Path(os.environ["DEIXIS_DATA_DIR"]) / "fake-llama.jsonl"
-    os.environ["FAKE_LLAMA_RECORD"] = str(record)
-    paths = local_embedding.builtin_paths(Path(os.environ["DEIXIS_DATA_DIR"]))
-    builtin_helpers.ready(paths, Shim, "qwen3-embedding-0.6b")
-    models = local_embedding.LocalModels(paths)
-    task = None
-    if busy:  # the request is in flight when the parent dies (FAKE_LLAMA slow:S holds the reply)
-        task = asyncio.create_task(models.embed("qwen3-embedding-0.6b", ["alpha beta"], "document"))
-        while record.read_text(encoding="utf-8").count('"/v1/embeddings"') < 2 if record.exists() else True:
-            await asyncio.sleep(0.05)
-    else:
-        await models.embed("qwen3-embedding-0.6b", ["alpha"], "document")
-    await asyncio.sleep(0.3)
-    started = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines() if '"argv"' in line]
-    say(child_pid=started[-1]["pid"])
-    await asyncio.sleep(3600)
-    del task
 
 
 def extraction(path: str) -> None:
@@ -100,8 +72,6 @@ if __name__ == "__main__":
     command = sys.argv[1]
     if command == "codex":
         asyncio.run(codex(sys.argv[2]))
-    elif command == "embedding":
-        asyncio.run(embedding(sys.argv[2] == "busy"))
     elif command == "pdf":
         extraction(sys.argv[2])
     elif command == "pdf-gated":

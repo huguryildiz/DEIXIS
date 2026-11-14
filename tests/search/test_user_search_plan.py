@@ -262,10 +262,3 @@ def test_the_protocol_freezes_before_the_first_request_that_fetches_search_resul
     # requests beside the plan, semantic and plain, may open before it too.
     assert set(events[:events.index("freeze")]) <= {"group_by", "semantic", "plain"}
     assert events.index("semantic") < events.index("freeze")
-
-
-# ---- the criterion belongs to the plan's revision: the full-text path reads exactly the one it froze -------------
-
-
-# ---- the comparator guard travels with the criterion (slice 28) ---------------------------------------------
-

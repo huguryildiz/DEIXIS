@@ -84,8 +84,8 @@ def test_append_only_revision_own_review_and_ledger(tmp_path, monkeypatch):
     revision = lib.store.run(row(lib)["answer_run_id"])
     assert revision["budget"]["fast_path"]["role"] == "late_revision"
     async def forbidden(*args, **kwargs):
-        pytest.fail("late answer must use stored evidence without fetch or embedding")
-    for method in ("_inspect", "_semantic_ranking", "_read_equations"):
+        pytest.fail("late answer must use stored evidence without fetching or reading equations")
+    for method in ("_inspect", "_read_equations"):
         monkeypatch.setattr(lib.flow, method, forbidden)
     lib.store.update_run(revision["id"], status="running")
     asyncio.run(lib.flow.execute(revision["id"]))

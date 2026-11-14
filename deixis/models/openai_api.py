@@ -1,7 +1,6 @@
 """OpenAI API model connection for research steps (OPENAI_API_KEY).
 
-Codex signed in with a ChatGPT account is a separate connection (`adapter.py`); the same key also serves embeddings
-(`documents/embeddings.py`), unchanged. This one calls the Responses API directly: one stateless request per step
+Codex signed in with a ChatGPT account is a separate connection (`adapter.py`). This one calls the Responses API directly: one stateless request per step
 (`store: false`), no tools, the step schema sent as a strict JSON-schema text format, and the answering model reported
 as `resolved_model` so the flow's mismatch check applies. Any output item other than a message or reasoning is a tool
 item and fails the step. The model list does not say which reasoning efforts a model takes, so they come from a fixed

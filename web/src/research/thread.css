@@ -524,7 +524,6 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .ref-pill.is-accepted{--pill:var(--attr-accepted)}
 .ref-pill.is-submitted{--pill:var(--attr-submitted)}
 .ref-pill.is-cited{--pill:var(--accent)}
-.ref-pill.is-similarity{--pill:var(--attr-similarity);font-variant-numeric:tabular-nums;cursor:help}
 .ref-pill.is-unstated{--pill:var(--muted)}
 .ref-pill svg{flex:none}
 .research-title-text.is-typing::after{content:'';display:inline-block;width:2px;height:.78em;margin-left:.1em;background:var(--accent);vertical-align:-.02em;animation:title-caret .65s steps(1,end) infinite}

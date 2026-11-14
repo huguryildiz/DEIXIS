@@ -2,7 +2,7 @@
 
 A person asks a question inside a research; one `followup_answer` run answers it. No search is started: the run reads
 only passages this research already holds, ranks them against the turn's question with the inspection ranking
-(lexical and semantic, fused by RRF), and sends the best of them in one model call with its one schema repair. The
+(lexical), and sends the best of them in one model call with its one schema repair. The
 StepInput's allowlist is the passages that call was sent, so a citation can only name one of them, with an anchor the
 backend locates in its text (the grounded answer's rules). The answer is published with its turn row in one
 transaction. "Search for new works on this" is not here: it is a new scope revision the person asks for with the
@@ -542,16 +542,15 @@ def _value_text(value: Any, options_json: str | None) -> str:
 
 async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], question: str,
                      frozen_pool: dict[str, Any]) -> dict[str, Any]:
-    """The passages sent: the pool ranked against the question read with the research question (lexical and semantic,
-    fused by RRF), then the rest of the pool breadth-first by source, under a per-source cap, up to the research's
-    answer passage limit. A follow-up such as "write a report from the full texts" names no topic of its own, so the
-    research question gives the ranking one: it is part of the semantic query, and its words rank the pool
-    lexically only when the follow-up's own words match nothing and no semantic ranking came back. A specific
-    follow-up in another language than the passages is then not outranked by the research question's words."""
+    """Rank matching passages lexically, then fill remaining places breadth-first by source.
+
+    When the follow-up question has no matching words, the research question supplies the lexical terms.
+    The stored selection takes precedence over recomputation on resume.
+    """
     saved = flow.store.existing_step(run["id"], SELECTION_KEY)
     if saved and saved["status"] == "succeeded":
         return saved["output"]
-    from deixis.workflow.run.flow import MAX_PASSAGES_PER_SOURCE, _reference_list, fuse_rankings
+    from deixis.workflow.run.flow import MAX_PASSAGES_PER_SOURCE, _reference_list
     store, limit = flow.store, run["budget"]["max_followup_passages"]
     sources = frozen_pool["sources"]
     svids = list(sources)
@@ -563,14 +562,10 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
         return [p for p in store.search_passages(svids, fts, max(everything, 1)) if p["id"] in ids] if words else []
     words = terms(question)
     lexical = matches(words)
-    semantic = await flow._semantic_ranking(run, scope, svids, query_text=f"{question}\n{scope['question']}",
-                                            key=SEMANTIC_KEY, query_origin="followup", only=ids)
-    semantic = [p for p in semantic or [] if p["id"] in ids]
-    if not lexical and not semantic:
-        # Neither ranking has a topic: the research question's words rank the pool, not the fill's source order.
+    if not lexical:
         words = terms(scope["question"])
         lexical = matches(words)
-    ranked = fuse_rankings(lexical, semantic) if semantic else lexical
+    ranked = lexical
     # A reference-list passage goes to the end: a misread one is ranked lower, not lost.
     ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
     ranked_ids = [p["id"] for p in ranked]
@@ -623,10 +618,8 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
             chosen.append(pid)
             taken[owner[pid]] = taken.get(owner[pid], 0) + 1
     from_ranking = len(set(chosen) & seen)
-    semantic_step = store.existing_step(run["id"], SEMANTIC_KEY)
     output = {"basis": frozen_pool["basis"], "answer_run_id": frozen_pool["answer_run_id"],
               "pool_size": len(ids), "pool_sources": len(svids), "terms": words, "lexical_matches": len(lexical),
-              "semantic_matches": len(semantic), "semantic_step": semantic_step["status"] if semantic_step else None,
               "limit": limit, "per_source": per_source, "passage_ids": chosen,
               "from_ranking": from_ranking, "from_fill": len(chosen) - from_ranking,
               "from_priority": len(set(chosen) & set(priority)),
@@ -661,13 +654,13 @@ async def _call(flow: Any, run: dict[str, Any], scope: dict[str, Any], key: str,
 
 async def _more_selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], queries: list[str],
                           first: dict[str, Any], frozen_pool: dict[str, Any]) -> dict[str, Any]:
-    """The second round's passages: the model's phrases rank the pool and its reserve (lexical and semantic,
-    fused by RRF); up to half the limit of passages the first round did not send take the place of the first round's
+    """The second round's passages: the model's phrases rank the pool and its reserve lexically;
+    up to half the limit of passages the first round did not send take the place of the first round's
     last ones. A phrase that matches nothing new leaves the first round's passages as they were."""
     saved = flow.store.existing_step(run["id"], MORE_SELECTION_KEY)
     if saved and saved["status"] == "succeeded":
         return saved["output"]
-    from deixis.workflow.run.flow import _reference_list, fuse_rankings
+    from deixis.workflow.run.flow import _reference_list
     store, limit = flow.store, run["budget"]["max_followup_passages"]
     held: dict[str, list[str]] = {}
     for part in ("sources", "reserve"):
@@ -680,10 +673,7 @@ async def _more_selection(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     fts = " OR ".join(f'"{t}"' for t in words)
     everything = sum(len(store.passages_for(svid)) for svid in svids)
     lexical = [p for p in store.search_passages(svids, fts, max(everything, 1)) if p["id"] in ids] if words else []
-    semantic = await flow._semantic_ranking(run, scope, svids, query_text="\n".join(queries), key=MORE_SEMANTIC_KEY,
-                                            query_origin="followup", only=ids)
-    semantic = [p for p in semantic or [] if p["id"] in ids]
-    ranked = fuse_rankings(lexical, semantic) if semantic else lexical
+    ranked = lexical
     ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
     new = [p["id"] for p in ranked if p["id"] not in sent][:limit // 2]
     room = max(0, limit - len(new))
@@ -694,7 +684,7 @@ async def _more_selection(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     missing = [pid for pid in reserved if pid in sent and pid not in kept]
     if missing:
         kept = kept[:max(0, room - len(missing))] + missing
-    output = {"queries": queries, "terms": words, "lexical_matches": len(lexical), "semantic_matches": len(semantic),
+    output = {"queries": queries, "terms": words, "lexical_matches": len(lexical),
               "new_passages": len(new), "limit": limit, "passage_ids": kept + new}
     return _code_step(flow, run, MORE_SELECTION_KEY, "code:followup_more_passages", lambda: output)
 

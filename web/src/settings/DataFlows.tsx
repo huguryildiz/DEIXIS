@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, preferencesApi, shellApi, type ContactEmailSetting, type Connections, type DefaultRole, type RoleModelSetting, type SemanticSearch } from '../lib/api'
+import { api, preferencesApi, shellApi, type ContactEmailSetting, type Connections, type DefaultRole, type RoleModelSetting } from '../lib/api'
 import { t, uiLocale } from '../lib/i18n'
 import { connectionName } from '../lib/labels'
 
@@ -20,7 +20,6 @@ type DataFlowInput = {
   /** The default model of each role; null while unread. */
   defaults: Record<DefaultRole, RoleModelSetting> | null
   connections: Connections | null
-  semantic: SemanticSearch | null
   email: ContactEmailSetting | null
   /** Optional services that are on now: Mathpix with its switch on and keys saved, a Zotero web key; null while unread. */
   optional: { mathpix: boolean; equationModel: { connection: string; model: string } | null; zoteroWeb: boolean } | null
@@ -29,7 +28,7 @@ type DataFlowInput = {
 }
 
 /** The rows as [heading, text]; a text is null while its setting is still unread; a row with nothing to say is left out. */
-function dataFlowRows({ defaults, connections, semantic, email, optional, updates }: DataFlowInput): [string, string | null][] {
+function dataFlowRows({ defaults, connections, email, optional, updates }: DataFlowInput): [string, string | null][] {
   const picked = defaults ? [...new Set(Object.values(defaults).filter(d => d.model).map(d => d.model_connection))] : null
   const models = !picked ? null
     : t('A research sends its question, search words, abstracts, and passages and excerpts from PDFs to the model you choose for it. An account or API provider receives them. A local server receives them on this computer, unless that server forwards them elsewhere; Ollama does this for its cloud models.')
@@ -45,13 +44,6 @@ function dataFlowRows({ defaults, connections, semantic, email, optional, update
     : email.email ? t('Your email address ({email}) is sent to OpenAlex and Crossref with each request, and to Unpaywall with each PDF lookup.', { email: email.email })
     : email.environment_set ? t('An email address set when DEIXIS started is sent to OpenAlex and Crossref with each request, and to Unpaywall with each PDF lookup.')
     : t('No email address is set, so none is sent. Without one DEIXIS does not ask Unpaywall for PDFs.')
-
-  const search = !semantic ? null
-    : semantic.provider === 'gemini' ? t('Titles, abstracts and passage text are sent to {service}.', { service: 'Google' })
-    : semantic.provider === 'openai' ? t('Titles, abstracts and passage text are sent to {service}.', { service: 'OpenAI' })
-    : semantic.provider === 'builtin' ? t('Not sent anywhere. The built-in model runs on this computer.')
-    : semantic.provider === 'off' ? t('Semantic search is off. Nothing is sent.')
-    : t('Stays on this computer. {server} reads it and runs here.', { server: semantic.provider === 'ollama' ? 'Ollama' : 'LM Studio' })
 
   const extras = !optional || !connections ? null : [
     ...(optional.mathpix ? [t('Mathpix is on: images of equation areas cut from PDFs are sent to Mathpix.')] : []),
@@ -70,7 +62,6 @@ function dataFlowRows({ defaults, connections, semantic, email, optional, update
     [t('Lookups by DOI'), dois],
     [t('PDF downloads'), t('To fetch a PDF, DEIXIS requests it from the publisher, repository or preprint server that hosts it, so that server sees the request.')],
     [t('Email address'), mail],
-    [t('Semantic search'), search],
     ...(extras === null ? [[t('Optional services'), null] as [string, string | null]] : extras.length ? [[t('Optional services'), extras.join(' ')] as [string, string | null]] : []),
     [t('Storage'), t('Your library, notes and PDF files are kept on this computer.')],
     [t('Your keys'), t('Keys are stored on this computer. Each one is sent only to the service it belongs to, to show the request is yours.')],
@@ -85,7 +76,6 @@ function dataFlowRows({ defaults, connections, semantic, email, optional, update
  *  changes (the email saved on this tab). */
 export function DataFlowsSection({ defaults, active, refresh }: { defaults: Record<DefaultRole, RoleModelSetting> | null; active: boolean; refresh: number }) {
   const [connections, setConnections] = useState<Connections | null>(null)
-  const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [email, setEmail] = useState<ContactEmailSetting | null>(null)
   const [optional, setOptional] = useState<DataFlowInput['optional']>(null)
   const [updates, setUpdates] = useState<boolean | null>(null)
@@ -95,7 +85,6 @@ export function DataFlowsSection({ defaults, active, refresh }: { defaults: Reco
     let live = true
     const fail = () => { if (live) setFailed(true) }
     api.connections().then(value => { if (live) setConnections(value) }, fail)
-    api.semanticSearch().then(value => { if (live) setSemantic(value) }, fail)
     shellApi.contactEmail().then(value => { if (live) setEmail(value) }, fail)
     const readUpdates = () => preferencesApi.get().then(value => { if (live) setUpdates(value.update_check === 'on') }, fail)
     readUpdates()
@@ -110,7 +99,7 @@ export function DataFlowsSection({ defaults, active, refresh }: { defaults: Reco
   return <>
     <h2 id="data-flows" data-panel="general">{t('Where your data goes')}</h2>
     <div className="rows set-flows" data-panel="general">
-      {dataFlowRows({ defaults, connections, semantic, email, optional, updates }).map(([heading, text]) => <div key={heading}>
+      {dataFlowRows({ defaults, connections, email, optional, updates }).map(([heading, text]) => <div key={heading}>
         <b>{heading}</b>
         <p>{text ?? (failed ? t('Could not be read.') : <span className="shimmer-text" role="status">{t('Checking…')}</span>)}</p>
       </div>)}

@@ -327,9 +327,7 @@ def test_the_selection_puts_one_passage_per_work_first_and_ranks_the_rest(tmp_pa
               "basis": "included_works", "answer_run_id": None}
     run = store.create_run(rid, "followup_answer", {"max_followup_passages": 8}, None)
 
-    async def no_semantic(*args, **kwargs):
-        return None
-    flow = SimpleNamespace(store=store, _semantic_ranking=no_semantic)
+    flow = SimpleNamespace(store=store)
     selected = asyncio.run(followup._selection(flow, store.run(run["id"]), store.scope(rid), "holding time", frozen))
     chosen = selected["passage_ids"]
     assert chosen[:4] == [p[1], p[4], p[0], p[2]] and selected["from_priority"] == 4

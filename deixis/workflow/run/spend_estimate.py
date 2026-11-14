@@ -73,7 +73,7 @@ def _fixed_tokens(package: Any, task: str) -> int:
 
 
 def estimate(package: Any, effort: str, roles: dict[str, dict[str, Any] | None], *, reading_on: bool,
-             embedding_provider: str, rerank_provider: str | None = None,
+             rerank_provider: str | None = None,
              deep_screening: bool = False) -> dict[str, Any]:
     """`roles` maps each of literature, answer and reviewer to `{connection, model, reasoning_effort}` or None (no
     reviewer). The answer holds the range in US dollars over the priced roles, what each role and step type contributes,
@@ -123,7 +123,6 @@ def estimate(package: Any, effort: str, roles: dict[str, dict[str, Any] | None],
         "usd": [sum(r["usd"][0] for r in priced), sum(r["usd"][1] for r in priced)] if priced else None,
         "complete": bool(paid) and len(priced) == len(paid),
         "roles": role_rows, "tasks": rows,
-        "embedding": {"provider": embedding_provider, "paid": embedding_provider in ("gemini", "openai", "voyage", "cohere"), "included": False},
         # The record reranker in force (Voyage by default): billed by its provider, not in this range.
         "reranking": {"provider": rerank_provider, "paid": rerank_provider not in (None, "builtin"), "included": False},
         "prices": {"version": table["version"], "as_of": table["as_of"]},

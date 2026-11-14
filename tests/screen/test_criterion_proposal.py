@@ -333,8 +333,7 @@ def test_the_proposals_and_the_calls_beside_them_keep_the_persons_concurrency_li
 
 def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tmp_path, monkeypatch):
     rid, run, openalex, adapter = run_with_proposals(tmp_path, monkeypatch)
-    # The fast path opens its embedding step (`source_similarity`) as the run starts; it sends nothing to a provider.
-    keys = [key for key in steps_of(run) if key != "source_similarity"]
+    keys = steps_of(run)
     # The question's own semantic request opens before anything plans: it needs no model and no criterion. The three
     # proposals are sent next, beside the plan call and not after it, because they read the question alone. The plan a
     # model writes from that page follows the vocabulary, then the source routing, then the vote the proposals feed.

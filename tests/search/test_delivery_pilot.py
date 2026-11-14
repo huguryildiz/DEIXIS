@@ -27,8 +27,8 @@ sys.path.append(str(Path(__file__).resolve().parents[2] / "scripts" / "benchmark
 import delivery_pilot  # noqa: E402
 
 QUESTIONS = ["scripts/benchmark/dbr_vbf.json", "scripts/benchmark/irs2021.json", "scripts/benchmark/kurt2017.json"]
-SETTINGS = {"write": {"/api/semantic-search": {"provider": "voyage", "model": "voyage-4-lite"}},
-            "pin": {"/api/semantic-search": {"provider": "voyage", "model": "voyage-4-lite"},
+SETTINGS = {"write": {"/api/reranking": {"enabled": True, "provider": "voyage"}},
+            "pin": {"/api/reranking": {"enabled": True, "provider": "voyage"},
                     "/api/effort-limits": {"efforts": {"standard": {"papers": 50, "fulltext": 20}}}},
             "record": ["/api/settings"]}
 
@@ -241,9 +241,9 @@ def test_the_machine_reading_survives_a_tool_that_is_not_there(monkeypatch):
 
 
 def test_settings_the_server_reports_differently_stop_the_pilot():
-    """Not only the embedding and the reranker: every endpoint the configuration pins is read back, and what
+    """Every endpoint the configuration pins is read back, and what
     the depth actually reads (`/api/effort-limits`) is one of them, because it is the arm's own N and K."""
-    reported = {"/api/semantic-search": {"provider": "voyage", "model": "voyage-4-lite"},
+    reported = {"/api/reranking": {"enabled": True, "provider": "voyage"},
                 "/api/effort-limits": {"efforts": {"standard": {"papers": 50, "fulltext": 20}}},
                 "/api/settings": {"answer": {"model": "gpt-6.1-sol"}}}
     server = SimpleNamespace(get=lambda path: reported[path])

@@ -5,6 +5,7 @@ FakeAdapter, an in-memory keychain and mocked HTTP. Passing shows the routes' be
 """
 
 import copy
+import asyncio
 import dataclasses
 import httpx
 import json
@@ -41,9 +42,9 @@ def remote(request):
         if request.headers.get("x-goog-api-key") == GOOD_GEMINI:
             return httpx.Response(200, json={"models": []})
         return httpx.Response(400, json={"error": {"message": "API key not valid: gemini-bad-key-456"}})
-    if url == "https://api.openai.com/v1/embeddings":
+    if url == "https://api.openai.com/v1/models":
         if request.headers["authorization"] == "Bearer openai-no-credit-key":
-            return httpx.Response(429, json={"error": {"message": "You have no credits remaining.", "code": "insufficient_quota"}})
+            return httpx.Response(200, json={"object": "list", "data": []})
         return httpx.Response(401, json={"error": {"message": "Incorrect API key provided: openai-bad-key"}})
     if url == "https://api.deepseek.com/models":
         if request.headers.get("authorization") == "Bearer deepseek-good-key":
@@ -130,12 +131,31 @@ def test_a_model_key_is_tested_stored_in_the_keychain_and_never_returned(client,
     assert not os.environ.get("GEMINI_API_KEY")
 
 
-def test_a_key_without_credit_is_kept_and_a_refused_key_is_not(client, memory_keychain):
+def test_openai_key_check_uses_read_only_models_and_refuses_invalid_key(client, memory_keychain):
     refused = client.put("/api/credentials/OPENAI_API_KEY", json={"value": "openai-bad-key"})
     assert refused.status_code == 422 and "openai-bad-key" not in refused.text
     kept = client.put("/api/credentials/OPENAI_API_KEY", json={"value": "openai-no-credit-key"}).json()
-    assert kept["test"]["status"] == "no_credit" and kept["test"]["kind"] == "quota_exhausted" and kept["test"]["http_status"] == 429
+    assert kept["test"]["status"] == "ok" and kept["test"]["verification"] == "verified"
     assert memory_keychain.items == {("DEIXIS", "OPENAI_API_KEY"): "openai-no-credit-key"}
+
+
+@pytest.mark.parametrize("env,url", [
+    ("OPENAI_API_KEY", "https://api.openai.com/v1/models"),
+    ("VOYAGE_API_KEY", "https://api.voyageai.com/v1/batches?limit=1"),
+])
+def test_model_and_reranker_key_checks_use_only_read_only_requests(env, url):
+    sent = []
+
+    def answer(request):
+        sent.append((request.method, str(request.url)))
+        return httpx.Response(200, json={})
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as http:
+            return await credentials.test(http, env, "SYNTHETIC-valid-key")
+
+    assert asyncio.run(check())["status"] == "ok"
+    assert sent == [("GET", url)]
 
 
 @pytest.mark.parametrize("env,service,good", [("ANTHROPIC_API_KEY", "anthropic", "anthropic-good-key"),
@@ -165,13 +185,10 @@ def test_local_connections_do_not_share_the_proxy_honouring_client(tmp_path, pat
         for name in ("ollama", "local_server"):
             own = adapters[name]._http()
             assert own is not shared and own.trust_env is False and own.follow_redirects is False and not own._mounts
-        # Ollama/LM Studio embeddings, the local tool checks and Zotero's local API share one loopback client.
+        # Local tool checks and Zotero's local API share one loopback client.
         local = app.state.local_http
         assert local is not shared and local.trust_env is False and local.follow_redirects is False and not local._mounts
         assert app.state.local_tools._client is local and app.state.worker.flow.deps.local_http is local
-        from deixis.documents import embeddings
-        assert embeddings.client_for("ollama", app.state.worker.flow.deps) is local
-        assert embeddings.client_for("gemini", app.state.worker.flow.deps) is shared
         from deixis.api.app import zotero_http
         request = SimpleNamespace(app=app)
         assert zotero_http(request, "local") is local and zotero_http(request, "web") is shared

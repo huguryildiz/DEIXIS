@@ -144,12 +144,6 @@ class Lib:
                 self.store._insert_passage(svid, asset, "pdf_page", page, None, None, None, version, text)
         return asset
 
-    def rank(self, svids):
-        run = self.new_run("discovery")
-        step = self.store.step(run, "ranking", "code:ranking")
-        self.store.finish_step(step["id"], "succeeded", output={})
-        self.ds.save_ranks(step["id"], self.rid, [{"source_version_id": svid, "signal": "inspection", "rank": i + 1,
-                                                   "available": 1} for i, svid in enumerate(svids)])
 
     def reading_run(self):
         revision = self.store.research(self.rid)["current_scope_revision"]

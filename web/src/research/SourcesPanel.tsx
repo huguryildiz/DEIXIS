@@ -22,8 +22,7 @@ import type { OcrContext } from './shared'
 // "Screen N more", which never includes a source by itself.
 type SourceSort = 'relevant' | 'found' | 'cited' | 'newest' | 'oldest' | 'title'
 const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', found: 'Order found', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
-// Search position is not comparable across queries: the model's screening verdict decides, then similarity to the question
-// when semantic search scored the source, then the best position in the searches that found it.
+// Search position is not comparable across queries: the screening verdict decides, then the best search position.
 const verdictOrder: Record<string, number> = { include: 0, passed: 1, uncertain: 2, none: 3, exclude: 4 }
 const verdictRank = (s: Source) => verdictOrder[proposalOf(s)?.tone ?? 'none'] ?? 3
 // "Cited in answer" lists the works the answer shown in the thread cites, from that answer's stored claims. A cited work
@@ -38,7 +37,7 @@ const pdfFilterLabels: Record<PdfFilter, string> = { all: 'All', with_pdf: 'PDF 
 const byNumber = (a: number | null, b: number | null, dir: 1 | -1) => a === null ? (b === null ? 0 : 1) : b === null ? -1 : dir * (a - b)
 const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   found: () => 0,
-  relevant: (a, b) => verdictRank(a) - verdictRank(b) || byNumber(a.similarity, b.similarity, -1) || byNumber(a.rank, b.rank, 1),
+  relevant: (a, b) => verdictRank(a) - verdictRank(b) || byNumber(a.rank, b.rank, 1),
   cited: (a, b) => byNumber(a.cited_by_count, b.cited_by_count, -1),
   newest: (a, b) => byNumber(a.year, b.year, -1),
   oldest: (a, b) => byNumber(a.year, b.year, 1),

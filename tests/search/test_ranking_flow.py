@@ -58,23 +58,15 @@ def pool(size=24):
 
 
 class Pool:
-    """OpenAlex answering every count probe and serving one page of records, plus the Gemini embedding endpoint.
+    """Mock OpenAlex count probes and one page of synthetic records."""
 
-    A probe holding `AND` is the expansion's field probe and is answered too low to accept a phrase, so this fixture
-    reads one round. `embedding` names the record the mocked embedder puts first; without it every text is equally
-    far from the question.
-    """
-
-    def __init__(self, works=None, embedding=None, embedding_status=200):
+    def __init__(self, works=None):
         self.works = pool() if works is None else works
-        self.embedding, self.embedding_status = embedding, embedding_status
-        self.probes, self.searches, self.embedded = [], [], []
+        self.probes, self.searches = [], []
 
     def __call__(self, request):
-        if request.url.host == "generativelanguage.googleapis.com":
-            return self._embed(request)
         if request.url.host != "api.openalex.org":
-            return httpx.Response(404)  # the other providers are not mocked and fail, which the run carries on from
+            return httpx.Response(404)
         params = request.url.params
         query = params.get("search.title_abstract_keywords") or ""
         if params.get("per_page") == "1" and params.get("select") == "id":
@@ -84,33 +76,17 @@ class Pool:
         return httpx.Response(200, json={"meta": {"count": len(self.works), "next_cursor": None},
                                          "results": self.works})
 
-    def _embed(self, request):
-        if self.embedding_status != 200:
-            return httpx.Response(self.embedding_status)
-        requests = json.loads(request.content)["requests"]
-        texts = [row["content"]["parts"][0]["text"] for row in requests]
-        # The question stands at [1, 0]; a record the fixture names stands there too and every other record at
-        # [0, 1], so exactly one record has similarity 1 and the rest have 0.
-        question = [row.get("taskType") == "RETRIEVAL_QUERY" for row in requests]
-        self.embedded.extend(text for text, is_query in zip(texts, question) if not is_query)
-        return httpx.Response(200, json={"embeddings": [
-            {"values": [1.0, 0.0] if is_query or (self.embedding and self.embedding in text) else [0.0, 1.0]}
-            for text, is_query in zip(texts, question)]})
-
 
 async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
 
-def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, embedding=False):
+def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    if embedding:
-        monkeypatch.setenv("GEMINI_API_KEY", "SYNTHETIC-key")
-    else:
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     return create_app(Settings(data_dir=tmp_path / "data", port=8765,
                                fulltext_fetch="off"),
@@ -187,9 +163,6 @@ def test_the_ranking_step_writes_no_row_in_any_decision_table(tmp_path, monkeypa
     assert all(row["proposal"] is None for row in rows["selections"])
 
 
-# ---- the embedding has no authority ----------------------------------------------------------
-
-
 # ---- a resumed run, a second run, and what the step does not repeat ---------------------------
 
 def test_a_resumed_run_ranks_once_and_screens_the_same_records_in_the_same_order(tmp_path, monkeypatch):
@@ -254,8 +227,8 @@ def stored_research(tmp_path, records, workflow="sw"):
     return store, rid, run
 
 
-def rank(store, rid, run, embedding_model=None):
-    return ranking.rank_records(store, run, store.scope(rid), VOCABULARY, embedding_model)
+def rank(store, rid, run):
+    return ranking.rank_records(store, run, store.scope(rid), VOCABULARY)
 
 
 def test_a_record_the_user_included_becomes_a_seed_and_a_record_the_model_included_does_not(tmp_path):
@@ -269,6 +242,7 @@ def test_a_record_the_user_included_becomes_a_seed_and_a_record_the_model_includ
     store.update_run(run["id"], status="completed")
     run = store.create_run(rid, "discovery", run["budget"], None)
     output = rank(store, rid, run)
+    assert "embedding" not in output["signals"]
     assert output["signals"]["tfidf"]["ran"] is True
     assert [seed["kind"] for seed in output["seeds"] if seed["source_version_id"] == chosen] == ["verified"]
     # The record the user included is a seed and no longer a candidate the ranking reads: it is already decided.

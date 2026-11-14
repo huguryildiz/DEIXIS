@@ -437,7 +437,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(sheet.getByRole('button', { name: 'Test', exact: true })).toBeVisible()
     await sheet.getByRole('button', { name: 'Remove key' }).click()
     const confirm = sheet.getByRole('group', { name: 'Remove the key' })
-    await expect(confirm).toContainText('Remove the key for OpenAI? Research steps with this key, and semantic search with OpenAI, stop until a new key is added.')
+    await expect(confirm).toContainText('Remove the key for OpenAI? Research steps with this key stop until a new key is added.')
     await confirm.getByRole('button', { name: 'Keep it' }).click()
     await expect(confirm).toHaveCount(0)
     await sheet.getByRole('button', { name: 'Remove key' }).click()
@@ -448,7 +448,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('the Ollama panel shows its address read-only and leaves the embedding model to Search & ranking', async () => {
+  test('the Ollama panel shows its address read-only', async () => {
     await page.goto(server.url('#/settings'))
     await page.reload()
     await page.getByRole('tab', { name: 'Language models' }).click()
@@ -523,8 +523,8 @@ test.describe.serial('S24: the Settings page', () => {
     await sheet.getByRole('button', { name: 'Close' }).click()
   })
 
-  test('Where your data goes follows the model, embedding, source and email settings (F3)', async () => {
-    // SYNTHETIC settings held in the test: no default model, built-in embedding, no Scopus key, no email.
+  test('Where your data goes follows the model, source and email settings (F3)', async () => {
+    // SYNTHETIC settings held in the test: no default model, no Scopus key, no email.
     const efforts = [{ id: 'low', description: '' }]
     const codex = { connection: 'codex', ready: true, reason: null, installed: true, signed_in: true, models: [{ id: 'syn-model-a', display_name: 'SYNTHETIC model A', is_default: true, reasoning_efforts: efforts }] }
     const defaults: Record<string, unknown> = {
@@ -535,12 +535,6 @@ test.describe.serial('S24: the Settings page', () => {
     let zotero = false
     let serpapi = 'not_configured'
     let email: string | null = null
-    const option = (provider: string, models: string[] = []) => ({ provider, models, available: true, reason: null })
-    // The built-in models are one option per catalog model, each with its id.
-    const builtinOption = { ...option('builtin', ['qwen3-embedding-0.6b']), model: 'qwen3-embedding-0.6b', name: 'Qwen3-Embedding-0.6B' }
-    const semantic = (provider: string) => ({ provider, model: provider === 'builtin' ? 'qwen3-embedding-0.6b' : null, explicit: true,
-      options: [builtinOption, option('openai', ['text-embedding-3-small']), option('gemini'), option('ollama'), option('lm_studio'), option('off')] })
-    let provider = 'builtin'
     await page.route(url => url.pathname === '/api/connections', async route => {
       const response = await route.fetch()
       const body = await response.json() as { models: Record<string, unknown>; providers: { id: string; access_mode: string }[] }
@@ -562,10 +556,6 @@ test.describe.serial('S24: the Settings page', () => {
       defaults[role] = route.request().postDataJSON()
       return route.fulfill({ json: { [role]: defaults[role] } })
     })
-    await page.route(url => url.pathname === '/api/semantic-search', route => {
-      if (route.request().method() === 'PUT') provider = (route.request().postDataJSON() as { provider: string }).provider
-      return route.fulfill({ json: semantic(provider) })
-    })
     await page.route(url => url.pathname === '/api/contact-email', route => {
       if (route.request().method() === 'PUT') email = (route.request().postDataJSON() as { email: string | null }).email
       return route.fulfill({ json: { email, environment_set: false, source: email ? 'setting' : null } })
@@ -575,16 +565,6 @@ test.describe.serial('S24: the Settings page', () => {
     const row = (heading: string) => page.locator('.set-flows > div').filter({ has: page.locator('b', { hasText: new RegExp(`^${heading}$`) }) })
     const general = () => page.getByRole('tab', { name: 'General' }).click()
     const models = () => page.getByRole('tab', { name: 'Language models' }).click()
-    const search = () => page.getByRole('tab', { name: 'Search & ranking' }).click()
-    // A semantic search card opens its sheet; the sheet button chooses it and saves at once.
-    const pickSemanticCard = async (name: string, builtin = false) => {
-      await page.locator(`div.choice-groups[data-group="semantic"] ${builtin ? '.builtin-card' : '.co-card'}`).filter({ has: page.locator(builtin ? 'b' : '.co-name b', { hasText: new RegExp(`^${name}$`) }) }).click()
-      const sheet = page.getByRole('dialog', { name, exact: true })
-      await sheet.getByRole('button', { name: 'Use for semantic search' }).click()
-      await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(sheet).toHaveCount(0)
-    }
     const sources = () => page.getByRole('tab', { name: 'Sources' }).click()
     await general()
     await expect(page.getByRole('heading', { name: 'Where your data goes' })).toBeVisible()
@@ -595,24 +575,19 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(row('PDF downloads')).toContainText('publisher, repository or preprint server')
     await expect(page.locator('.set-flows')).not.toContainText('Optional services')
     await expect(row('Email address')).toContainText('No email address is set, so none is sent.')
-    await expect(row('Semantic search')).toContainText('Not sent anywhere.')
     await expect(row('Storage')).toContainText('PDF files are kept on this computer')
     await expect(row('Your keys')).toContainText('stored on this computer')
     await expect(row('Usage data')).toContainText('DEIXIS sends no usage data')
     await expect(row('Usage data')).toContainText('Gemini CLI it switches their telemetry off, in their sign-in windows too')
-    // A default model chosen on the Models tab, a spent-down embedding choice and a Scopus key set elsewhere show up on return.
+    // A default model chosen on the Models tab, a Scopus key set elsewhere show up on return.
     await models()
     await page.getByRole('combobox', { name: 'Literature model' }).selectOption({ label: 'SYNTHETIC model A' })
     await expect(page.getByText('Default literature model: syn-model-a')).toBeVisible()
-    await search()
-    await pickSemanticCard('OpenAI embeddings')
     scopus = 'api_key'
     await sources()
     await general()
     await expect(row('Model calls')).toContainText('Default models now: Codex.')
     await expect(row('Model calls')).toContainText('unless that server forwards them elsewhere')
-    await expect(row('Semantic search')).toContainText('Titles, abstracts and passage text are sent to OpenAI.')
-    await expect(row('Semantic search')).not.toContainText('Not sent anywhere')
     await expect(row('Lookups by DOI')).toContainText('Scopus')
     await expect(row('Lookups by DOI')).not.toContainText('Unpaywall')
     // The email saved on this tab changes its line at once.
@@ -628,14 +603,6 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(row('Optional services')).toContainText('images of equation areas cut from PDFs are sent to Mathpix')
     await expect(row('Optional services')).toContainText('titles and DOIs of works are sent to zotero.org')
     await expect(row('Optional services')).toContainText('none is found, the work’s title is sent to SerpApi')
-    // Back to the built-in model: the line comes back.
-    await search()
-    // The saved built-in model is in use; picking another catalog model shows its own button. Here OpenAI is in use.
-    await pickSemanticCard('Qwen3-Embedding-0.6B', true)
-    await general()
-    await expect(row('Semantic search')).toContainText('Not sent anywhere.')
-    await page.getByRole('heading', { name: 'Where your data goes' }).evaluate(el => el.scrollIntoView({ block: 'start' }))
-    await expect(page.getByText('Semantic search setting saved.')).toHaveCount(0)
     await shot(page, 'F3-where-your-data-goes')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })

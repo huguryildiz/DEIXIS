@@ -325,7 +325,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // The answer the fast path writes from discovery's evidence fetches nothing and ranks nothing: it answers, then its
   // citations are checked. An answer over attached PDFs reads them and ranks their passages first.
   const boundAnswer = run.kind === 'answer' && Boolean((run.budget as unknown as { fast_path?: unknown }).fast_path)
-  const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? discoveryOrder(run) : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : [...(boundAnswer ? [] : ['pdf' as const, 'semantic' as const]), 'answer', 'review']
+  const storedEmbedding = steps.some(s => s.kind.startsWith('embedding:'))
+  const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? discoveryOrder(run) : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : [...(boundAnswer ? [] : ['pdf' as const, ...(storedEmbedding ? ['semantic' as const] : [])]), 'answer', 'review']
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   // A citation chain's requests are not searches of the question; the chaining phase reports them.
@@ -702,8 +703,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         // What the similarity step gave the ranking (slice 21): scores it made, scores from an earlier run it read,
         // part of the pool when a batch failed, or nothing when the model was not available.
         const simOut = similarity?.output ?? null
-        // A run that embedded no candidate: it was queued with candidate embedding off, or no embedding model
-        // is set. Nothing was compared with the question, so the line says that and names no model.
+        // An older run may have stored no similarity score. Show its recorded outcome without a settings prompt.
         const simOff = Boolean(simOut && (simOut.provider === 'off' || simOut.embedding_off_reason))
         const fromStore = simOut?.from_store ?? 0
         const scoredCount = fromStore + (simOut?.embedded ?? 0)
@@ -711,9 +711,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         const builtinSim = similarityModel?.connection === 'builtin'
         const similarityScored = !simOff && (similarity?.status === 'succeeded' || similarity?.status === 'partial' || fromStore > 0)
         const similarityText = !similarity ? '' : simOff
-          ? (simOut?.embedding_off_reason === 'candidate_embedding_off'
-            ? t('The records were not compared with the question: comparing candidates by meaning is off.')
-            : t('The records were not compared with the question: no embedding model is set.'))
+          ? t('No similarity score was stored for this run.')
           : [
           similarity.status === 'succeeded'
             ? simOut?.embedded === 0 && fromStore > 0
@@ -1011,8 +1009,6 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {query.origin && <span className="step-query-origin">{t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}</span>}</div>
         <code className="step-query-text">{queryParts(query.query_text)}</code></div>))
       if (approved?.criterion?.criterion) parts.push(<div key="criterion" className="step-row"><span>{t('Inclusion criterion')}</span><span className="step-row-text">{approved.criterion.criterion}</span></div>)
-      // The English sentence the semantic search sent, and the PDFs that guided the search (§2.2), for the current question.
-      if (latestDiscovery && view.semantic?.english_question?.text && view.semantic.english_question.text !== english?.text) parts.push(<div key="english" className="step-row"><span>{t('English question for the semantic search')}</span><span className="step-row-text">{view.semantic.english_question.text}</span></div>)
       if (latestDiscovery && view.scope.seeds.length) parts.push(<div key="seeds" className="step-seeds"><span>{t('PDFs guiding the search')}</span>
         {view.scope.seeds.map(seed => row(seed.title, seedUseText(seed.use), seed.source_version_id))}</div>)
       // "Edit plan" (mockup step detail) on the current question's latest search only: the panel shows that revision's plan.

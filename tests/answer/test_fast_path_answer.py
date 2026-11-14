@@ -152,13 +152,13 @@ def test_no_evidence_does_not_call_model_and_records_terminal_outcome(tmp_path):
     assert lib.store.existing_step(run["id"], "answer_start_snapshot")["status"] == "succeeded"
 
 
-def test_answer_avoids_inspection_embedding_and_in_run_review(tmp_path, monkeypatch):
+def test_answer_avoids_inspection_and_in_run_review(tmp_path, monkeypatch):
     lib = reviewed(setup(tmp_path))
     cutoff(lib)
     run = answer_run(lib)
     async def forbidden(*args, **kwargs):
-        pytest.fail("Fast answer must not fetch, embed, read equations or review inline")
-    for method in ("_inspect", "_semantic_ranking", "_read_equations", "_review"):
+        pytest.fail("Fast answer must not fetch, read equations or review inline")
+    for method in ("_inspect", "_read_equations", "_review"):
         monkeypatch.setattr(lib.flow, method, forbidden)
     asyncio.run(lib.flow.execute(run["id"]))
     assert lib.store.run(run["id"])["status"] == "completed"

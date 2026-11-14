@@ -2969,11 +2969,6 @@ class Store:
             )
         return oid
 
-    def openalex_content_attempts(self, svid: str) -> list[dict[str, Any]]:
-        return [dict(r) for r in self.conn.execute(
-            "SELECT * FROM openalex_content_attempts WHERE source_version_id = ? ORDER BY created_at, rowid", (svid,),
-        )]
-
     def pdf_candidates(self, svid: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute(
             "SELECT * FROM pdf_candidates WHERE source_version_id = ? ORDER BY discovered_at, rowid", (svid,)

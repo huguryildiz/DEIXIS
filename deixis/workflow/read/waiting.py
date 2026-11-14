@@ -204,11 +204,6 @@ def unskip(store: Store, research_id: str, work_id: str) -> None:
         store._event(research_id, "waiting_pdf_skip_undone", {"work_id": work_id})
 
 
-def waiting_count(store: Store, research_id: str) -> int:
-    """How many works wait for the person's PDF: the number beside the view's tab."""
-    return len(_rows(store, research_id)[0])
-
-
 def _versions(store: Store, research_id: str, head: str) -> list[str]:
     """The work's versions still in the research: the head first, then as `work_versions` orders the rest."""
     return [head, *store.work_versions(research_id, head)]

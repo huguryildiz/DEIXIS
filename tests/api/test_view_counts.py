@@ -18,7 +18,6 @@ from deixis.workflow.search import probes
 from deixis.workflow.screen import queue
 from deixis.workflow.run import views
 from deixis.workflow.run.store import Store
-from deixis.workflow.read.waiting import waiting_count
 from test_probes import Probe
 from test_probes import answered
 from test_queue import BUDGET
@@ -125,7 +124,7 @@ def test_every_bucket_holds_a_work_and_the_buckets_sum_to_the_works(store, field
     assert flow["buckets"]["confirmed"] == len(probe["verified"])
     counted = queue.queue_counts(store, lib.rid, ctx)
     assert flow["buckets"]["queued"] == counted["queue"] and flow["buckets"]["look_again"] == counted["look_again"]
-    assert flow["buckets"]["waiting_for_pdf"] == waiting_count(store, lib.rid) == 1
+    assert flow["buckets"]["waiting_for_pdf"] == 1
     # The five of SW11.12; an unread abstract is never added to a negative.
     assert flow["five"] == {"included": 2, "included_by_agreement": 1, "confirmed": 1, "not_met": 2,
                             "waiting_for_pdf": 1, "queued": 1, "not_read": 2, "not_read_in_reading": 1,

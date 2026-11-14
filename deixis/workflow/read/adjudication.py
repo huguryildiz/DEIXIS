@@ -49,9 +49,7 @@ FRESH_MODEL_CODES = (
 # Codes this stage may replace. A fresh `text_unreadable` or `no_fulltext` belongs to retrieval and is left alone.
 OWNED_CODES = ("not_read_yet", *FRESH_MODEL_CODES)
 
-# Re-exported so the protocol body and the flow read the same numbers this module plans with.
 QUOTE_MIN_CHARS = FULLTEXT_QUOTE_MIN_CHARS
-RUNS = FULLTEXT_RUNS
 READ_RULE = FULLTEXT_READ_RULE
 
 

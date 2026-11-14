@@ -63,7 +63,6 @@ PASS, FAIL, NOT, UNSUPPORTED = RESULTS
 #   ("all", rule, ...)                  every child rule must pass; failures outrank missing or skipped evidence
 # `execution` and `data` are the two separate fields of plan section 4 rule 4.
 
-PROC = "tests.rules."  # the real-process tests (marker `process`) live in tests/rules
 ROWS: list[dict[str, Any]] = [
     {"id": "I01", "claim": "uv sync, npm ci and npm run build finish clean in a clean export", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "no data", "rule": ("install", "I01")},
     {"id": "I02", "claim": "serve starts, /api/health ok, the question box renders, a stop frees the port", "cls": "zorunlu", "kind": "G", "execution": "real process, real Chrome", "data": "empty library", "rule": ("install", "I02")},

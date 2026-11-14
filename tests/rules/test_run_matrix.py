@@ -117,7 +117,7 @@ def test_every_junit_pattern_matches_a_real_collected_test(collected_cases):
 
 def test_f04_orphan_is_not_measured_when_any_one_named_guard_test_is_missing():
     patterns = next(r["rule"][1] for r in rm.ROWS if r["id"] == "F04-orphan")
-    assert all(module.startswith(rm.PROC) for module, _ in patterns)
+    assert all(module.startswith("tests.rules.") for module, _ in patterns)
     cases = [{"module": module, "name": name, "status": "passed"} for module, name in patterns]
     assert rm.rule_junit(cases, patterns, "x")["result"] == PASS
     for i in range(len(cases)):

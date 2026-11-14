@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.providers import biorxiv, facade, openalex
-from deixis.providers.registry import CONNECTORS, date_filter_providers
+from deixis.providers.registry import CONNECTORS, date_bound_form
 from deixis.runtime.config import Settings
 from deixis.storage import db
 from deixis.workflow.run import fast_path, views
@@ -172,7 +172,10 @@ def _library(tmp_path, question=QUESTION, effort="standard", years=None):
 def test_only_a_connector_that_takes_a_bound_with_the_search_is_given_one():
     """Filtering after the search cannot give back the places the out-of-scope records took on the first page, so
     a provider that takes no bound is searched unbounded and that is what the record says."""
-    assert set(date_filter_providers()) == {"openalex", "biorxiv", "semantic_scholar", "pubmed"}
+    assert {pid for pid, connector in CONNECTORS.items()
+            if date_bound_form({"provider_id": pid}) or any(
+                date_bound_form({"provider_id": pid, "endpoint": endpoint}) for endpoint in connector.endpoints)} == {
+                    "openalex", "biorxiv", "semantic_scholar", "pubmed"}
     # The route decides, not the provider: Semantic Scholar's bulk search takes a year range and its snippet
     # search is not known to take one, so only the route that was checked carries a bound.
     assert CONNECTORS["semantic_scholar"].date_filter is None

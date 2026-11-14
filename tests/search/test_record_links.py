@@ -115,7 +115,7 @@ def test_undoing_a_merge_gives_each_record_its_work_back(store):
     undo = json.loads(row["undo_json"])
     links.undo_link(store, row["id"], note="SYNTHETIC check")
     assert store.source(pre)["work_id"] == undo["dropped_work"]["id"] != store.source(published)["work_id"]
-    closed = links.links_for(store, pre, include_closed=True)[0]
+    closed = store.conn.execute("SELECT * FROM record_links WHERE id = ?", (row["id"],)).fetchone()
     assert (closed["closed_reason"], closed["closed_note"]) == ("undone", "SYNTHETIC check")
     assert set(store.work_heads(rid).values()) == {published, pre}
 

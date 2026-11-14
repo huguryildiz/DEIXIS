@@ -654,6 +654,11 @@ def _acquire_content(store, rid, svid, tmp_path, handler, monkeypatch, *, pages=
     return run(check()), keyed
 
 
+def content_attempts(store, svid):
+    return [dict(row) for row in store.conn.execute(
+        "SELECT * FROM openalex_content_attempts WHERE source_version_id = ? ORDER BY created_at, rowid", (svid,))]
+
+
 def test_the_content_copy_waits_for_the_person_and_the_key_is_in_no_stored_address(tmp_path, monkeypatch):
     """OpenAlex's own copy is read before anything is published and then waits for the person: its address carries
     no version, so code never attaches it, whatever the record says about versions. The key is sent in the query
@@ -669,7 +674,7 @@ def test_the_content_copy_waits_for_the_person_and_the_key_is_in_no_stored_addre
         CONTENT_URL, "doi_verified", "uncertain", "downloaded")
     assert row["error_code"] == "version_unsettled"
     assert "api_key" not in (row["final_url"] or "") and "api_key" not in row["candidate_url"]
-    assert [(a["outcome"], a["work_id"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+    assert [(a["outcome"], a["work_id"], a["reason"]) for a in content_attempts(store, svid)] == [
         ("attachable", "W7", "match")]
     assert [v["verdict"] for v in store.file_verdicts(svid, CONTENT_URL)] == ["match"]
     connection.close()
@@ -752,7 +757,7 @@ def test_the_days_budget_refusing_the_metered_download_is_stored_as_the_keys(tmp
     found = run(check())
     assert found["content"] == "quota_exhausted" and not store.has_asset(svid)
     assert budget.exhausted and budget.reset_at is not None
-    attempt = store.openalex_content_attempts(svid)[-1]
+    attempt = content_attempts(store, svid)[-1]
     assert (attempt["outcome"], attempt["reason"]) == ("quota_exhausted", f"{acquisition.QUOTA_EXHAUSTED}:download")
     rows = [d for d in store.pdf_discoveries(rid, svid) if d["provider"] == "openalex_content"]
     assert [(d["status"], d["error_code"]) for d in rows][-1] == ("rate_limited", acquisition.QUOTA_EXHAUSTED)
@@ -766,7 +771,7 @@ def test_content_served_as_tei_alone_is_a_route_that_exists_and_was_not_read(tmp
     content = lambda request: httpx.Response(200, json=_content_json(pdf_url=None, tei=True))  # noqa: E731
     found, keyed = _acquire_content(store, rid, svid, tmp_path, _content_handler(content), monkeypatch)
     assert found["content"] == "tei_only" and keyed == [] and not store.has_asset(svid)
-    assert [(a["outcome"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+    assert [(a["outcome"], a["reason"]) for a in content_attempts(store, svid)] == [
         ("tei_only", "content_tei_only")]
     content_row = next(d for d in store.pdf_discoveries(rid, svid) if d["provider"] == "openalex_content")
     assert (content_row["status"], content_row["result_count"]) == ("zero_results", 0)
@@ -820,7 +825,7 @@ def test_a_refused_file_stays_refused_at_the_same_address_although_a_route_answe
                                 _content_handler(lambda r: httpx.Response(200, json=_content_json())), monkeypatch,
                                 pages=["Another paper entirely\n10.9/other.1"])
     assert found["content"] == "not_attached" and not store.has_asset(svid)
-    assert [(a["outcome"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+    assert [(a["outcome"], a["reason"]) for a in content_attempts(store, svid)] == [
         ("not_attached", "mismatch")]
     assert store.file_refused(svid, CONTENT_URL)["verdict"] == "mismatch"
     # The same address discovered again, now claimed as a title match: the claim is written, the refusal stands.
@@ -958,7 +963,7 @@ def test_a_refused_content_copy_is_not_downloaded_again_with_the_metered_key(tmp
     found, keyed = _acquire_content(store, rid, svid, tmp_path,
                                     _content_handler(lambda r: httpx.Response(200, json=_content_json())), monkeypatch)
     assert found["content"] == "not_attached" and keyed == []
-    assert [(a["outcome"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+    assert [(a["outcome"], a["reason"]) for a in content_attempts(store, svid)] == [
         ("not_attached", "refused_before")]
     connection.close()
 

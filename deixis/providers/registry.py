@@ -328,12 +328,6 @@ def date_bound_form(query: dict[str, Any]) -> str | None:
     return connector.date_filter if endpoint is None else connector.endpoints[endpoint].date_filter
 
 
-def date_filter_providers() -> list[str]:
-    """The connectors with a route that takes a research's date scope with the request (`date_filter`)."""
-    return [pid for pid, connector in CONNECTORS.items()
-            if connector.date_filter or any(shape.date_filter for shape in connector.endpoints.values())]
-
-
 def effective_sort(query: dict[str, Any]) -> str | None:
     """The sorting setting this request carries: the one the query names, else the one its connector always sends.
 

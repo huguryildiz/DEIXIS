@@ -174,7 +174,6 @@ def test_no_cell_call_is_offered_once_the_reading_stage_is_over(tmp_path, monkey
             return original(self, run, output, cell_versions, recheck)
 
         monkeypatch.setattr(flow_module.ResearchFlow, "_save_cells", note)
-        monkeypatch.setattr(fast_read.adjudication, "RUNS", FULLTEXT_RUNS)
         seen["adjudicated"] = True  # the deadline has passed before the stage's first pass
         _rid, run_id, _view, run = discover(client, effort="standard")
         assert run["status"] == "completed", run

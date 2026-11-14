@@ -102,14 +102,6 @@ def _keep_and_drop(store: Store, work_a: str, work_b: str) -> tuple[str, str]:
     return keep, drop
 
 
-def links_for(store: Store, source_version_id: str, include_closed: bool = False) -> list[dict[str, Any]]:
-    """Every link of one record, from either side of the pair."""
-    closed = "" if include_closed else " AND closed_at IS NULL"
-    return [dict(row) for row in store.conn.execute(
-        "SELECT * FROM record_links WHERE (source_version_id = ? OR other_source_version_id = ?)"
-        f"{closed} ORDER BY created_at, id", (source_version_id, source_version_id))]
-
-
 def research_links(store: Store, research_id: str) -> list[dict[str, Any]]:
     """The open links between two candidates of this research; a link itself belongs to the library, not to it."""
     return [dict(row) for row in store.conn.execute(

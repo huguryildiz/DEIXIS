@@ -8,8 +8,7 @@
 .app .trash-page>h1{margin:0;color:var(--ink);font-size:24px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
 .app .trash-page>p{margin:0;color:var(--muted);font-size:13.5px}
 .app .trash-page>.trash-sub{margin:4px 0 22px;font-size:13px}
-.app .trash-page>*+.trash-message,.app .trash-page>.trash-tools+*{margin-top:0}
-.app .trash-page>.trash-message{margin-bottom:16px}
+.app .trash-page>.trash-tools+*{margin-top:0}
 .app .trash-page>.trash-tools{margin-bottom:14px}
 .app .trash-page>.trash-showmore,.app .trash-page>.selection-bar,.app .trash-page>.trash-bar-notice{margin-top:12px}
 .app .trash-page>.trash-foot:not(.trash-sub){margin-top:12px;font-size:12.5px}
@@ -56,10 +55,6 @@
 .app .trash-acts .trash-delete{border-color:transparent;background:var(--destructive);color:#fff}
 .app .trash-acts .trash-delete:hover:not(:disabled){border-color:transparent;background:color-mix(in srgb,var(--destructive),#000 12%);color:#fff}
 .app .trash-bar-notice{border-color:color-mix(in srgb,var(--tone-uncertain),transparent 70%);border-radius:12px;padding:14px 16px}
-
-/* The status line after an action */
-.app .trash-message{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border:1px solid color-mix(in srgb,var(--accent),transparent 80%);border-radius:10px;background:color-mix(in srgb,var(--accent),transparent 94%);color:var(--ink-2);font-size:13px}
-.app .trash-message>svg{flex:none;margin-top:2px;color:var(--accent)}
 
 /* Empty */
 .app .trash-empty{display:grid;place-items:center;padding:56px 24px;border:1px dashed var(--strong-line);border-radius:12px;text-align:center}

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Ellipsis, FileText, FlaskConical, Info, LayoutTemplate, RotateCcw, Search, Table2, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronRight, Ellipsis, FileText, FlaskConical, LayoutTemplate, RotateCcw, Search, Table2, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, type RemovedSource, type Trash } from '../lib/api'
 import { tableTitle, versionText } from '../lib/labels'
 import { PassageSheet } from '../reading/PassageSheet'
 import { t, uiLocale } from '../lib/i18n'
+import { useToast } from '../components/Toast'
 
 // The Trash page is one list (mockup T1): research, evidence tables, removed sources and table templates, newest first.
 // Nothing here expires (T3). Research, tables and templates are deleted one at a time; a removed source can be deleted
@@ -47,7 +48,7 @@ function sourceGroups(sources: RemovedSource[]) {
 export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () => void }) {
   const [trash, setTrash] = useState<Trash | null>(null)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   const [query, setQuery] = useState('')
@@ -65,9 +66,9 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
 
   async function run(key: string, action: () => Promise<string>, failure: string) {
     setBusy(key)
-    setMessage('')
-    try { setMessage(await action()); onChanged() }
-    catch (e) { setMessage(t(failure, { message: errorText(e) })) }
+    // Success is a toast; a failure is an error toast that stays until dismissed.
+    try { toast('success', await action()); onChanged() }
+    catch (e) { toast('error', t(failure, { message: errorText(e) })) }
     finally { setBusy(null); await refresh() }
   }
 
@@ -80,7 +81,6 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   // warnings of the calls that did finish, and the page always refreshes.
   async function bulk(key: string, targets: SourceTarget[], verb: 'restore' | 'purge') {
     setBusy(key)
-    setMessage('')
     let done = 0
     let files = 0
     let gone = 0  // asked for, but no requested version was changed: no longer in the Trash
@@ -116,13 +116,15 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     const total = targets.reduce((n, one) => n + worksOf(one), 0)
     const diskNote = files ? t('{files} file(s) could not be removed from disk.', { files }) : ''
     if (!failure && gone === 0 && partial === 0) {
-      setMessage(verb === 'purge'
+      // A clean run is a success toast; disk leftovers are a warning.
+      toast(files ? 'warning' : 'success', verb === 'purge'
         ? (files ? t('{n} source(s) deleted, but {files} file(s) could not be removed from disk.', { n: done, files })
           : t(done === 1 ? 'Source permanently deleted.' : '{n} sources permanently deleted.', { n: done }))
         : t(done === 1 ? 'Source restored.' : '{n} sources restored.', { n: done }))
     } else {
       const skipped = failure ? targets.slice(attempted).reduce((n, one) => n + worksOf(one), 0) : 0
-      setMessage([verb === 'purge' ? t('Deleted {done} of {total} sources.', { done, total }) : t('Restored {done} of {total} sources.', { done, total }),
+      // A partial run is a warning toast; a failed call makes it an error toast that stays.
+      toast(failure ? 'error' : 'warning', [verb === 'purge' ? t('Deleted {done} of {total} sources.', { done, total }) : t('Restored {done} of {total} sources.', { done, total }),
         partial > 0 && t('{n} source(s) partly deleted: {k} of their versions were deleted; the rest were no longer in the Trash.', { n: partial, k: partialVersions }),
         gone > 0 && t('{n} no longer in the Trash, so nothing was changed for them.', { n: gone }),
         failure && t('{n} in “{research}” failed: {message}', { n: worksOf(failure.target), research: failure.target.versions[0].research_title, message: failure.message }),
@@ -305,7 +307,6 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   return <section className="trash-page">
     <h1 tabIndex={-1}>{t('Trash')}</h1>
     <p className="trash-foot trash-sub">{t('Nothing in the Trash expires.')}</p>
-    {message && <div className="trash-message" role="status"><Info size={16} aria-hidden />{message}</div>}
     {error ? <p role="alert">{t('Could not load Trash: {message}', { message: error })} <button type="button" className="trash-ghost" onClick={() => { void refresh() }}>{t('Retry')}</button></p>
       : !trash ? <p role="status"><span className="shimmer-text">{t('Loading Trash…')}</span></p>
       : entries.length === 0 ? <div className="trash-empty"><div><Trash2 size={16} aria-hidden /><h2>{t('The Trash is empty')}</h2>

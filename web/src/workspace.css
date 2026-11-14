@@ -1,7 +1,6 @@
 /* Live research workspace additions; reuse the prototype's tokens and legacy-* building blocks. */
 .trash-page{max-width:960px;margin:65px auto;padding:0 30px}
 .trash-page h1{font-size:44px}
-.trash-message{font-size:13px;color:var(--muted)}
 .trash-row{display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:1px solid var(--line);padding:16px 0}
 .trash-row>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
 .trash-row>div{display:flex;gap:8px;flex:none}

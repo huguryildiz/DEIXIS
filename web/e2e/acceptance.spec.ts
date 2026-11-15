@@ -561,7 +561,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await expect(page.getByText('The service did not give a recovery time.', { exact: true })).toBeVisible()
     // The notice under the steps carries the run's controls (S9, R18; R20 for a model that did not answer): Retry this
     // step filled, Choose another model and Cancel run quiet pills.
-    await expect(page.getByRole('button', { name: 'Retry this step' })).toHaveCSS('background-color', 'rgb(59, 91, 154)')
+    await expect(page.getByRole('button', { name: 'Retry this step' })).toHaveCSS('background-color', 'rgb(9, 105, 218)')
     await expect(page.getByRole('button', { name: 'Choose another model' })).toHaveCSS('border-radius', '999px')
     await expect(page.getByRole('button', { name: 'Cancel run' })).toHaveCSS('border-radius', '999px')
     await openPanel(page, 'sources')

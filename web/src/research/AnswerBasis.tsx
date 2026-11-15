@@ -44,7 +44,10 @@ function basisCounts({ view, answer, onSources, onAnswer }: BasisProps) {
   const met = b.confirmed + b.included
   const notMet = b.not_met + b.person_not_met
   const forYou = b.queued + b.look_again + b.person_unsure
-  const noPdf = b.waiting_for_pdf + b.candidate_not_fetched + b.not_read_yet
+  // Three different reasons a passed work has no full-text read: no PDF found, text on hand but not read, not tried.
+  const noPdf = b.waiting_for_pdf
+  const notRead = b.not_read_yet
+  const notTried = b.candidate_not_fetched
   const otherwise = b.person_excluded + b.abstract_by_choice + b.other
   const included = view.counts.included
 
@@ -69,6 +72,8 @@ function basisCounts({ view, answer, onSources, onAnswer }: BasisProps) {
     { label: t('Full text read'), n: readFull, level: 2, note: [met && t('{n} met the criterion', { n: num(met) }), notMet && t('{n} did not', { n: num(notMet) }),
       forYou && t('{n} waiting for you', { n: num(forYou) })].filter(Boolean).join(' · ') || undefined },
     { label: t('No PDF found'), n: noPdf, level: 2, note: t('Neither included nor excluded; add the PDF to read it') },
+    { label: t('Text on hand, not read'), n: notRead, level: 2, note: t('Its text is stored but was not read before the cutoff') },
+    { label: t('Full text not tried'), n: notTried, level: 2, note: t('Past this run’s full-text limit, not judged') },
     { label: t('Included'), n: included, level: 0, strong: true, onClick: () => onSources('included'), note: t('The report reads these') },
     ...(roles ? [
       { label: t('Given as included'), n: roles.counts.included, level: 1, note: t('Met the whole criterion, or you included them') },
@@ -100,8 +105,10 @@ function basisCounts({ view, answer, onSources, onAnswer }: BasisProps) {
     { label: t('Did not meet it'), n: notMet, tone: 'out' },
     { label: t('Waiting for you'), n: forYou, tone: 'next' },
     { label: t('No PDF found'), n: noPdf, tone: 'open' },
+    { label: t('Text on hand, not read'), n: notRead, tone: 'idle' },
+    { label: t('Full text not tried'), n: notTried, tone: 'idle' },
   ]
-  return { funnel, num, readFull, met, noPdf, rows, lead, found, fullText }
+  return { funnel, num, readFull, met, noPdf, notRead, notTried, rows, lead, found, fullText }
 }
 
 // Inside the search step's details: the summary sentence and the bar of what became of the works found.
@@ -124,7 +131,8 @@ export function FulltextLine(props: BasisProps) {
   // Read, met and no-PDF counts; a count of zero is left out, and a search that passed nothing says so.
   const text = c.readFull || c.funnel.candidates
     ? [t(c.readFull === 1 ? '{n} full text read' : '{n} full texts read', { n: num(c.readFull) }), c.met > 0 && t('{n} met the criterion', { n: num(c.met) }),
-      c.noPdf > 0 && t('{n} without a PDF', { n: num(c.noPdf) })].filter(Boolean).join(' · ')
+      c.noPdf > 0 && t('{n} without a PDF', { n: num(c.noPdf) }), c.notRead > 0 && t('{n} on hand, not read', { n: num(c.notRead) }),
+      c.notTried > 0 && t('{n} not tried', { n: num(c.notTried) })].filter(Boolean).join(' · ')
     : t('No full text read')
   return <section className="chat-turn is-line">
     <div className="chat-group">

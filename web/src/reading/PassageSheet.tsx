@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignLeft, CalendarDays, Check, Copy, Database, Ellipsis, FileText, FileUp, Info, Link as LinkIcon, Link2, ListMinus, LoaderCircle, Maximize2, MessageSquarePlus, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
+import { AlignLeft, CalendarDays, Check, Copy, Database, Ellipsis, FileText, FileUp, Info, Library, Link as LinkIcon, Link2, ListMinus, LoaderCircle, Maximize2, MessageSquarePlus, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -10,6 +10,7 @@ import { PassageMathText } from './PassageMathText'
 import { PdfViewer } from './PdfViewer'
 import { OCR_LABEL, ocrOffer } from './ocr'
 import { SourceKey } from '../components/SourceKey'
+import { ConnectionIcon, hasConnectionIcon } from '../components/connectionIcons'
 import { PdfTextDocument, type CitationLabels, type CiteNav } from './PdfTextDocument'
 import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 import { Notice } from '../components/Notice'
@@ -392,7 +393,10 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     const providers = [...new Set(sent.map(d => d.provider))]
     const skipped = records.filter(d => notSent(d) && !providers.includes(d.provider))
     const answered = (provider: string) => sent.filter(d => d.provider === provider).some(d => ['completed', 'zero_results'].includes(d.status))
-    const pills = providers.length > 0 && <div className="pills">{providers.map(id => <span key={id} className={`pill ${answered(id) ? 'ok' : 'warn'}`}>{answered(id) ? <Check size={12} aria-hidden /> : <TriangleAlert size={12} aria-hidden />}{providerName(id)}</span>)}</div>
+    // Each service asked is a chip with its mark, its name and whether it answered (a check, or a warning when it did not).
+    const pills = providers.length > 0 && <div className="service-chips">{providers.map(id => <span key={id} className={`service-chip ${answered(id) ? 'is-ok' : 'is-warn'}`}>
+      {hasConnectionIcon(id) ? <ConnectionIcon id={id} /> : <Library size={14} className="service-chip-mark" aria-hidden />}{providerName(id)}
+      {answered(id) ? <Check size={12} className="service-chip-state" aria-label={t('answered')} /> : <TriangleAlert size={12} className="service-chip-state" aria-label={t('no answer')} />}</span>)}</div>
     const notAsked = skipped.length > 0 && <p className="find-skipped">{t('Not asked:')} {[...new Map(skipped.map(d => [d.provider, d])).values()].map(d => t(serviceErrors[serviceKind(d.error_code, d.http_status)], { service: providerName(d.provider) })).join(' ')}</p>
     const names = providers.map(providerName)
     const list = names.length > 1 ? t('{a} and {b}', { a: names.slice(0, -1).join(', '), b: names[names.length - 1] }) : names[0] ?? ''

@@ -25,6 +25,7 @@ DATAS = (
     ("deixis/workflow/features/report/latex_names.json", "deixis/workflow/features/report"),
     ("deixis/models/model_prices.json", "deixis/models"),  # workflow/run/spend.py (F4)
     ("deixis/exports/deixis-mark.png", "deixis/exports"),
+    ("deixis/exports/deixis-wordmark.png", "deixis/exports"),
     ("THIRD_PARTY_NOTICES", "."),  # api/about_routes.py; written by scripts/licenses/build_notices.py (F2)
 )
 BUILD_IDENTITY = "build_identity.json"

@@ -122,6 +122,7 @@ CSRF_HEADER = "x-deixis-csrf"
 # The packaged app's shell stops the backend with the token it started it with (P10 M1); the one route the cookie CSRF
 # check skips, because it has its own check: the token, compared in constant time.
 SHUTDOWN_PATH = "/api/internal/shutdown"
+STAMP_PDF_PATH = "/api/internal/stamp-pdf"  # the shell, after the macOS app saved a report PDF to Downloads
 STATUS_PATH = "/api/internal/status"  # read-only, for the shell's menu-bar item (P10 M2); a GET needs no CSRF token
 CONTROL_HEADER = "x-deixis-control"
 # The pauses an approval answers: the proposal itself, and a correction that left nothing searchable (slice 08a).
@@ -152,6 +153,20 @@ def upload_limit(method: str, path: str) -> tuple[int, str, str] | None:
         return (draft_parse.MAX_DRAFT_BYTES + bibtex_ris.MAX_FILE_BYTES + 2 * MULTIPART_OVERHEAD_BYTES, "draft_too_large",
                 "Draft larger than 10 MB or reference file larger than 5 MB")
     return None
+
+
+class WebFiles(StaticFiles):
+    """The built UI: pages are revalidated on every load so an updated app never runs an old bundle; hashed assets are cached."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        # Vite names files under assets/ by their content hash, so a cached copy can never be stale.
+        if path.startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        # index.html and the SPA fallback name the current bundle; the browser must ask again each time.
+        elif response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 class CreateResearch(BaseModel):
@@ -1223,7 +1238,7 @@ def create_app(
             if origin and origin not in allowed_origins:
                 return JSONResponse({"detail": "Origin not allowed"}, status_code=403)
             cookie = request.cookies.get(CSRF_COOKIE, "")
-            shutdown = request.method == "POST" and request.url.path == SHUTDOWN_PATH  # checked by its route
+            shutdown = request.method == "POST" and request.url.path in (SHUTDOWN_PATH, STAMP_PDF_PATH)  # checked by their routes
             if not shutdown and (not cookie or not secrets.compare_digest(cookie, request.headers.get(CSRF_HEADER, ""))):
                 return JSONResponse({"detail": "Missing or invalid CSRF token"}, status_code=403)
             if (limit := upload_limit(request.method, request.url.path)) is not None:
@@ -1432,6 +1447,23 @@ def create_app(
             return JSONResponse({"detail": "Missing or invalid control token"}, status_code=403)
         request_shutdown()
         return JSONResponse({"status": "stopping"}, status_code=202)
+
+    @app.post(STAMP_PDF_PATH)
+    async def internal_stamp_pdf(request: Request, name: str) -> JSONResponse:
+        """The macOS shell saved a report PDF to Downloads: add the footer WebKit cannot draw. The same control token
+        as the shutdown route, off (404) without one; only a .pdf file directly in ~/Downloads, named by its file name."""
+        if not control_token:
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        if not hmac.compare_digest(request.headers.get(CONTROL_HEADER, "").encode(), control_token.encode()):
+            return JSONResponse({"detail": "Missing or invalid control token"}, status_code=403)
+        from deixis.exports import pdf_footer
+        folder = Path.home() / "Downloads"
+        target = folder / name
+        # One plain file name, a real PDF file (not a link) directly in Downloads.
+        if Path(name).name != name or not name.lower().endswith(".pdf") or target.is_symlink() or not target.is_file():
+            return JSONResponse({"detail": "No such PDF in Downloads"}, status_code=404)
+        pages = await asyncio.to_thread(pdf_footer.stamp, target)
+        return JSONResponse({"pages": pages})
 
     @app.get(STATUS_PATH)
     async def internal_status(request: Request) -> JSONResponse:
@@ -3902,6 +3934,6 @@ def create_app(
         return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
 
     if settings.web_dist.exists():
-        app.mount("/", StaticFiles(directory=settings.web_dist, html=True), name="web")
+        app.mount("/", WebFiles(directory=settings.web_dist, html=True), name="web")
 
     return app

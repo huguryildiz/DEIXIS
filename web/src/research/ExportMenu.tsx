@@ -9,6 +9,7 @@ import { useToast } from '../components/Toast'
 import { t, uiLanguage } from '../lib/i18n'
 import { tableTitle } from '../lib/labels'
 import { downloadReportMarkdown } from './reportMarkdown'
+import { savesPdfDirectly } from './printPanel'
 
 // Bibliography files for reference managers, downloaded from the local API. Cited sources are the ones `answerId` cites
 // (a report's own export), so an earlier report exports its own sources.
@@ -61,7 +62,7 @@ export function ExportMenu({ researchId, report, sources, tables, included, cite
       {report && <DropdownMenuGroup>
         <DropdownMenuLabel>{t('Report')}</DropdownMenuLabel>
         <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => downloadReportMarkdown(report.answer, sources, report.title, report.version, style)}>{row('MD', t('Markdown'))}</DropdownMenuItem>
-        <DropdownMenuItem className="research-export-item menu-fmt" title={t('Opens the report and the print dialog; choose Save as PDF there.')} onClick={() => onPrintReport(report.answer.id)}>{row('PDF', t('Portable document'))}</DropdownMenuItem>
+        <DropdownMenuItem className="research-export-item menu-fmt" title={savesPdfDirectly ? t('Opens the report and saves it as a PDF in Downloads.') : t('Opens the report and the print dialog; choose Save as PDF there.')} onClick={() => onPrintReport(report.answer.id)}>{row('PDF', t('Portable document'))}</DropdownMenuItem>
         {link(answerDocxUrl(researchId, report.answer.id, lang, style), 'DOCX', t('Word document'))}
       </DropdownMenuGroup>}
       {table && <DropdownMenuGroup>

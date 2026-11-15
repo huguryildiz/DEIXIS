@@ -52,10 +52,14 @@ const icons: Record<string, ReactNode> = {
 }
 // Gemini CLI runs Google's Gemini models: the same Gemini sparkle as the Gemini API.
 icons.gemini_cli = icons.gemini
+// OpenAlex's full-text route is the same service: the OpenAlex mark.
+icons.openalex_content = icons.openalex
 // Codex CLI signs in with a ChatGPT account: the OpenAI mark.
 icons.codex = icons.openai
 // The Anthropic API runs the same Claude models as Claude Code: the Claude mark.
 icons.anthropic = icons.claude
+
+export const hasConnectionIcon = (id: string) => (id === 'copilot_cli' ? 'copilot' : id) in icons
 
 export function ConnectionIcon({ id }: { id: string }) {
   const icon = icons[id === 'copilot_cli' ? 'copilot' : id]

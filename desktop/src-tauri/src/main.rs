@@ -258,6 +258,7 @@ fn backend_origin(url: &Url, port: Option<u16>) -> bool {
 #[derive(Debug, PartialEq)]
 enum Nav {
     Allow,
+    SavePdf,
     Restart,
     Quit,
     Outside,
@@ -282,6 +283,10 @@ fn navigation(local: LocalOrigin, url: &Url, shown: Option<&Url>, port: Option<u
         };
     }
     if backend_origin(url, port) {
+        // The backend's page asks the shell to save the open report as a PDF (macOS); the page itself stays.
+        if url.path() == "/desktop/save-pdf" && shown.is_some_and(|s| backend_origin(s, port)) {
+            return Nav::SavePdf;
+        }
         return Nav::Allow;
     }
     if matches!(url.scheme(), "https" | "http" | "mailto") {
@@ -659,13 +664,21 @@ fn restart(app: AppHandle) {
     });
 }
 
-/// A message that waits for nobody: a dialog the app keeps running behind, or stderr only under
-/// DEIXIS_DESKTOP_NO_DIALOG=1 (the desktop acceptance).
-fn notify(app: &AppHandle, title: &str, text: String, error: bool) {
+/// A download's outcome as a toast in the backend's page (`deixis-download` event) and a stderr line (the desktop
+/// acceptance reads it); a dialog that waits for nobody only when the page could not be told, and never under
+/// DEIXIS_DESKTOP_NO_DIALOG=1.
+fn notify_download(app: &AppHandle, title: &str, text: String, kind: &str, path: &str) {
     eprintln!("DEIXIS: {title}: {text}");
-    if std::env::var("DEIXIS_DESKTOP_NO_DIALOG").as_deref() != Ok("1") {
-        let kind = if error { MessageDialogKind::Error } else { MessageDialogKind::Info };
-        app.dialog().message(text).title(title).kind(kind).show(|_| {});
+    // The page builds the sentence in its own language from the outcome and the file name.
+    let name = Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string());
+    let detail = serde_json::json!({ "kind": kind, "name": name });
+    let script = format!("window.dispatchEvent(new CustomEvent('deixis-download', {{ detail: {detail} }}))");
+    // Only the backend's page listens; the shell's own starting or stopped page gets the dialog.
+    let on_backend = Url::parse(&app.state::<Shell>().page.lock().unwrap()).is_ok_and(|shown| own_origin(app, &shown));
+    let told = on_backend && app.get_webview_window(MAIN).is_some_and(|window| window.eval(script).is_ok());
+    if !told && std::env::var("DEIXIS_DESKTOP_NO_DIALOG").as_deref() != Ok("1") {
+        let level = if kind == "saved" { MessageDialogKind::Info } else { MessageDialogKind::Error };
+        app.dialog().message(text).title(title).kind(level).show(|_| {});
     }
 }
 
@@ -698,7 +711,8 @@ fn on_download(app: &AppHandle, event: DownloadEvent<'_>) -> bool {
             let named = folder.as_deref().is_some_and(|f| directly_in(f, destination, cfg!(windows)));
             let made = folder.as_deref().is_some_and(|f| std::fs::create_dir_all(f).is_ok());
             if !from_page || !named || !made {
-                notify(app, "Download not saved", format!("DEIXIS did not save this download ({}).", destination.display()), true);
+                let shown = destination.display().to_string();
+                notify_download(app, "Download not saved", format!("DEIXIS did not save this download ({shown})."), "refused", &shown);
                 return false;
             }
             eprintln!("DEIXIS: download requested: {}", destination.display());
@@ -712,9 +726,9 @@ fn on_download(app: &AppHandle, event: DownloadEvent<'_>) -> bool {
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "Downloads".into());
             if success {
-                notify(app, "Download saved", format!("Saved to {shown}"), false);
+                notify_download(app, "Download saved", format!("Saved to {shown}"), "saved", &shown);
             } else {
-                notify(app, "Download failed", format!("The file could not be saved ({shown})."), true);
+                notify_download(app, "Download failed", format!("The file could not be saved ({shown})."), "failed", &shown);
             }
             true
         }
@@ -770,12 +784,119 @@ fn on_navigation(app: &AppHandle, url: &Url) -> bool {
     let shown = Url::parse(&app.state::<Shell>().page.lock().unwrap()).ok();
     match navigation(local_origin(), url, shown.as_ref(), backend_port(app)) {
         Nav::Allow => return true,
+        Nav::SavePdf => save_pdf(app, url),
         Nav::Restart => restart(app.clone()),
         Nav::Quit => quit(app.clone()),
         Nav::Outside => platform::open_outside(url), // another site: the default browser
         Nav::Deny => {}
     }
     false
+}
+
+/// The PDF file name the page asked for (`name`), kept to one plain file name in Downloads that is not taken yet.
+fn pdf_destination(url: &Url) -> Option<PathBuf> {
+    let asked = url.query_pairs().find(|(k, _)| k == "name").map(|(_, v)| v.into_owned()).unwrap_or_default();
+    // No folders, no hidden or empty names: only the last path part, trimmed, with a .pdf ending.
+    let base = Path::new(&asked).file_name().map(|n| n.to_string_lossy().trim().to_string()).unwrap_or_default();
+    let base = if base.is_empty() || base.starts_with('.') { "DEIXIS report".to_string() } else { base };
+    let name = if base.to_lowercase().ends_with(".pdf") { base } else { format!("{base}.pdf") };
+    let folder = platform::downloads_folder()?;
+    std::fs::create_dir_all(&folder).ok()?;
+    Some(free_destination(&folder, std::ffi::OsStr::new(&name)))
+}
+
+/// Save the page as the print dialog would draw it (print stylesheet, @page footer) straight into Downloads, then
+/// tell the page (`deixis-pdf` event and the download toast). macOS only; elsewhere the page opens the print dialog.
+#[cfg(target_os = "macos")]
+fn save_pdf(app: &AppHandle, url: &Url) {
+    use objc2_app_kit::{NSPrintInfo, NSPrintJobSavingURL, NSPrintSaveJob};
+    use objc2_foundation::{NSCopying, NSString, NSURL};
+    use objc2_web_kit::WKWebView;
+    let Some(window) = app.get_webview_window(MAIN) else { return };
+    let Some(path) = pdf_destination(url) else {
+        notify_download(app, "Download not saved", "DEIXIS could not use the Downloads folder.".into(), "refused", "Downloads");
+        pdf_done(app);
+        return;
+    };
+    let target = path.clone();
+    let started = window.with_webview(move |webview| unsafe {
+        let view = &*(webview.inner() as *const WKWebView);
+        // A copy of the shared settings, set to write a file instead of printing, with no margins of its own
+        // (the print stylesheet's @page rule sets them).
+        let info = NSPrintInfo::sharedPrintInfo().copy();
+        info.setJobDisposition(NSPrintSaveJob);
+        let file = NSURL::fileURLWithPath(&NSString::from_str(&target.to_string_lossy()));
+        info.dictionary().setObject_forKey(&file, objc2::runtime::ProtocolObject::from_ref(NSPrintJobSavingURL));
+        info.setTopMargin(0.0);
+        info.setBottomMargin(0.0);
+        info.setLeftMargin(0.0);
+        info.setRightMargin(0.0);
+        let operation = view.printOperationWithPrintInfo(&info);
+        operation.setShowsPrintPanel(false);
+        operation.setShowsProgressPanel(false);
+        // WebKit draws its print pages only through the window-modal run; the plain run gives blank pages.
+        if let Some(ns_window) = view.window() {
+            operation.runOperationModalForWindow_delegate_didRunSelector_contextInfo(&ns_window, None, None, std::ptr::null_mut());
+        }
+    });
+    if started.is_err() {
+        notify_download(app, "Download failed", "The PDF could not be made.".into(), "failed", &path.display().to_string());
+        pdf_done(app);
+        return;
+    }
+    // The run has no callback here: the file is done once it ends with the PDF end marker and its size stops changing.
+    let app = app.clone();
+    thread::spawn(move || {
+        let mut last = None;
+        for _ in 0..480 {
+            thread::sleep(Duration::from_millis(250));
+            let size = std::fs::metadata(&path).ok().map(|m| m.len()).filter(|n| *n > 0);
+            if size.is_some() && size == last && pdf_complete(&path) {
+                // WebKit draws no @page footer boxes: the backend stamps the mark, the name and the page numbers.
+                stamp_footer(&app, &path);
+                notify_download(&app, "Download saved", format!("Saved to {}", path.display()), "saved", &path.display().to_string());
+                pdf_done(&app);
+                return;
+            }
+            last = size;
+        }
+        notify_download(&app, "Download failed", format!("The file could not be saved ({}).", path.display()), "failed", &path.display().to_string());
+        pdf_done(&app);
+    });
+}
+
+/// Ask the backend to add the report footer to the saved PDF (named by its file name in Downloads); a PDF without it
+/// is still kept and said to be saved.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn stamp_footer(app: &AppHandle, path: &Path) {
+    let target = app.state::<Shell>().backend.lock().unwrap().as_ref().and_then(|b| b.port.map(|p| (p, b.token.clone())));
+    let Some((port, token)) = target else { return };
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let answer = http(port, "POST", &format!("/api/internal/stamp-pdf?name={}", encode(&name)), Some(&token), Duration::from_secs(30));
+    if !matches!(answer, Some((200, _))) {
+        eprintln!("DEIXIS: the PDF footer was not added ({answer:?})");
+    }
+}
+
+/// A written PDF ends with `%%EOF` (and perhaps a line end) in its last bytes.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn pdf_complete(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut file) = std::fs::File::open(path) else { return false };
+    let mut tail = Vec::new();
+    let back = file.metadata().map(|m| m.len().min(32)).unwrap_or(0) as i64;
+    file.seek(SeekFrom::End(-back)).is_ok() && file.read_to_end(&mut tail).is_ok() && tail.windows(5).any(|w| w == b"%%EOF")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn save_pdf(_app: &AppHandle, _url: &Url) {}
+
+/// Tell the page the PDF run ended, so it can drop its print-only state.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn pdf_done(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN) {
+        let _ = window.eval("window.dispatchEvent(new CustomEvent('deixis-pdf-done'))");
+    }
 }
 
 fn main() {

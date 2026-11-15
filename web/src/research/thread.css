@@ -444,6 +444,16 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .notice-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .notice-actions [data-slot=button]{height:30px;gap:6px;padding-inline:12px;border-radius:7px;font-size:13px}
 .notice-actions .notice-ghost{padding-inline:10px;border-color:var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-weight:400}
+.notice.is-attention p{color:inherit}  /* sheet and research-view paragraphs default to --muted */
+/* The services an open-copy lookup asked: a chip each, with the service's mark, its name and a check or warning. */
+.service-chips{display:flex;flex-wrap:wrap;gap:6px}
+.service-chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 7px;border:1px solid var(--line);border-radius:999px;background:var(--raised-surface);color:var(--ink-2);font-size:12px;line-height:1;white-space:nowrap}
+.service-chip .connection-icon,.service-chip-mark{width:14px;height:14px;color:var(--ink-2)}
+.service-chip-state{flex:none}
+.service-chip.is-ok .service-chip-state{color:var(--tone-include)}
+.service-chip.is-warn .service-chip-state{color:var(--tone-uncertain)}
+/* On an amber notice a ghost button stays see-through, so it does not read as a dark block on the tint. */
+.notice.is-attention .notice-actions .notice-ghost{border-color:var(--tone-uncertain);background:transparent;color:var(--warn-ink)}
 .notice-field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5;resize:vertical}
 .notice-field:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
 .notice-label{display:grid;gap:4px;font-size:13px;color:var(--muted)}

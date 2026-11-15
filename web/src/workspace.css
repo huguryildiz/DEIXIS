@@ -44,6 +44,6 @@
 .notice>svg{flex:none;margin-top:2px;color:var(--notice)}
 .notice>div{min-width:0;overflow-wrap:anywhere}
 .notice.is-error{--notice:var(--tone-exclude);border-color:transparent;background:var(--error-surface)}
-.notice.is-attention{--notice:var(--tone-uncertain);border-color:transparent;background:var(--warn-surface)}
+.notice.is-attention{--notice:var(--tone-uncertain);border-color:transparent;background:var(--warn-surface);color:var(--warn-ink)}
 .notice.is-info{--notice:var(--accent)}
 .notice .plain-list{margin:6px 0 0}

@@ -7,7 +7,7 @@ import { api, ApiError, reportDocxUrl, type Passage, type ReportClaim, type Repo
 import { MathText } from '../components/MathText'
 import { failedRowReasonText, failedSectionReasonText, locatorText, pauseReasonText, reportAssemblyDraftText, refreshReasons, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../lib/labels'
 import { StackPanel } from '../research/SplitPanel'
-import { printPanel } from '../research/printPanel'
+import { pdfRowTitle, printPanel } from '../research/printPanel'
 import { usePanels } from '../research/usePanelStack'
 import { excerpt } from '../research/excerpt'
 import { HighlightedPassageText } from '../reading/PassageSheet'
@@ -387,7 +387,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
         <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => void markdown('download')}>{fmt('MD', t('Markdown'))}</DropdownMenuItem>
         <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => void latex()}>{fmt('TEX', t('LaTeX · .tex and .bib in a zip'))}</DropdownMenuItem>
         {/* The print dialog on this panel as shown (S27); the person saves the PDF there. */}
-        <DropdownMenuItem className="research-export-item menu-fmt" title={t('Opens the print dialog on this report; choose Save as PDF there.')}
+        <DropdownMenuItem className="research-export-item menu-fmt" title={pdfRowTitle()}
           onClick={() => { void printPanel(`.evidence-report-document[data-report-id="${CSS.escape(reportId)}"]`).then(ok => { if (!ok) toast('error', t('The report could not be shown for printing, so no print dialog opened.')) }) }}>{fmt('PDF', t('Portable document'))}</DropdownMenuItem>
         <MenuPrimitive.LinkItem href={reportDocxUrl(researchId, reportId)} download closeOnClick data-slot="dropdown-menu-item" className="research-export-item menu-fmt">{fmt('DOCX', t('Word document'))}</MenuPrimitive.LinkItem>
         {/* Copying the report as Markdown (live, §2.2) sits with the files it matches. */}

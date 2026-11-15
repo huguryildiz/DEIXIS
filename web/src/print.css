@@ -91,9 +91,9 @@
      report's. */
   @page report {
     size: A4; margin: 22mm 22mm 20mm;
-    /* The app icon (public/deixis-icon-glass.svg), then the name, as Elicit puts its logo in the footer. */
-    @bottom-left { content: url("/deixis-icon-glass.svg") "\2002 DEIXIS"; font: 600 8pt 'Inter Variable', sans-serif;
-      letter-spacing: .08em; color: #111; vertical-align: middle; }
+    /* The sidebar wordmark (public/deixis-wordmark-print.svg, sized by its own width and height); the macOS app's
+       saved PDF stamps the same image (deixis/exports/pdf_footer.py), since WebKit draws no footer boxes. */
+    @bottom-left { content: url("/deixis-wordmark-print.svg"); vertical-align: middle; }
     @bottom-right { content: counter(page); font: 400 8.5pt 'Source Serif 4 Variable', serif; color: #111; }
   }
   html[data-print="panel"] .report-document {

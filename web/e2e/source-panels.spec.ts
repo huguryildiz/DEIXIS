@@ -416,7 +416,7 @@ test.describe('S12: report, Citation and Source details panels', () => {
     await details.locator('.source-empty .acts').getByRole('button', { name: 'Find PDF' }).click()
     const block = details.locator('.find-block')
     await expect(block).toContainText('Looking for an open copy…')
-    await expect(block.locator('.pill')).toHaveCount(0)
+    await expect(block.locator('.service-chip')).toHaveCount(0)
     await expect(block).not.toContainText('Looking for an open copy…', { timeout: 30_000 })
     await page.unroute(`**/sources/${source!.source_version_id}/pdf-discovery`)
     const after = (await viewOf(api, rid)).sources.find(s => s.source_version_id === source!.source_version_id)!
@@ -425,7 +425,7 @@ test.describe('S12: report, Citation and Source details panels', () => {
     const skipped = [...new Set(records.filter(d => notSent(d)).map(d => d.provider))].filter(p => !asked.includes(p))
     expect(asked.length).toBeGreaterThan(0)
     expect(skipped.length, 'the fixture has services without a key or contact setting').toBeGreaterThan(0)
-    await expect(block.locator('.pill')).toHaveText(asked.map(p => PROVIDERS[p] ?? p))
+    await expect(block.locator('.service-chip')).toHaveText(asked.map(p => PROVIDERS[p] ?? p))
     const notAsked = block.locator('.find-skipped')
     await expect(notAsked).toContainText('Not asked:')
     for (const p of skipped) await expect(notAsked).toContainText(PROVIDERS[p] ?? p)
@@ -590,7 +590,7 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await expect(block).not.toContainText('Looking for an open copy…', { timeout: 30_000 })
       const after = (await viewOf(api, rid)).sources.find(s => s.source_version_id === b.source_version_id)!
       const asked = [...new Set(after.access.pdf_discoveries.slice(b.access.pdf_discoveries.length).filter(d => !notSent(d)).map(d => d.provider))]
-      await expect(block.locator('.pill')).toHaveText(asked.map(p => PROVIDERS[p] ?? p))
+      await expect(block.locator('.service-chip')).toHaveText(asked.map(p => PROVIDERS[p] ?? p))
       await page.keyboard.press('Escape')
     } finally {
       // In-flight handlers of this case end quietly when the next case navigates.

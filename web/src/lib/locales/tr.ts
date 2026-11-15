@@ -6159,5 +6159,11 @@ export const tr: Record<string, string> = {
   'Each phrase has a planned OpenAlex semantic and plain search': 'Her ifade için OpenAlex’te anlamsal ve düz arama planlandı',
   'Grouping question words (model)': 'Soru kelimelerinin gruplanması (model)',
   'When saved, these words form the keyword query; no model writes another keyword query.': 'Kaydedildiğinde bu kelimeler anahtar sözcük sorgusunu oluşturur; model ayrıca bir anahtar sözcük sorgusu yazmaz.',
+  'Saved to Downloads: {name}': 'İndirilenler klasörüne kaydedildi: {name}',
+  'The file could not be saved: {name}': 'Dosya kaydedilemedi: {name}',
+  'DEIXIS did not save this download: {name}': 'DEIXIS bu indirmeyi kaydetmedi: {name}',
+  'no answer': 'yanıt yok',
+  'Saves this report as a PDF in Downloads.': 'Bu raporu PDF olarak İndirilenler klasörüne kaydeder.',
+  'Opens the report and saves it as a PDF in Downloads.': 'Raporu açar ve PDF olarak İndirilenler klasörüne kaydeder.',
 
 }

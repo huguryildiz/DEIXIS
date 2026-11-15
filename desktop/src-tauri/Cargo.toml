@@ -19,6 +19,13 @@ tauri-plugin-dialog = "2"
 serde_json = "1"
 getrandom = "0.3"
 
+# macOS: the report PDF is saved straight to Downloads through WebKit's print operation (no print panel).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSDictionary"] }
+objc2-app-kit = { version = "0.3", features = ["NSPrintInfo", "NSPrintOperation", "NSResponder", "NSView", "NSWindow"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "objc2-app-kit"] }
+
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 dirs = "7"
 

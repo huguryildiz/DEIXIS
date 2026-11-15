@@ -11,6 +11,7 @@ import { verdictLabels } from '../lib/labels'
 import { verdictTones } from './reportMarkdown'
 import { citationStyles, formatReference, SAMPLE_REFERENCE, type CitationStyle, type ReferenceFields } from '../lib/citations'
 import { t, uiLanguage, uiLocale } from '../lib/i18n'
+import { pdfRowTitle } from './printPanel'
 
 // The report panel (mockup `panel()` for `report`, P2/P3). Its head: the version select (when the question has more than
 // one report), the citation style, Review with another model (the claim reviews of this answer, live) and the download
@@ -72,7 +73,7 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
         <DropdownMenuTrigger render={<button type="button" className="ib report-download" aria-label={t('Download report')} title={t('Download')} />}><Download size={15} aria-hidden /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6} className="research-export-menu report-export-menu">
           <DropdownMenuItem className="research-export-item menu-fmt" onClick={onDownload}>{fmt('MD', t('Markdown'))}</DropdownMenuItem>
-          <DropdownMenuItem className="research-export-item menu-fmt" title={t('Opens the print dialog on this report; choose Save as PDF there.')} onClick={onPrint}>{fmt('PDF', t('Portable document'))}</DropdownMenuItem>
+          <DropdownMenuItem className="research-export-item menu-fmt" title={pdfRowTitle()} onClick={onPrint}>{fmt('PDF', t('Portable document'))}</DropdownMenuItem>
           <MenuPrimitive.LinkItem href={answerDocxUrl(researchId, answer.id, lang, style)} download closeOnClick data-slot="dropdown-menu-item" className="research-export-item menu-fmt">{fmt('DOCX', t('Word document'))}</MenuPrimitive.LinkItem>
           {/* Copying the report as Markdown (live, §2.2) sits with the files it matches. */}
           <DropdownMenuItem className="research-export-item menu-fmt export-placement" onClick={onCopy}><Copy size={15} aria-hidden /><b>{t('Copy')}</b><span>{t('Markdown to the clipboard')}</span></DropdownMenuItem>

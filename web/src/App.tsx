@@ -159,6 +159,18 @@ export default function App() {
   // Which researches exist right now; views with their own data (the Library) reload when this changes.
   const researchKey = researches.map(r => r.id).join(',')
 
+  // The desktop shell reports a saved, failed or refused download as a `deixis-download` event; it shows as a toast.
+  useEffect(() => {
+    const onDownload = (event: Event) => {
+      const { kind, name } = (event as CustomEvent<{ kind: string; name: string }>).detail ?? {}
+      if (kind === 'saved') toast('success', t('Saved to Downloads: {name}', { name }))
+      else if (kind === 'failed') toast('error', t('The file could not be saved: {name}', { name }))
+      else if (kind === 'refused') toast('error', t('DEIXIS did not save this download: {name}', { name }))
+    }
+    window.addEventListener('deixis-download', onDownload)
+    return () => window.removeEventListener('deixis-download', onDownload)
+  }, [toast])
+
   useEffect(() => {
     const onHash = () => { const next = parseHash(); setRoute(next); if (next.view === 'research' && next.id) setCurrentId(next.id); setSidebar(false); window.scrollTo(0, 0) }
     window.addEventListener('hashchange', onHash)

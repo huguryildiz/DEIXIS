@@ -10,6 +10,13 @@ import { t } from '../lib/i18n'
 // it a short while (a panel just opened from the topbar menu renders on the next frames); false when it never came, so
 // the caller says no dialog opened instead of printing an empty page.
 // `name`: the document title while the dialog is open, which the browser offers as the PDF's file name.
+// The macOS desktop app saves the PDF itself, straight into Downloads, instead of opening the print dialog: the shell
+// answers the `/desktop/save-pdf` address (the page stays) and says `deixis-pdf-done` when the file is written.
+export const savesPdfDirectly = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && /Mac/.test(navigator.platform)
+
+// The PDF row's hover text: what the row will do here.
+export const pdfRowTitle = () => savesPdfDirectly ? t('Saves this report as a PDF in Downloads.') : t('Opens the print dialog on this report; choose Save as PDF there.')
+
 export async function printPanel(ready: string, timeout = 4000, name?: (panel: Element) => string): Promise<boolean> {
   const started = performance.now()
   while (!document.querySelector(`[data-split-panel] ${ready}`)) {
@@ -25,6 +32,14 @@ export async function printPanel(ready: string, timeout = 4000, name?: (panel: E
   const done = () => { delete root.dataset.print; document.title = title; window.removeEventListener('afterprint', done) }
   if (name && panel) document.title = name(panel)
   root.dataset.print = 'panel'
+  if (savesPdfDirectly) {
+    // The shell lays the page out for print, writes the file and adds the footer WebKit cannot draw; the print-only
+    // state stays until it says it is done.
+    const finished = () => { done(); window.removeEventListener('deixis-pdf-done', finished) }
+    window.addEventListener('deixis-pdf-done', finished)
+    window.location.assign(`/desktop/save-pdf?name=${encodeURIComponent(document.title)}`)
+    return true
+  }
   window.addEventListener('afterprint', done)
   window.print()
   return true

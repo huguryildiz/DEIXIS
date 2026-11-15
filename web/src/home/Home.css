@@ -5,7 +5,7 @@
 .app .composer{position:relative;overflow:hidden;background:var(--raised-surface);border:1px solid var(--accent-band);border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
 .app .composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
 .composer-band{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 8px;background:var(--accent-band)}
-/* White on the band: --accent-band is #2e4877 / #2b3b5c, so white text stays above 4.5:1 even on the hover tint.
+/* White on the band: --accent-band is #0550ae / #0d419d, so white text stays above 4.5:1 even on the hover tint.
    The trigger's own background is opaque (the band mixed with white) so its text contrast is checked against a solid colour. */
 .app .composer-band [data-slot=select-trigger].composer-scope{display:flex;align-items:center;gap:7px;width:auto;max-width:100%;height:auto;min-height:0;padding:4px 9px;line-height:1.5;border:1px solid rgb(255 255 255/.24);border-radius:6px;background:color-mix(in srgb,var(--accent-band),#fff 10%);box-shadow:none;color:#fff;font-size:12.5px;font-weight:500;white-space:nowrap}
 .app .composer-band [data-slot=select-trigger].composer-scope:hover,.app .composer-band [data-slot=select-trigger].composer-scope[aria-expanded=true]{background:color-mix(in srgb,var(--accent-band),#fff 16%)}

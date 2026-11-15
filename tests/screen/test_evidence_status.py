@@ -9,6 +9,7 @@ import time
 
 from deixis.workflow.features.tables import table_refresh
 from deixis.workflow.features.tables.tables import TableStore
+from deixis.workflow.run.views import source_text_changed
 from fakes import valid_response
 from test_asset_replacement import PAGES, extraction, replace
 from test_table_extraction import add_pdf, cell, execute, fill, library
@@ -48,6 +49,20 @@ def test_cell_evidence_is_marked_by_what_happened_to_its_file(tmp_path):
     view = cell(lib, lib.published)
     assert statuses(view) == {"text_superseded"} and "text_superseded" in view["flags"]
     assert view["current"]["evidence"][0]["physical_page"] in (1, 2)
+
+
+def test_an_answer_is_marked_changed_only_when_a_page_it_read_lost_its_text(tmp_path):
+    # The answer read page one; an unread page two changing alone does not count.
+    for name, pages, changed in (("same", PAGES, False), ("unread", [PAGES[0], PAGES[1].upper()], False),
+                                 ("new", [p.upper() for p in PAGES], True)):
+        lib = library(tmp_path / name)
+        read = [p for p in lib.store.passages_for(lib.published) if p["asset_id"] and p["physical_page"] == 1]
+        given = {"passages": [{"passage_id": p["id"]} for p in read]}
+        assert source_text_changed(lib.store, given) is False
+        # Re-extracting gives every page a new passage identity; only a page whose text differs counts as changed.
+        assert lib.store.reextract_asset(read[0]["asset_id"], extraction(pages), "test-v2", CHUNK)["outcome"] == "current"
+        assert set(lib.store.evidence_statuses([p["id"] for p in read]).values()) == {"text_superseded"}
+        assert source_text_changed(lib.store, given) is changed
 
 
 # ---- an automatic re-read when PDF text arrives ------------------------------------------------------------

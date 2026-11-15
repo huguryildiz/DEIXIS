@@ -2664,6 +2664,19 @@ class Store:
                 f" WHERE p.id IN ({','.join('?' * len(chunk))})", chunk)})
         return found
 
+    def text_gone_from_current_extraction(self, passage_ids: list[str]) -> bool:
+        """Whether any of these passages has no passage with the same kind, page and text in its file's current extraction."""
+        for start in range(0, len(passage_ids), 500):
+            chunk = passage_ids[start:start + 500]
+            # A superseded passage whose exact text is still on the same page of the in-use extraction counts as present.
+            if self.conn.execute(
+                    "SELECT 1 FROM passages p JOIN source_assets a ON a.id = p.asset_id"
+                    f" WHERE p.id IN ({','.join('?' * len(chunk))}) AND NOT EXISTS (SELECT 1 FROM passages same"
+                    " WHERE same.asset_id = p.asset_id AND same.kind = p.kind AND same.extraction_version IS a.extraction_version"
+                    " AND same.physical_page IS p.physical_page AND same.text_sha256 = p.text_sha256) LIMIT 1", chunk).fetchone():
+                return True
+        return False
+
     def research_cites_asset(self, research_id: str, asset_id: str) -> bool:
         """Whether recorded evidence of this research cites a passage of the file, including restorable report links
         and follow-up answers (S22a)."""

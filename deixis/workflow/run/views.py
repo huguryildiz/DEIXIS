@@ -855,9 +855,16 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
 
 
 def source_text_changed(store: Store, given: dict[str, Any] | None) -> bool:
-    """Whether a file or text extraction an answer was given is no longer in use."""
-    return bool(given) and any(
-        status != "current" for status in store.evidence_statuses([p["passage_id"] for p in given["passages"]]).values())
+    """Whether a file an answer was given is no longer in use, or a page it read no longer has the same text."""
+    if not given:
+        return False
+    statuses = store.evidence_statuses([p["passage_id"] for p in given["passages"]])
+    # A removed or replaced file always counts as changed.
+    if any(status in ("pdf_removed", "pdf_replaced") for status in statuses.values()):
+        return True
+    # A re-extraction counts only when a page the answer read lost its exact text.
+    superseded = [pid for pid, status in statuses.items() if status == "text_superseded"]
+    return bool(superseded) and store.text_gone_from_current_extraction(superseded)
 
 
 def late_applicability(late: dict[str, Any], applicability: str) -> str:

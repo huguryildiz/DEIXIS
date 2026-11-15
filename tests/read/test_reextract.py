@@ -501,7 +501,8 @@ def test_s5_every_table_protected_guard(tmp_path, monkeypatch, outcome):
             for entry in saved["content"]["evidence_manifest"]:
                 codes = {r["code"] for r in reasons if r.get("passage_id") == entry["passage_id"]}
                 assert codes == ({"extraction_changed", "text_superseded"} if outcome == "promoted" else set())
-        assert research_view(lib.store, lib.rid)["answers"][0]["source_text_changed"] is (outcome == "promoted")
+        # The promoted re-read gives the cited page the same text, so the answer is not marked changed.
+        assert research_view(lib.store, lib.rid)["answers"][0]["source_text_changed"] is False
         record = lib.conn.execute("SELECT * FROM evidence_cells WHERE id = ?", (lib.rich["cell_id"],)).fetchone()
         cell = TableStore(lib.store).cell_view(lib.rid, record["table_id"], record["column_id"], lib.svid)
         assert ("text_superseded" in cell["flags"]) is (outcome == "promoted")

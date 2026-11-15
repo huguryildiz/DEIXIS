@@ -794,6 +794,7 @@ fn on_navigation(app: &AppHandle, url: &Url) -> bool {
 }
 
 /// The PDF file name the page asked for (`name`), kept to one plain file name in Downloads that is not taken yet.
+#[cfg(target_os = "macos")]
 fn pdf_destination(url: &Url) -> Option<PathBuf> {
     let asked = url.query_pairs().find(|(k, _)| k == "name").map(|(_, v)| v.into_owned()).unwrap_or_default();
     // No folders, no hidden or empty names: only the last path part, trimmed, with a .pdf ending.

@@ -1,0 +1,1 @@
+{"default_effort":"standard","fulltext_fetch":"auto","arxiv_source":"auto","arxiv_route_possible":true,"deep_screening":"off","deep_screening_windows":{"standard":{"first":51,"last":150},"detailed":{"first":101,"last":200}},"model_concurrency":16,"model_concurrency_max":16,"language":"en","theme":"dark","update_check":"off"}

@@ -1,0 +1,1 @@
+{"as_of":"2026-11-16T02:30:59.081+00:00","month_start":"2026-11-01","connections":[{"connection":"anthropic","kind":"api","roles":["answer","literature"],"spend":{"estimated_usd":50.605286,"priced_calls":728,"unpriced_calls":0,"repriced_calls":0,"repriced_price_list":null},"quota":null},{"connection":"codex","kind":"subscription","roles":["reviewer"],"spend":null,"quota":null}]}

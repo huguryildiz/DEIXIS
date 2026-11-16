@@ -1,0 +1,1 @@
+{"switch":"on","ready":true,"reason":null,"model":{"connection":"anthropic","model":"claude-opus-5-5","reasoning_effort":"medium"},"model_refused":false,"mathpix_first":false,"monthly_budget":1000,"month_requests":230,"per_pdf_limit":60,"month_cost":{"usd":0.6285,"calls_without_cost":28},"pdfs":{"none_placed":7,"read":23,"no_candidates":9},"reading":null}

@@ -2,7 +2,7 @@
 (function () {
   'use strict'
   try { localStorage.setItem('deixis-ui-language', 'en') } catch (e) { /* storage blocked */ }
-  var HOME = '#/research/res_sxteRYtN7okYNvNDyCA7'
+  var HOME = '#/research/res_Dra9O76h94ucjJRbIoTB'
   var script = document.currentScript
   var BASE = new URL('.', script ? script.src : location.href).href
   var MSG = 'This is a recorded demo. Download DEIXIS to run it.'

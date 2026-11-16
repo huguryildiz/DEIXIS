@@ -337,7 +337,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     })().catch(() => { /* Keep the last recorded assessment if its status refresh fails. */ })
     return () => { live = false }
   }, [run.id, run.kind, run.status, view.research.id, reviewTargets, candidateReviewPlan, reviewTargetKind, reviewTargetId])
-  // A finished run is one quiet line; a live, paused, failed or cancelled run is a card.
+  // A finished run is one quiet line (a live run takes the same look); a paused, failed or cancelled run is a card.
   const line = run.status === 'completed'
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
@@ -1268,8 +1268,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const changesSinceStop = modelDown ? (view.model_changes ?? []).filter(change => change.changed_at > run.updated_at) : []
   const vocabularyEnd = run.status === 'failed' && (run.pause_reason === 'vocabulary_too_broad' || run.pause_reason === 'vocabulary_empty')
   const pauseWarning = userPaused || run.pause_reason === 'spend_threshold' || (selectionStop && resumable)
-  // A live run is a progress card: the phase now running names its icon, the bar shows the stage reached, and the phases
-  // not reached yet are listed faded below the live one.
+  // A live run is one line like a finished one: the phase now running names its icon, a thin bar under it shows the stage
+  // reached, and the phases not reached yet are listed faded below the live one.
   // The latest finished search of this question revision reads as one line of counts: found, passed to full text,
   // included; its details hold its first included works. The latest answer's line counts its claims and sources.
   // Included and passed stay apart: a fast-path answer may read works that passed while none is included yet.
@@ -1295,11 +1295,12 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const waitingRow = (key: string, text: string) => <li key={key} className="chat-step step is-waiting" style={{ opacity: Math.max(0.3, 0.85 - 0.15 * fadeRank++) }}>
     <span className="chat-step-line"><span className="chat-step-icon ico" role="img" aria-label={t('Not started')} /><span className="chat-step-text">{text}</span></span>
   </li>
-  return <section className={`chat-turn${active ? ' is-active' : ''}${line ? ' is-line' : ''}`}>
+  // A live run sits on the same rail as the finished lines: one quiet line, its phases open below it.
+  return <section className={`chat-turn${active ? ' is-active' : ''}${line || active ? ' is-line' : ''}`}>
     <div className="chat-group">
       {/* One head element in every state (live, finished, plain): the toggle stays the same DOM node when a run starts,
           finishes or resumes, so keyboard focus on it survives the change. */}
-      <div className={active ? 'chat-live-head' : 'chat-head'}>
+      <div className="chat-head">
         <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
           {line ? <>
             <span className="chat-line-icon" aria-hidden><LineIcon size={14} /></span>
@@ -1311,10 +1312,11 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
             <time>{durationText(secondsBetween(started, clock))}</time>
             <ChevronRight size={15} className="chat-line-chev" aria-hidden />
           </> : active ? <>
-            <span className="chat-live-icon" aria-hidden><LiveIcon size={17} /></span>
-            <span className="chat-live-title"><small className="shimmer-text">{t('In progress')} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</small>
-              <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span></span>
+            {/* The running phase's icon in the line's slot; the shimmer on the text is the live motion. */}
+            <span className="chat-line-icon" aria-hidden><LiveIcon size={14} /></span>
+            <span className="chat-line-text"><span className="shimmer-text">{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</span></span>
             <time>{durationText(secondsBetween(started, clock))}</time>
+            <ChevronRight size={15} className="chat-line-chev" aria-hidden />
           </> : <>
             {expanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
             <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
@@ -1324,8 +1326,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         </button>
         {active && (onControlRun ? <span className="chat-live-acts">
           {run.status === 'pause_requested' ? <span className="chat-live-pill"><i aria-hidden /><span className="shimmer-text">{t('Pausing…')}</span></span>
-            : <Button variant="outline" size="sm" disabled={busy} onClick={() => onControlRun(run, 'pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
-          <Button variant="outline" size="sm" className="chat-live-cancel" disabled={busy} onClick={() => onControlRun(run, 'cancel')}><X size={14} aria-hidden />{t('Cancel')}</Button>
+            : <Button variant="ghost" size="xs" disabled={busy} onClick={() => onControlRun(run, 'pause')}><Pause aria-hidden />{t('Pause')}</Button>}
+          <Button variant="ghost" size="xs" className="chat-live-cancel" disabled={busy} onClick={() => onControlRun(run, 'cancel')}><X aria-hidden />{t('Cancel')}</Button>
         </span> : <span className="chat-live-pill"><i aria-hidden />{t('Working')}</span>)}
         {/* A live run's state, announced as it moves from stage to stage. */}
         {active && <span className="sr-only" role="status">{label} · {t('In progress')} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</span>}

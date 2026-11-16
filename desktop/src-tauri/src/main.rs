@@ -118,7 +118,7 @@ impl ThemeChoice {
 /// The launch page's background in a theme (`ui/index.html` --bg), so no white frame shows before a page paints.
 fn background(theme: Theme) -> Color {
     match theme {
-        Theme::Dark => Color(0x18, 0x18, 0x18, 0xff),
+        Theme::Dark => Color(0x1c, 0x1d, 0x1f, 0xff),
         _ => Color(0xf6, 0xf8, 0xfa, 0xff),
     }
 }
